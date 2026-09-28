@@ -76,8 +76,9 @@ services:
       - S3_ENDPOINT_URL=http://minio:9000
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
       - ASR_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
-      - VOICE_SEARCH_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
+      - VOICE_SEARCH_MODEL_NAME=./models/whisper-small
       - VOICE_SEARCH_BEAM_SIZE=1
+      - ASR_THREADS=2
     volumes:
       - ./models:/app/models:ro
     ports:
