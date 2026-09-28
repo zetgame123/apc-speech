@@ -5,7 +5,7 @@ import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, analytics, calls, dashboard, health, jobs, voice
+from app.api import admin, analytics, calls, dashboard, health, integrations, jobs, voice
 from app.core.config import get_settings
 from app.core.errors import AppError, error_response
 from app.core.logging import get_logger, setup_logging
@@ -117,3 +117,4 @@ app.include_router(calls.router)
 app.include_router(analytics.router)
 app.include_router(admin.router)
 app.include_router(dashboard.router)
+app.include_router(integrations.router)

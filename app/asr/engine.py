@@ -122,14 +122,15 @@ class AsrEngine:
         Transcribes audio with faster-whisper with strict anti-hallucination flags.
         Returns (segments, info).
         """
-        prompt = (initial_prompt or "") + " " + self.vocabulary_prompt
-        applied_hotwords = hotwords or DEFAULT_HOTWORDS
+        resolved_lang = None if language == "auto" else (language or "ru")
+        prompt = (initial_prompt or "") + (" " + self.vocabulary_prompt if resolved_lang == "ru" else "")
+        applied_hotwords = hotwords or (DEFAULT_HOTWORDS if resolved_lang == "ru" else None)
 
         segments_iter, info = self.model.transcribe(
             audio,
-            language=language,
+            language=resolved_lang,
             beam_size=beam_size,
-            initial_prompt=prompt,
+            initial_prompt=prompt if prompt.strip() else None,
             hotwords=applied_hotwords,
             vad_filter=vad_filter,
             vad_parameters=dict(

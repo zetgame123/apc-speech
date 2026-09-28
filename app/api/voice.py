@@ -33,6 +33,7 @@ class VoiceSearchResponse(BaseModel):
 async def voice_search(
     request: Request,
     namespace: str = Query(..., description="Namespace изоляции данных"),
+    language: str = Query("ru", description="Язык распознавания речи: ru, en или auto"),
     file: UploadFile | None = File(None),
     auth: AuthContext = Depends(verify_auth),
     _=Depends(rate_limit),
@@ -66,6 +67,7 @@ async def voice_search(
     try:
         segments, meta = engine.transcribe(
             audio_stream,
+            language=language,
             beam_size=settings.voice_search_beam_size,
             vad_filter=True,
         )

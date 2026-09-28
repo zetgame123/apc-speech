@@ -55,6 +55,7 @@ class CreateJobByUrlRequest(BaseModel):
     namespace: str
     url: str
     callback_url: str | None = None
+    language: str | None = "ru"
     metadata: dict[str, Any] | None = None
     options: dict[str, Any] | None = None
 
@@ -76,6 +77,7 @@ async def create_job_upload(
     client_id: str | None = Form(None),
     channel_manager: int | None = Form(None),
     vocabulary_hints: str | None = Form(None),
+    language: str | None = Form("ru"),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     x_request_id: str | None = Header(None, alias="X-Request-Id"),
     auth: AuthContext = Depends(verify_auth),
@@ -148,6 +150,7 @@ async def create_job_upload(
         mime_type=file.content_type,
         file_size_bytes=len(file_bytes),
         created_at=now,
+        expires_at=now + timedelta(days=settings.retention_audio_days),
     )
     db.add(audio_obj)
 
@@ -178,6 +181,7 @@ async def create_job_upload(
         "callback_url": callback_url,
         "channel_manager": channel_manager,
         "vocabulary_hints": vocabulary_hints,
+        "language": language or "ru",
     }
     await queue.enqueue_long_job(job_id, payload)
 
@@ -260,6 +264,7 @@ async def create_job_by_url(
         "namespace": req.namespace,
         "source_url": safe_url,
         "callback_url": req.callback_url,
+        "language": req.language or "ru",
         "metadata": meta,
         "options": req.options or {},
     }

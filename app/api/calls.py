@@ -131,6 +131,8 @@ async def get_analysis(
 async def get_call_audio(
     call_id: str,
     namespace: str = Query(...),
+    presigned: bool = Query(False, description="Возвращать временный presigned URL вместо прямого потока байт"),
+    expires_in: int = Query(3600, ge=60, le=86400, description="Срок жизни presigned URL в секундах"),
     auth: AuthContext = Depends(verify_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -142,6 +144,20 @@ async def get_call_audio(
         raise AppError("audio_not_found", f"Аудио для звонка {call_id} не найдено", 404)
 
     storage = get_storage()
+
+    if presigned:
+        url = storage.generate_presigned_url(
+            audio_obj.s3_bucket,
+            audio_obj.s3_key,
+            expires_in_sec=expires_in,
+        )
+        return {
+            "call_id": call_id,
+            "url": url,
+            "expires_in_sec": expires_in,
+            "mime_type": audio_obj.mime_type or "audio/wav",
+        }
+
     try:
         data = storage.download_bytes(audio_obj.s3_bucket, audio_obj.s3_key)
     except Exception as e:

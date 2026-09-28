@@ -1,8 +1,10 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 import os
 import signal
 import tempfile
 import traceback
+import uuid
 
 import httpx
 from sqlalchemy import update
@@ -13,9 +15,10 @@ from app.asr.vad import VadDetector
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
 from app.core.security import validate_ssrf_url
-from app.db.models import Analysis, Call, Job, TranscriptSegment
+from app.db.models import Analysis, AudioObject, Call, Job, TranscriptSegment
 from app.db.session import AsyncSessionLocal
 from app.diarization.roles import RoleClassifier
+from app.integrations.bitrix24 import format_timeline_comment, post_to_crm_timeline
 from app.llm.local_adapter import LocalLlamaCppAdapter
 from app.llm.port import AnalysisContext
 from app.metrics.speech_metrics import SpeechMetricsCalculator
@@ -82,6 +85,25 @@ async def process_job(job_id: str, data: dict):
                 with open(input_audio_path, "wb") as f:
                     f.write(resp.content)
 
+            # Persist downloaded audio to S3 for replay and compliance
+            s3_key = f"calls/{call_id}/audio.wav"
+            s3_bucket = settings.s3_bucket_audio
+            storage.upload_file(input_audio_path, s3_bucket, s3_key)
+            now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+            async with AsyncSessionLocal() as db:
+                audio_obj = AudioObject(
+                    id=str(uuid.uuid4()),
+                    namespace=data.get("namespace", "default"),
+                    call_id=call_id,
+                    s3_bucket=s3_bucket,
+                    s3_key=s3_key,
+                    file_size_bytes=os.path.getsize(input_audio_path),
+                    created_at=now_dt,
+                    expires_at=now_dt + timedelta(days=settings.retention_audio_days),
+                )
+                db.add(audio_obj)
+                await db.commit()
+
         # 2. Probe audio properties
         probe_info = preprocessor.probe_audio(input_audio_path)
         total_duration = probe_info["duration"]
@@ -107,6 +129,7 @@ async def process_job(job_id: str, data: dict):
             ch0_wav, ch1_wav = preprocessor.split_stereo_channels(input_audio_path)
             ch0_pcm = os.path.join(tmp_dir, "ch0_pcm.wav")
             ch1_pcm = os.path.join(tmp_dir, "ch1_pcm.wav")
+            target_lang = data.get("language") or (data.get("options") or {}).get("language") or "ru"
             preprocessor.convert_to_pcm16(ch0_wav, ch0_pcm)
             preprocessor.convert_to_pcm16(ch1_wav, ch1_pcm)
 
@@ -115,13 +138,13 @@ async def process_job(job_id: str, data: dict):
 
             all_segs_ch0 = []
             for chunk in ch0_chunks:
-                segs, _ = asr_engine.transcribe(chunk["data"])
+                segs, _ = asr_engine.transcribe(chunk["data"], language=target_lang)
                 all_segs_ch0.append(segs)
             segs_ch0 = merge_and_deduplicate(all_segs_ch0, ch0_chunks)
 
             all_segs_ch1 = []
             for chunk in ch1_chunks:
-                segs, _ = asr_engine.transcribe(chunk["data"])
+                segs, _ = asr_engine.transcribe(chunk["data"], language=target_lang)
                 all_segs_ch1.append(segs)
             segs_ch1 = merge_and_deduplicate(all_segs_ch1, ch1_chunks)
 
@@ -132,6 +155,7 @@ async def process_job(job_id: str, data: dict):
         else:
 
             # Mono branch
+            target_lang = data.get("language") or (data.get("options") or {}).get("language") or "ru"
             mono_pcm = os.path.join(tmp_dir, "mono_pcm.wav")
             preprocessor.convert_to_pcm16(input_audio_path, mono_pcm)
 
@@ -139,7 +163,7 @@ async def process_job(job_id: str, data: dict):
             all_raw_segments = []
 
             for chunk in chunks_info:
-                segs, _ = asr_engine.transcribe(chunk["data"])
+                segs, _ = asr_engine.transcribe(chunk["data"], language=target_lang)
                 all_raw_segments.append(segs)
 
             raw_segments = merge_and_deduplicate(all_raw_segments, chunks_info)
@@ -263,6 +287,25 @@ async def process_job(job_id: str, data: dict):
                 "inquiry_type": analysis_result["inquiry_type"],
             }
             await queue.enqueue_callback(job_id, callback_url, callback_payload)
+
+        # 10. Bitrix24 CRM timeline integration
+        bitrix_meta = (data.get("metadata") or {}).get("bitrix24") or {}
+        if bitrix_meta.get("webhook_url") and bitrix_meta.get("crm_entity_id"):
+            try:
+                full_text = " ".join(s["text"] for s in final_segments)
+                comment_text = format_timeline_comment(
+                    analysis=analysis_result,
+                    full_text=full_text,
+                    duration_sec=total_duration,
+                )
+                await post_to_crm_timeline(
+                    webhook_url=bitrix_meta["webhook_url"],
+                    entity_type=bitrix_meta.get("crm_entity_type") or "deal",
+                    entity_id=bitrix_meta["crm_entity_id"],
+                    comment=comment_text,
+                )
+            except Exception as b24_err:
+                logger.error("bitrix24_timeline_post_error", error=str(b24_err))
 
 
 async def main():

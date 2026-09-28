@@ -31,6 +31,13 @@ paths:
           schema:
             type: string
           required: true
+        - in: query
+          name: language
+          schema:
+            type: string
+            enum: [ru, en, auto]
+            default: ru
+          description: Язык распознавания речи
       requestBody:
         required: true
         content:
@@ -119,6 +126,11 @@ paths:
                 vocabulary_hints:
                   type: string
                   description: Список дополнительных терминов через запятую
+                language:
+                  type: string
+                  enum: [ru, en, auto]
+                  default: ru
+                  description: Язык распознавания речи
       responses:
         '202':
           description: Задание принято в обработку
@@ -283,9 +295,25 @@ paths:
           required: true
           schema:
             type: string
+        - in: query
+          name: presigned
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Возвращать временный presigned S3 URL вместо прямого потока байт
+        - in: query
+          name: expires_in
+          required: false
+          schema:
+            type: integer
+            default: 3600
+            minimum: 60
+            maximum: 86400
+          description: Срок жизни presigned URL в секундах
       responses:
         '200':
-          description: Аудиопоток звонка
+          description: Аудиопоток звонка или presigned URL
           content:
             audio/wav:
               schema:
@@ -295,6 +323,19 @@ paths:
               schema:
                 type: string
                 format: binary
+            application/json:
+              schema:
+                type: object
+                properties:
+                  call_id:
+                    type: string
+                  url:
+                    type: string
+                    format: uri
+                  expires_in_sec:
+                    type: integer
+                  mime_type:
+                    type: string
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -422,6 +463,93 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TextAnalysisResponse'
+
+  /v1/integrations/bitrix24/webhook:
+    post:
+      summary: Вебхук телефонии Битрикс24 (ONVOXIMPLANTCALLFINISHED)
+      description: |
+        Принимает событие завершения звонка из Битрикс24 (Voximplant), скачивает запись,
+        ставит задачу на транскрибацию и анализ, и сохраняет результат в таймлайн CRM (сделки/лида).
+      operationId: bitrix24TelephonyWebhook
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: namespace
+          schema:
+            type: string
+            default: default
+          description: Namespace изоляции данных
+        - in: query
+          name: bitrix_rest_url
+          schema:
+            type: string
+            format: uri
+          description: Входящий REST-вебхук Битрикс24 для публикации комментария в таймлайн
+        - in: query
+          name: language
+          schema:
+            type: string
+            enum: [ru, en, auto]
+            default: ru
+          description: Язык распознавания речи
+        - in: query
+          name: callback_url
+          schema:
+            type: string
+            format: uri
+          description: Дополнительный webhook callback
+        - in: query
+          name: token
+          schema:
+            type: string
+          description: Токен авторизации при передаче в query параметре
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event:
+                  type: string
+                  example: ONVOXIMPLANTCALLFINISHED
+                data:
+                  type: object
+                  properties:
+                    CALL_ID:
+                      type: string
+                    RECORD_URL:
+                      type: string
+                      format: uri
+                    PORTAL_USER_ID:
+                      type: string
+                    PHONE_NUMBER:
+                      type: string
+                    CALL_DURATION:
+                      type: string
+                    CRM_ENTITY_TYPE:
+                      type: string
+                    CRM_ENTITY_ID:
+                      type: string
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        '202':
+          description: Звонок принят в очередь обработки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAcceptedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /v1/data/delete:
     delete:
@@ -568,6 +696,11 @@ components:
         callback_url:
           type: string
           format: uri
+        language:
+          type: string
+          enum: [ru, en, auto]
+          default: ru
+          description: Язык распознавания речи (ru, en или auto)
         metadata:
           type: object
           properties:
