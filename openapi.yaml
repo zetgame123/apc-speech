@@ -266,6 +266,38 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /v1/calls/{call_id}/audio:
+    get:
+      summary: Получение или стриминг оригинального аудиофайла звонка
+      operationId: getCallAudio
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: call_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: namespace
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Аудиопоток звонка
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /v1/calls:
     get:
       summary: Поиск и листинг звонков

@@ -75,6 +75,9 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - ASR_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
+      - VOICE_SEARCH_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
+      - VOICE_SEARCH_BEAM_SIZE=1
     volumes:
       - ./models:/app/models:ro
     ports:
@@ -87,8 +90,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 768M
+          cpus: '2.0'
+          memory: 1280M
 
   worker-long:
     build:

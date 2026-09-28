@@ -1,3 +1,4 @@
+import math
 import os
 from typing import Any
 
@@ -141,7 +142,7 @@ class AsrEngine:
                 "start": round(s.start, 2),
                 "end": round(s.end, 2),
                 "text": clean_text,
-                "confidence": round(s.avg_logprob, 3),
+                "confidence": round(min(1.0, max(0.0, math.exp(s.avg_logprob))), 3) if s.avg_logprob is not None else 0.95,
                 "no_speech_prob": round(s.no_speech_prob, 3),
                 "words": words,
             })

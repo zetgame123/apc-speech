@@ -8,6 +8,7 @@ router = APIRouter(tags=["dashboard"])
 STATIC_INDEX_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "index.html")
 
 
+@router.get("/", response_class=HTMLResponse)
 @router.get("/dashboard", response_class=HTMLResponse)
 @router.get("/ui", response_class=HTMLResponse)
 async def serve_dashboard():

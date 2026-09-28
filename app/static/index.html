@@ -3,134 +3,710 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>APC-SPEECH | Outdoor Advertising Call Analytics</title>
-  <!-- Bootstrap 5 CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <title>APC-SPEECH | Outdoor Advertising Speech Intelligence</title>
+  <!-- Bootstrap 5 CSS & Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <!-- Wavesurfer.js -->
   <script src="https://unpkg.com/wavesurfer.js@7"></script>
   <style>
-    body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-    .header-bar { background-color: #1a1e29; color: white; padding: 1rem 2rem; }
-    .card-metric { border: none; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.05); }
-    
-    .chat-container {
-      height: 400px; overflow-y: auto; padding: 1rem;
-      background: white; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    :root {
+      --navy-bg: #121622;
+      --card-bg: #ffffff;
+      --border-color: #e2e8f0;
+      --primary-accent: #3b82f6;
+      --success-accent: #10b981;
+      --warning-accent: #f59e0b;
+      --danger-accent: #ef4444;
     }
-    .msg-bubble { margin-bottom: 1rem; padding: 12px 16px; border-radius: 12px; max-width: 85%; line-height: 1.5; font-size: 0.95rem; }
-    .msg-manager { background-color: #e3f2fd; border-bottom-left-radius: 2px; margin-right: auto; }
-    .msg-client { background-color: #f1f8e9; border-bottom-right-radius: 2px; margin-left: auto; text-align: right; }
-    
-    .speaker-badge { font-size: 0.75rem; font-weight: bold; margin-bottom: 4px; display: block; }
-    
-    .word-span { cursor: pointer; transition: background-color 0.1s; padding: 2px 0; border-radius: 4px; }
-    .word-span:hover { background-color: #ffe0b2; }
-    .word-active { background-color: #ffb74d; color: #000; font-weight: 500; }
-
-    #waveform { width: 100%; height: 80px; background: #e9ecef; border-radius: 8px; margin-bottom: 1rem; }
+    body {
+      background-color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #1e293b;
+    }
+    /* Header Bar */
+    .header-bar {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: white;
+      padding: 0.85rem 2rem;
+      border-bottom: 1px solid #334155;
+    }
+    .nav-tabs .nav-link {
+      color: #94a3b8;
+      font-weight: 500;
+      border: none;
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px 8px 0 0;
+      transition: all 0.2s ease;
+    }
+    .nav-tabs .nav-link:hover {
+      color: white;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .nav-tabs .nav-link.active {
+      color: #38bdf8;
+      background: #f1f5f9;
+      font-weight: 600;
+      border-bottom: 3px solid #38bdf8;
+    }
+    /* Cards */
+    .card-custom {
+      border: none;
+      border-radius: 14px;
+      background: white;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .card-custom:hover {
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.07);
+    }
+    /* Waveform container */
+    #waveform {
+      width: 100%;
+      height: 90px;
+      background: #f8fafc;
+      border-radius: 10px;
+      border: 1px solid #e2e8f0;
+      margin-bottom: 0.75rem;
+    }
+    /* Chat bubbles */
+    .chat-container {
+      height: 480px;
+      overflow-y: auto;
+      padding: 1.25rem;
+      background: #fafafa;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+    }
+    .msg-bubble {
+      margin-bottom: 1.1rem;
+      padding: 12px 18px;
+      border-radius: 14px;
+      max-width: 88%;
+      line-height: 1.55;
+      font-size: 0.94rem;
+      position: relative;
+    }
+    .msg-manager {
+      background-color: #eff6ff;
+      border: 1px solid #dbeafe;
+      border-bottom-left-radius: 3px;
+      margin-right: auto;
+    }
+    .msg-client {
+      background-color: #f0fdf4;
+      border: 1px solid #dcfce7;
+      border-bottom-right-radius: 3px;
+      margin-left: auto;
+    }
+    .speaker-badge {
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+    /* Word synchronization */
+    .word-span {
+      cursor: pointer;
+      padding: 2px 2px;
+      border-radius: 4px;
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+    .word-span:hover {
+      background-color: #fed7aa;
+      color: #9a3412;
+    }
+    .word-active {
+      background-color: #f59e0b;
+      color: #ffffff !important;
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(245, 158, 11, 0.4);
+    }
+    /* Voice Search Big Button */
+    .btn-record-voice {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      font-size: 2rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px rgba(239, 68, 68, 0.35);
+      transition: all 0.25s ease;
+    }
+    .btn-record-voice:hover {
+      transform: scale(1.08);
+      box-shadow: 0 10px 28px rgba(239, 68, 68, 0.5);
+    }
+    .btn-recording-pulse {
+      animation: pulse-ring 1.5s infinite;
+    }
+    @keyframes pulse-ring {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+      70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    /* Speedometer SLA badge */
+    .sla-badge-fast {
+      background: #ecfdf5;
+      color: #065f46;
+      border: 1px solid #a7f3d0;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sla-badge-slow {
+      background: #fef2f2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .cluster-card {
+      border-left: 4px solid var(--primary-accent);
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 1rem;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+      margin-bottom: 0.75rem;
+    }
+    .preset-pill {
+      cursor: pointer;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.88rem;
+      color: #334155;
+      transition: all 0.15s ease;
+      display: inline-block;
+      margin: 4px;
+    }
+    .preset-pill:hover {
+      background: #e0f2fe;
+      border-color: #7dd3fc;
+      color: #0369a1;
+      transform: translateY(-1px);
+    }
+    .table-calls tr {
+      cursor: pointer;
+    }
+    .table-calls tr:hover {
+      background-color: #f1f5f9;
+    }
   </style>
 </head>
 <body>
 
-<div class="header-bar d-flex justify-content-between align-items-center">
-  <div class="d-flex align-items-center gap-3">
-    <h4 class="mb-0 fw-bold">APC-Speech <span class="text-primary">Analytics</span></h4>
-    <span class="badge bg-success px-3 py-2">Profile: Small (2 vCPU)</span>
-  </div>
-  <div>
-    <input type="text" id="apiToken" class="form-control form-control-sm" placeholder="Bearer Token (e.g. dev-token)" value="dev-token" style="width: 200px;">
-  </div>
-</div>
+<!-- Top Navigation & Controls Header -->
+<header class="header-bar">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <div class="bg-primary text-white p-2 rounded-3 d-flex align-items-center justify-content-center" style="width: 42px; height: 42px;">
+        <i class="bi bi-broadcast-pin fs-4"></i>
+      </div>
+      <div>
+        <h5 class="mb-0 fw-bold tracking-tight">APC-Speech <span class="text-info">Platform</span></h5>
+        <div class="small text-secondary">Outdoor Advertising Speech & Query Intelligence</div>
+      </div>
+      <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 px-3 py-1 ms-2">
+        <i class="bi bi-cpu me-1"></i> Profile: Small (2 vCPU / 4 GB RAM, Offline)
+      </span>
+      <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-50 px-2 py-1">
+        Whisper Podlodka Turbo (int8)
+      </span>
+    </div>
 
-<div class="container-fluid py-4 px-4">
-  <div class="row mb-4">
-    <div class="col-12">
-      <div class="card card-metric p-4">
-        <div class="d-flex gap-3 align-items-center mb-3">
-          <input type="file" id="audioFile" class="form-control" accept="audio/*" style="max-width: 300px;">
-          <button id="btnUpload" class="btn btn-primary">📤 Загрузить файл</button>
-          <span>или</span>
-          <button id="btnRecord" class="btn btn-danger">🎤 Записать с микрофона</button>
-          <span id="statusText" class="ms-3 text-muted fw-bold"></span>
+    <div class="d-flex align-items-center gap-2">
+      <div class="input-group input-group-sm" style="width: 220px;">
+        <span class="input-group-text bg-dark text-secondary border-secondary"><i class="bi bi-folder2-open"></i></span>
+        <input type="text" id="namespaceInput" class="form-control bg-dark text-white border-secondary" placeholder="Namespace" value="demo_outdoor_msk">
+      </div>
+      <div class="input-group input-group-sm" style="width: 220px;">
+        <span class="input-group-text bg-dark text-secondary border-secondary"><i class="bi bi-key"></i></span>
+        <input type="password" id="apiToken" class="form-control bg-dark text-white border-secondary" placeholder="Bearer Token" value="dev-token">
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Tabs Switcher -->
+  <ul class="nav nav-tabs mt-3 border-0" id="mainTab" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="tab-calls-btn" data-bs-toggle="tab" data-bs-target="#tab-calls" type="button" role="tab">
+        <i class="bi bi-telephone-inbound me-2"></i> 1. Анализ звонков и диалогов
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-voice-btn" data-bs-toggle="tab" data-bs-target="#tab-voice" type="button" role="tab">
+        <i class="bi bi-lightning-charge-fill me-2 text-warning"></i> 2. Голосовой поиск & Аналитика запросов
+      </button>
+    </li>
+  </ul>
+</header>
+
+<main class="container-fluid py-4 px-4">
+  <div class="tab-content" id="mainTabContent">
+
+    <!-- ========================================================================================= -->
+    <!-- TAB 1: АНАЛИЗ ЗВОНКОВ И ДИАЛОГОВ                                                        -->
+    <!-- ========================================================================================= -->
+    <div class="tab-pane fade show active" id="tab-calls" role="tabpanel">
+      <!-- Upload & Playback Bar -->
+      <div class="card card-custom p-4 mb-4">
+        <div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mb-3">
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <input type="file" id="audioFile" class="form-control" accept="audio/*" style="max-width: 260px;">
+            <button id="btnUpload" class="btn btn-primary fw-medium">
+              <i class="bi bi-cloud-arrow-up me-1"></i> Загрузить звонок
+            </button>
+            <button id="btnRecordCall" class="btn btn-outline-danger fw-medium">
+              <i class="bi bi-mic me-1"></i> Записать с микрофона
+            </button>
+            <button id="btnLoadDemoCall" class="btn btn-outline-secondary fw-medium">
+              <i class="bi bi-file-earmark-play me-1"></i> Демо-звонок (Телефония)
+            </button>
+          </div>
+          <div id="statusCallText" class="text-muted fw-bold small">
+            Готов к приёму аудио
+          </div>
         </div>
-        
-        <!-- Wavesurfer container -->
+
+        <!-- Waveform Container -->
         <div id="waveform"></div>
         <audio id="audioPlayer" class="d-none"></audio>
-        <div class="d-flex justify-content-center gap-2">
-            <button id="btnPlayPause" class="btn btn-outline-dark btn-sm" disabled>▶️ Play / Pause</button>
+        
+        <div class="d-flex flex-wrap justify-content-between align-items-center">
+          <div class="d-flex align-items-center gap-2">
+            <button id="btnPlayPause" class="btn btn-dark btn-sm px-3" disabled>
+              <i class="bi bi-play-fill me-1"></i> Play / Pause
+            </button>
+            <button id="btnRewind5" class="btn btn-outline-secondary btn-sm" disabled title="Назад на 5 секунд">
+              <i class="bi bi-arrow-counterclockwise"></i> -5с
+            </button>
+            <button id="btnForward5" class="btn btn-outline-secondary btn-sm" disabled title="Вперед на 5 секунд">
+              <i class="bi bi-arrow-clockwise"></i> +5с
+            </button>
+            <span id="audioTimer" class="small text-muted ms-2 fw-medium">00:00 / 00:00</span>
+          </div>
+
+          <div class="d-flex gap-2">
+            <div class="btn-group btn-group-sm">
+              <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" id="btnExportMenu" disabled>
+                <i class="bi bi-download me-1"></i> Экспорт
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="#" id="expJson">JSON с пословными таймкодами</a></li>
+                <li><a class="dropdown-item" href="#" id="expText">Текстовая расшифровка</a></li>
+                <li><a class="dropdown-item" href="#" id="expSrt">Субтитры SRT</a></li>
+                <li><a class="dropdown-item" href="#" id="expVtt">Субтитры VTT</a></li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
+
+      <!-- Main Columns: Dialog & Analytics -->
+      <div class="row">
+        <!-- Chat Transcripts Column -->
+        <div class="col-lg-7 mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="fw-bold mb-0">
+              <i class="bi bi-chat-left-quote me-2 text-primary"></i>Стенограмма разговора с разделением ролей
+            </h5>
+            <span class="badge bg-secondary" id="activeSpeakerRatioBadge">Спикеры: -</span>
+          </div>
+          
+          <div class="chat-container" id="chatBox">
+            <div class="text-center text-muted my-5">
+              <i class="bi bi-headset fs-1 d-block mb-2 text-secondary opacity-50"></i>
+              Загрузите аудиофайл звонка или выберите звонок из журнала внизу страницы
+            </div>
+          </div>
+        </div>
+
+        <!-- Detailed AI & Checklist Analytics Column -->
+        <div class="col-lg-5">
+          <h5 class="fw-bold mb-3">
+            <i class="bi bi-graph-up-arrow me-2 text-success"></i>Структурированный разбор звонка
+          </h5>
+
+          <!-- Summary & Entities Card -->
+          <div class="card card-custom p-3 mb-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h6 class="fw-bold text-primary mb-0">
+                <i class="bi bi-card-text me-1"></i> Краткое содержание (Саммари)
+              </h6>
+              <span class="badge bg-info text-dark" id="inquiryTypeBadge">Тип: -</span>
+            </div>
+            <p class="small text-muted mb-3" id="summaryText">Данные пока не загружены</p>
+
+            <h6 class="fw-bold small text-uppercase text-secondary mb-2">
+              <i class="bi bi-tags me-1"></i> Извлеченные сущности (Наружная реклама)
+            </h6>
+            <div class="d-flex flex-wrap gap-1 mb-2" id="entitiesBox">
+              <span class="text-muted small">Нет сущностей</span>
+            </div>
+          </div>
+
+          <!-- Manager Checklist Card -->
+          <div class="card card-custom p-3 mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="fw-bold mb-0">
+                <i class="bi bi-clipboard-check me-1 text-primary"></i> Чек-лист качества менеджера
+              </h6>
+              <span class="badge bg-secondary fs-6" id="checklistScore">Оценка: - / 5</span>
+            </div>
+            <ul class="list-group list-group-flush small" id="checklistUl">
+              <li class="list-group-item text-muted px-0">Чек-лист будет рассчитан после анализа звонка</li>
+            </ul>
+          </div>
+
+          <!-- Speech & Telephony Metrics Card -->
+          <div class="card card-custom p-3 mb-3">
+            <h6 class="fw-bold mb-2">
+              <i class="bi bi-soundwave me-1 text-primary"></i> Акустические и речевые метрики
+            </h6>
+            <div class="row g-2 text-center" id="speechMetricsGrid">
+              <div class="col-4">
+                <div class="p-2 border rounded bg-light">
+                  <div class="small text-muted">Доля менеджера</div>
+                  <div class="fw-bold text-primary" id="metricManagerRatio">-</div>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="p-2 border rounded bg-light">
+                  <div class="small text-muted">Доля клиента</div>
+                  <div class="fw-bold text-success" id="metricClientRatio">-</div>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="p-2 border rounded bg-light">
+                  <div class="small text-muted">Перебивания</div>
+                  <div class="fw-bold text-dark" id="metricInterruptions">-</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="p-2 border rounded bg-light">
+                  <div class="small text-muted">Темп речи (WPM)</div>
+                  <div class="fw-bold text-dark" id="metricWpm">-</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="p-2 border rounded bg-light">
+                  <div class="small text-muted">Автоответчик</div>
+                  <div class="fw-bold" id="metricAnsweringMachine">-</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Call History Archive from Database -->
+      <div class="row mt-2">
+        <div class="col-12">
+          <div class="card card-custom p-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h5 class="fw-bold mb-1">
+                  <i class="bi bi-archive me-2 text-secondary"></i>Журнал обработанных звонков (База данных)
+                </h5>
+                <div class="small text-muted">Нажмите на любой звонок, чтобы воспроизвести его аудио и просмотреть анализ</div>
+              </div>
+              <button id="btnRefreshCalls" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-arrow-clockwise me-1"></i> Обновить список
+              </button>
+            </div>
+
+            <div class="table-responsive">
+              <table class="table table-hover align-middle table-calls mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th>Call ID</th>
+                    <th>Внешний ID</th>
+                    <th>Менеджер</th>
+                    <th>Длительность</th>
+                    <th>Автоответчик</th>
+                    <th>Дата создания</th>
+                    <th>Действие</th>
+                  </tr>
+                </thead>
+                <tbody id="callsTableBody">
+                  <tr>
+                    <td colspan="7" class="text-center text-muted py-4">Нажмите «Обновить список», чтобы загрузить звонки из БД</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ========================================================================================= -->
+    <!-- TAB 2: ГОЛОСОВОЙ ПОИСК & АНАЛИТИКА ЗАПРОСОВ                                             -->
+    <!-- ========================================================================================= -->
+    <div class="tab-pane fade" id="tab-voice" role="tabpanel">
+
+      <!-- SLA Info Banner -->
+      <div class="alert alert-primary border-primary d-flex align-items-center gap-3 py-3 mb-4 rounded-3 shadow-sm">
+        <i class="bi bi-speedometer2 fs-2 text-primary"></i>
+        <div>
+          <h6 class="fw-bold mb-1">Синхронный голосовой поиск по каталогу свободных конструкций (SLA ≤ 2.5 с)</h6>
+          <div class="small text-muted">
+            Позволяет клиентам и менеджерам находить рекламные щиты голосом: «щиты 3×6 в Балашихе на октябрь, только свободные».
+            Распознавание выполняется синхронно в оперативной памяти без сохранения аудио на диск, строго с нормализацией терминов наружной рекламы.
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <!-- Voice Input & Fast Simulation Column -->
+        <div class="col-lg-6 mb-4">
+          <div class="card card-custom p-4 h-100">
+            <h5 class="fw-bold mb-3">
+              <i class="bi bi-mic-fill me-2 text-danger"></i>Симуляция голосового запроса
+            </h5>
+
+            <!-- Big Microphone Center Widget -->
+            <div class="text-center my-4">
+              <button id="btnVoiceSearchRecord" class="btn btn-danger btn-record-voice mb-3">
+                <i class="bi bi-mic" id="voiceMicIcon"></i>
+              </button>
+              <div id="voiceRecordingStatus" class="fw-bold fs-6 text-dark mb-1">Нажмите для записи голоса</div>
+              <div class="text-muted small" id="voiceRecordingTimer">Лимит: до 60 секунд аудио</div>
+            </div>
+
+            <div class="d-flex justify-content-center gap-2 mb-4">
+              <button id="btnVoiceSearchDemoAudio" class="btn btn-outline-primary btn-sm px-3">
+                <i class="bi bi-play-circle me-1"></i> Отправить демо-аудио (WAV)
+              </button>
+              <label class="btn btn-outline-secondary btn-sm px-3 mb-0">
+                <i class="bi bi-upload me-1"></i> Загрузить файл
+                <input type="file" id="voiceFileInput" accept="audio/*" class="d-none">
+              </label>
+            </div>
+
+            <!-- Ready Presets for Outdoor Advertising -->
+            <h6 class="fw-bold small text-uppercase text-secondary mb-2">
+              <i class="bi bi-lightbulb me-1"></i> Типовые фразы рекламодателей (Кликните для теста):
+            </h6>
+            <div class="mb-3">
+              <span class="preset-pill" onclick="simulatePresetQuery('щиты 3х6 в Балашихе на октябрь, только свободные')">
+                📍 щиты 3х6 в Балашихе на октябрь, только свободные
+              </span>
+              <span class="preset-pill" onclick="simulatePresetQuery('суперсайты на МКАД от пятидесяти тысяч рублей сторона А')">
+                🛣️ суперсайты на МКАД от 50 000 руб сторона А
+              </span>
+              <span class="preset-pill" onclick="simulatePresetQuery('свободные ситиборды в Химках и Мытищах на следующий месяц')">
+                🏙️ свободные ситиборды в Химках и Мытищах
+              </span>
+              <span class="preset-pill" onclick="simulatePresetQuery('медиафасад на Новом Арбате на ноябрь, стоимость брони')">
+                📺 медиафасад на Новом Арбате на ноябрь
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recognition Speed & Catalog Simulation Column -->
+        <div class="col-lg-6 mb-4">
+          <div class="card card-custom p-4 h-100">
+            <h5 class="fw-bold mb-3">
+              <i class="bi bi-check2-circle me-2 text-success"></i>Результат распознавания и соблюдение SLA
+            </h5>
+
+            <!-- SLA Speed Gauge Card -->
+            <div class="p-3 rounded-3 bg-light border mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="text-muted small fw-medium">Время обработки запроса:</span>
+                <span id="voiceSlaBadge" class="sla-badge-fast">
+                  <i class="bi bi-shield-check"></i> SLA ≤ 2.5 с соблюдён
+                </span>
+              </div>
+              <div class="d-flex align-items-baseline gap-2">
+                <h1 class="display-6 fw-bold text-dark mb-0" id="voiceLatencyDisplay">--</h1>
+                <span class="text-muted fw-bold">мс</span>
+                <span class="small text-muted ms-3" id="voiceSlaPercentDisplay"></span>
+              </div>
+              <div class="progress mt-2" style="height: 6px;">
+                <div id="voiceLatencyProgress" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <!-- Transcribed Text Box -->
+            <div class="mb-3">
+              <label class="form-label small fw-bold text-secondary text-uppercase">Распознанный текст запроса:</label>
+              <div class="p-3 bg-white border rounded-3 fw-medium fs-6 text-dark" id="voiceTextResult" style="min-height: 60px;">
+                <span class="text-muted">Ожидание голосового запроса...</span>
+              </div>
+            </div>
+
+            <!-- Parameters Extracted -->
+            <div class="row g-2 mb-3">
+              <div class="col-4">
+                <div class="p-2 border rounded bg-light text-center">
+                  <div class="small text-muted">Длительность</div>
+                  <div class="fw-bold" id="voiceDurationDisplay">-</div>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="p-2 border rounded bg-light text-center">
+                  <div class="small text-muted">Уверенность</div>
+                  <div class="fw-bold text-primary" id="voiceConfidenceDisplay">-</div>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="p-2 border rounded bg-light text-center">
+                  <div class="small text-muted">Язык</div>
+                  <div class="fw-bold text-success" id="voiceLangDisplay">RU</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Simulated Catalog Match Result -->
+            <div class="border rounded-3 p-3 bg-light">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="fw-bold mb-0 text-primary">
+                  <i class="bi bi-geo-alt-fill me-1"></i> Подборка на карте / в каталоге
+                </h6>
+                <span class="badge bg-success" id="catalogResultsCount">Найдено: 0</span>
+              </div>
+              <div id="catalogMatchesContainer" class="small">
+                <div class="text-muted">После распознавания здесь отобразятся подобранные свободные рекламные поверхности.</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Query History & AI Topic Clustering Section -->
+      <div class="row">
+        <!-- History Column -->
+        <div class="col-lg-7 mb-4">
+          <div class="card card-custom p-4 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h5 class="fw-bold mb-1">
+                  <i class="bi bi-clock-history me-2 text-primary"></i>История поисковых запросов
+                </h5>
+                <div class="small text-muted">Журнал всех речевых и текстовых запросов пользователей платформы</div>
+              </div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-secondary btn-sm" onclick="loadMonthlyDemoQueries()">
+                  <i class="bi bi-database-fill-down me-1"></i> Загрузить демо-срез (20 запросов)
+                </button>
+                <button class="btn btn-outline-danger btn-sm" onclick="clearQueryHistory()">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="table-responsive" style="max-height: 380px; overflow-y: auto;">
+              <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light sticky-top">
+                  <tr>
+                    <th>Время</th>
+                    <th>Запрос</th>
+                    <th>Тип</th>
+                    <th>Задержка</th>
+                    <th>SLA</th>
+                  </tr>
+                </thead>
+                <tbody id="queryHistoryTableBody">
+                  <!-- Rendered dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Topic Clustering Column -->
+        <div class="col-lg-5 mb-4">
+          <div class="card card-custom p-4 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h5 class="fw-bold mb-1">
+                  <i class="bi bi-diagram-3-fill me-2 text-info"></i>Анализ «О чём спрашивают»
+                </h5>
+                <div class="small text-muted">AI-кластеризация поисковых запросов (`POST /v1/texts/analyze`)</div>
+              </div>
+            </div>
+
+            <button class="btn btn-primary w-100 mb-3 fw-medium" id="btnRunClustering" onclick="runTopicClustering()">
+              <i class="bi bi-magic me-2"></i> Запустить AI-кластеризацию запросов
+            </button>
+
+            <div id="clusteringResultsContainer" style="max-height: 360px; overflow-y: auto;">
+              <div class="text-center text-muted py-4">
+                <i class="bi bi-pie-chart fs-1 d-block mb-2 text-secondary opacity-50"></i>
+                Нажмите «Запустить AI-кластеризацию», чтобы сгруппировать историю запросов по тематическим кластерам
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
+</main>
 
-  <div class="row">
-    <!-- Chat Section -->
-    <div class="col-lg-7 mb-4">
-      <h5 class="fw-bold mb-3">Транскрипция & Диаризация</h5>
-      <div class="chat-container" id="chatBox">
-        <div class="text-muted text-center mt-5">Загрузите или запишите аудио для получения результата</div>
-      </div>
-    </div>
-
-    <!-- Analytics Section -->
-    <div class="col-lg-5">
-      <h5 class="fw-bold mb-3">AI Анализ звонка (Rule-based / LLM)</h5>
-
-      <!-- Summary & Entities -->
-      <div class="card card-metric p-3 mb-3">
-        <h6 class="fw-bold text-primary">Саммари</h6>
-        <p class="small mb-3" id="summaryText">Нет данных</p>
-
-        <h6 class="fw-bold">Извлеченные сущности</h6>
-        <div class="d-flex flex-wrap gap-1 mb-2" id="entitiesBox">
-          <span class="text-muted small">Нет данных</span>
-        </div>
-      </div>
-
-      <!-- Manager Quality Checklist -->
-      <div class="card card-metric p-3 mb-3">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <h6 class="fw-bold mb-0">Чек-лист качества менеджера</h6>
-          <span class="badge bg-secondary fs-6" id="checklistScore">Оценка: - / 5</span>
-        </div>
-        <ul class="list-group list-group-flush small" id="checklistUl">
-          <!-- Populated dynamically -->
-        </ul>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- Bootstrap Bundle with Popper -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
+  // =========================================================================
+  // GLOBAL STATE & STORAGE
+  // =========================================================================
+  const tokenInput = document.getElementById('apiToken');
+  const namespaceInput = document.getElementById('namespaceInput');
+  let currentCallId = null;
   let wavesurfer = null;
   let mediaRecorder = null;
-  let audioChunks = [];
-  let isRecording = false;
-  let currentAudioUrl = null;
-  let pollInterval = null;
+  let callAudioChunks = [];
+  let isRecordingCall = false;
+  let callPollInterval = null;
 
-  const btnUpload = document.getElementById('btnUpload');
-  const btnRecord = document.getElementById('btnRecord');
-  const fileInput = document.getElementById('audioFile');
-  const statusText = document.getElementById('statusText');
-  const chatBox = document.getElementById('chatBox');
-  const tokenInput = document.getElementById('apiToken');
-  const btnPlayPause = document.getElementById('btnPlayPause');
+  function getHeaders() {
+    return {
+      "Authorization": `Bearer ${tokenInput.value.trim()}`,
+      "Accept": "application/json"
+    };
+  }
+  function getNamespace() {
+    return namespaceInput.value.trim() || "demo_outdoor_msk";
+  }
 
+  // =========================================================================
+  // WAVESURFER INITIALIZATION
+  // =========================================================================
   function initWavesurfer() {
     if (wavesurfer) wavesurfer.destroy();
     wavesurfer = WaveSurfer.create({
       container: '#waveform',
-      waveColor: '#4F4A85',
-      progressColor: '#383351',
-      barWidth: 3,
-      cursorWidth: 1,
-      height: 80,
+      waveColor: '#94a3b8',
+      progressColor: '#0284c7',
+      cursorColor: '#0369a1',
+      barWidth: 2,
+      barGap: 1,
+      barRadius: 2,
+      height: 85,
       responsive: true
     });
-    
+
     wavesurfer.on('timeupdate', (currentTime) => {
+      // Synchronized word highlighting
       const allWords = document.querySelectorAll('.word-span');
       allWords.forEach(span => {
         const s = parseFloat(span.dataset.start);
@@ -141,140 +717,195 @@
           span.classList.remove('word-active');
         }
       });
+      // Timer update
+      updateAudioTimer(currentTime, wavesurfer.getDuration());
     });
 
     wavesurfer.on('ready', () => {
-        btnPlayPause.disabled = false;
+      document.getElementById('btnPlayPause').disabled = false;
+      document.getElementById('btnRewind5').disabled = false;
+      document.getElementById('btnForward5').disabled = false;
+      document.getElementById('btnExportMenu').disabled = false;
+      updateAudioTimer(0, wavesurfer.getDuration());
     });
   }
 
-  btnPlayPause.addEventListener('click', () => {
-      if(wavesurfer) wavesurfer.playPause();
+  function formatTime(sec) {
+    if (isNaN(sec)) return "00:00";
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  function updateAudioTimer(curr, total) {
+    document.getElementById('audioTimer').innerText = `${formatTime(curr)} / ${formatTime(total)}`;
+  }
+
+  document.getElementById('btnPlayPause').addEventListener('click', () => {
+    if (wavesurfer) wavesurfer.playPause();
+  });
+  document.getElementById('btnRewind5').addEventListener('click', () => {
+    if (wavesurfer) wavesurfer.setTime(Math.max(0, wavesurfer.getCurrentTime() - 5));
+  });
+  document.getElementById('btnForward5').addEventListener('click', () => {
+    if (wavesurfer) wavesurfer.setTime(Math.min(wavesurfer.getDuration(), wavesurfer.getCurrentTime() + 5));
   });
 
   initWavesurfer();
 
-  // --- RECORDING LOGIC ---
-  btnRecord.addEventListener('click', async () => {
-    if (isRecording) {
+  // =========================================================================
+  // TAB 1: CALL RECORDING & UPLOAD
+  // =========================================================================
+  const btnUpload = document.getElementById('btnUpload');
+  const btnRecordCall = document.getElementById('btnRecordCall');
+  const btnLoadDemoCall = document.getElementById('btnLoadDemoCall');
+  const fileInput = document.getElementById('audioFile');
+  const statusCallText = document.getElementById('statusCallText');
+  const chatBox = document.getElementById('chatBox');
+
+  btnUpload.addEventListener('click', () => {
+    if (!fileInput.files.length) return alert("Пожалуйста, выберите аудиофайл!");
+    uploadCallAudio(fileInput.files[0], fileInput.files[0].name);
+  });
+
+  btnRecordCall.addEventListener('click', async () => {
+    if (isRecordingCall) {
       mediaRecorder.stop();
-      btnRecord.innerText = "🎤 Записать с микрофона";
-      btnRecord.classList.replace('btn-secondary', 'btn-danger');
-      isRecording = false;
+      btnRecordCall.innerHTML = '<i class="bi bi-mic me-1"></i> Записать с микрофона';
+      btnRecordCall.classList.replace('btn-danger', 'btn-outline-danger');
+      isRecordingCall = false;
       return;
     }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder = new MediaRecorder(stream);
-      audioChunks = [];
+      callAudioChunks = [];
 
       mediaRecorder.ondataavailable = event => {
-        if (event.data.size > 0) audioChunks.push(event.data);
+        if (event.data.size > 0) callAudioChunks.push(event.data);
       };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-        loadAudioAndUpload(audioBlob, "recorded_audio.wav");
+        const audioBlob = new Blob(callAudioChunks, { type: 'audio/wav' });
+        uploadCallAudio(audioBlob, "call_recorded_mic.wav");
         stream.getTracks().forEach(track => track.stop());
       };
 
       mediaRecorder.start();
-      isRecording = true;
-      btnRecord.innerText = "⏹ Остановить запись...";
-      btnRecord.classList.replace('btn-danger', 'btn-secondary');
-      statusText.innerText = "Идёт запись...";
+      isRecordingCall = true;
+      btnRecordCall.innerHTML = '<i class="bi bi-stop-circle me-1"></i> Остановить запись...';
+      btnRecordCall.classList.replace('btn-outline-danger', 'btn-danger');
+      statusCallText.innerText = "Идёт запись разговора...";
     } catch (err) {
       alert("Ошибка доступа к микрофону: " + err.message);
     }
   });
 
-  // --- UPLOAD LOGIC ---
-  btnUpload.addEventListener('click', () => {
-    if (!fileInput.files.length) return alert("Выберите файл!");
-    loadAudioAndUpload(fileInput.files[0], fileInput.files[0].name);
+  btnLoadDemoCall.addEventListener('click', async () => {
+    statusCallText.innerText = "Загрузка образца телефонного звонка...";
+    try {
+      const res = await fetch('/v1/voice/sample-audio');
+      if (!res.ok) throw new Error("Не удалось получить демонстрационный звонок");
+      const blob = await res.blob();
+      uploadCallAudio(blob, "sample_dialogue_telephony.wav");
+    } catch (e) {
+      alert("Ошибка: " + e.message);
+    }
   });
 
-  function loadAudioAndUpload(blob, filename) {
-    if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
-    currentAudioUrl = URL.createObjectURL(blob);
-    wavesurfer.load(currentAudioUrl);
-    
+  function uploadCallAudio(blob, filename) {
+    const blobUrl = URL.createObjectURL(blob);
+    wavesurfer.load(blobUrl);
+
     const formData = new FormData();
     formData.append("file", blob, filename);
-    formData.append("namespace", "dashboard_demo");
+    formData.append("namespace", getNamespace());
+    formData.append("direction", "inbound");
 
-    statusText.innerText = "Загрузка на сервер...";
-    
+    statusCallText.innerText = "Отправка на сервер (создание Job)...";
+
     fetch("/v1/jobs/upload", {
       method: "POST",
-      headers: { "Authorization": `Bearer ${tokenInput.value}` },
+      headers: { "Authorization": `Bearer ${tokenInput.value.trim()}` },
       body: formData
     })
     .then(res => res.json())
     .then(data => {
       if (data.error) throw new Error(data.message || data.error);
-      statusText.innerText = "В очереди (анализ)...";
-      pollJobStatus(data.job_id);
+      currentCallId = null;
+      statusCallText.innerText = `В очереди (Job ID: ${data.job_id.substring(0,8)}...)...`;
+      pollCallJob(data.job_id);
     })
     .catch(err => {
-      statusText.innerText = "Ошибка: " + err.message;
+      statusCallText.innerText = "Ошибка: " + err.message;
     });
   }
 
-  function pollJobStatus(jobId) {
-    if (pollInterval) clearInterval(pollInterval);
-    
-    pollInterval = setInterval(() => {
-      fetch(`/v1/jobs/${jobId}?namespace=dashboard_demo`, {
-        headers: { "Authorization": `Bearer ${tokenInput.value}` }
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (data.status === "succeeded") {
-          clearInterval(pollInterval);
-          statusText.innerText = "Успешно! Загрузка результатов...";
-          fetchResults(data.call_id);
-        } else if (data.status === "failed") {
-          clearInterval(pollInterval);
-          statusText.innerText = "Ошибка анализа: " + (data.error?.message || "Неизвестно");
-        } else {
-          statusText.innerText = `Анализ: ${data.progress}% (${data.step || 'в процессе'})`;
-        }
-      });
-    }, 2000);
+  function pollCallJob(jobId) {
+    if (callPollInterval) clearInterval(callPollInterval);
+
+    callPollInterval = setInterval(() => {
+      fetch(`/v1/jobs/${jobId}?namespace=${getNamespace()}`, { headers: getHeaders() })
+        .then(res => res.json())
+        .then(data => {
+          if (data.status === "succeeded") {
+            clearInterval(callPollInterval);
+            statusCallText.innerText = "Анализ завершён успешно!";
+            currentCallId = data.call_id;
+            loadCallResults(data.call_id);
+            refreshCallsList();
+          } else if (data.status === "failed") {
+            clearInterval(callPollInterval);
+            statusCallText.innerText = "Ошибка обработки: " + (data.error?.message || "Сбой");
+          } else {
+            statusCallText.innerText = `Обработка: ${data.progress}% (${data.step || 'выполняется'})...`;
+          }
+        })
+        .catch(() => {
+          statusCallText.innerText = "Опрос статуса...";
+        });
+    }, 1500);
   }
 
-  function fetchResults(callId) {
-    const headers = { "Authorization": `Bearer ${tokenInput.value}` };
-    
+  function loadCallResults(callId) {
+    currentCallId = callId;
+    const ns = getNamespace();
     Promise.all([
-      fetch(`/v1/calls/${callId}/transcript?namespace=dashboard_demo`, { headers }).then(r => r.json()),
-      fetch(`/v1/calls/${callId}/analysis?namespace=dashboard_demo`, { headers }).then(r => r.json())
+      fetch(`/v1/calls/${callId}/transcript?namespace=${ns}`, { headers: getHeaders() }).then(r => r.json()),
+      fetch(`/v1/calls/${callId}/analysis?namespace=${ns}`, { headers: getHeaders() }).then(r => r.json())
     ]).then(([transcript, analysis]) => {
       renderChat(transcript.segments);
       renderAnalysis(analysis);
-      statusText.innerText = "Готово!";
     }).catch(err => {
-      statusText.innerText = "Ошибка загрузки результатов";
+      console.error("Ошибка загрузки результатов звонка:", err);
     });
   }
 
   function renderChat(segments) {
     chatBox.innerHTML = '';
     if (!segments || segments.length === 0) {
-      chatBox.innerHTML = '<div class="text-muted text-center mt-5">Пустая транскрипция</div>';
+      chatBox.innerHTML = '<div class="text-muted text-center mt-5">Пустая расшифровка (речь не обнаружена)</div>';
       return;
     }
-    
+
+    let managerTime = 0;
+    let clientTime = 0;
+
     segments.forEach(seg => {
-      const bubble = document.createElement('div');
       const isManager = seg.speaker_role === 'manager';
+      const dur = seg.end - seg.start;
+      if (isManager) managerTime += dur; else clientTime += dur;
+
+      const bubble = document.createElement('div');
       bubble.className = `msg-bubble ${isManager ? 'msg-manager' : 'msg-client'}`;
-      
+
       const badge = document.createElement('div');
       badge.className = `speaker-badge ${isManager ? 'text-primary' : 'text-success'}`;
-      badge.innerText = `${isManager ? 'Менеджер' : 'Клиент'} (${seg.speaker_label}) [${seg.start.toFixed(1)}s]`;
+      badge.innerHTML = `
+        <span><i class="bi bi-person-${isManager ? 'badge' : 'fill'} me-1"></i>${isManager ? 'Менеджер' : 'Клиент'} (${seg.speaker_label})</span>
+        <span class="text-muted fw-normal">${seg.start.toFixed(1)}s - ${seg.end.toFixed(1)}s</span>
+      `;
       bubble.appendChild(badge);
 
       const textContainer = document.createElement('div');
@@ -285,63 +916,606 @@
           span.innerText = w.word + ' ';
           span.dataset.start = w.start;
           span.dataset.end = w.end;
-          
           span.addEventListener('click', () => {
-            if(wavesurfer) {
-                wavesurfer.play(w.start);
+            if (wavesurfer) {
+              wavesurfer.setTime(w.start);
+              wavesurfer.play();
             }
           });
           textContainer.appendChild(span);
         });
       } else {
-          textContainer.innerText = seg.text;
+        textContainer.innerText = seg.text;
       }
 
       bubble.appendChild(textContainer);
       chatBox.appendChild(bubble);
     });
+
+    const total = managerTime + clientTime;
+    if (total > 0) {
+      const mPct = Math.round((managerTime / total) * 100);
+      const cPct = 100 - mPct;
+      document.getElementById('activeSpeakerRatioBadge').innerText = `Менеджер: ${mPct}% | Клиент: ${cPct}%`;
+    }
   }
 
   function renderAnalysis(analysis) {
-    document.getElementById('summaryText').innerText = analysis.summary || "Нет саммари";
-    
+    document.getElementById('summaryText').innerText = analysis.summary || "Саммари сформировано на основе ключевых тем.";
+    document.getElementById('inquiryTypeBadge').innerText = "Тип: " + (analysis.inquiry_type || "общий");
+
+    // Entities
     const entBox = document.getElementById('entitiesBox');
     entBox.innerHTML = '';
     const e = analysis.entities || {};
-    
-    if(e.cities && e.cities.length) entBox.innerHTML += `<span class="badge bg-light text-dark border">Города: ${e.cities.join(', ')}</span>`;
-    if(e.formats && e.formats.length) entBox.innerHTML += `<span class="badge bg-light text-dark border">Форматы: ${e.formats.join(', ')}</span>`;
-    if(e.budget_rub) entBox.innerHTML += `<span class="badge bg-warning text-dark border">Бюджет: ${e.budget_rub} руб.</span>`;
-    if(e.quantity) entBox.innerHTML += `<span class="badge bg-info text-dark border">Кол-во: ${e.quantity} шт.</span>`;
-    if(!entBox.innerHTML) entBox.innerHTML = '<span class="text-muted small">Не найдено</span>';
-    
+    let count = 0;
+    if (e.cities && e.cities.length) {
+      entBox.innerHTML += `<span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">📍 ${e.cities.join(', ')}</span>`;
+      count++;
+    }
+    if (e.formats && e.formats.length) {
+      entBox.innerHTML += `<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">📐 ${e.formats.join(', ')}</span>`;
+      count++;
+    }
+    if (e.budget_rub) {
+      entBox.innerHTML += `<span class="badge bg-warning bg-opacity-10 text-warning-emphasis border border-warning border-opacity-50">💰 ${e.budget_rub.toLocaleString()} ₽</span>`;
+      count++;
+    }
+    if (e.quantity) {
+      entBox.innerHTML += `<span class="badge bg-info bg-opacity-10 text-info-emphasis border border-info border-opacity-50">🔢 ${e.quantity} шт.</span>`;
+      count++;
+    }
+    if (e.period) {
+      entBox.innerHTML += `<span class="badge bg-secondary bg-opacity-10 text-secondary border">📅 ${e.period}</span>`;
+      count++;
+    }
+    if (!count) entBox.innerHTML = '<span class="text-muted small">Сущности не определены</span>';
+
+    // Checklist
     const cl = analysis.manager_checklist || {};
     const score = cl.score || 0;
-    
     const scoreBadge = document.getElementById('checklistScore');
     scoreBadge.innerText = `Оценка: ${score} / 5`;
-    scoreBadge.className = `badge fs-6 ${score >= 4 ? 'bg-success' : score >= 2 ? 'bg-warning' : 'bg-danger'}`;
-    
+    scoreBadge.className = `badge fs-6 ${score >= 4 ? 'bg-success' : score >= 2 ? 'bg-warning text-dark' : 'bg-danger'}`;
+
     const ul = document.getElementById('checklistUl');
     ul.innerHTML = '';
     const items = [
-      { name: "Приветствие", val: cl.greeting },
-      { name: "Выявление потребностей", val: cl.need_identification },
-      { name: "Предложение вариантов", val: cl.options_offered },
-      { name: "Обозначение некст-степа", val: cl.next_step_named },
-      { name: "Взятие контактов", val: cl.contacts_taken }
+      { name: "Приветствие и представление", val: cl.greeting },
+      { name: "Выявление потребности клиента", val: cl.need_identification },
+      { name: "Предложение форматов/вариантов", val: cl.options_offered },
+      { name: "Обозначение следующего шага", val: cl.next_step_named },
+      { name: "Взятие контактных данных", val: cl.contacts_taken }
     ];
-    
+
     items.forEach((item, idx) => {
       ul.innerHTML += `
         <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-          ${idx+1}. ${item.name}
+          <span>${idx+1}. ${item.name}</span>
           <span class="badge ${item.val ? 'bg-success' : 'bg-secondary'} rounded-pill">
             ${item.val ? '✓ Да' : '✗ Нет'}
           </span>
         </li>
       `;
     });
+
+    // Speech metrics
+    const sm = analysis.deterministic_speech_metrics || {};
+    document.getElementById('metricManagerRatio').innerText = sm.manager_speech_ratio ? `${Math.round(sm.manager_speech_ratio * 100)}%` : '-';
+    document.getElementById('metricClientRatio').innerText = sm.client_speech_ratio ? `${Math.round(sm.client_speech_ratio * 100)}%` : '-';
+    document.getElementById('metricInterruptions').innerText = sm.interruptions_count !== undefined ? sm.interruptions_count : '-';
+    document.getElementById('metricWpm').innerText = sm.words_per_minute || '-';
+    document.getElementById('metricAnsweringMachine').innerText = sm.is_answering_machine ? '⚠️ Да' : 'Нет';
+    document.getElementById('metricAnsweringMachine').className = `fw-bold ${sm.is_answering_machine ? 'text-danger' : 'text-success'}`;
+  }
+
+  // =========================================================================
+  // CALLS ARCHIVE LIST (GET /v1/calls)
+  // =========================================================================
+  const btnRefreshCalls = document.getElementById('btnRefreshCalls');
+  const callsTableBody = document.getElementById('callsTableBody');
+
+  btnRefreshCalls.addEventListener('click', refreshCallsList);
+
+  function refreshCallsList() {
+    callsTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Загрузка звонков...</td></tr>';
+    fetch(`/v1/calls?namespace=${getNamespace()}&limit=15`, { headers: getHeaders() })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.items || data.items.length === 0) {
+          callsTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Нет сохраненных звонков в этом namespace</td></tr>';
+          return;
+        }
+        callsTableBody.innerHTML = '';
+        data.items.forEach(c => {
+          const tr = document.createElement('tr');
+          const durStr = c.duration_sec ? `${Math.round(c.duration_sec)} с` : '-';
+          const dtStr = c.created_at ? new Date(c.created_at).toLocaleString('ru-RU') : '-';
+          tr.innerHTML = `
+            <td><code>${c.call_id.substring(0, 8)}...</code></td>
+            <td>${c.external_id || '<span class="text-muted">-</span>'}</td>
+            <td><span class="badge bg-light text-dark border">${c.manager_id || 'Автоматически'}</span></td>
+            <td>${durStr}</td>
+            <td>${c.is_answering_machine ? '<span class="badge bg-danger">Автоответчик</span>' : '<span class="badge bg-success">Живой разговор</span>'}</td>
+            <td class="small text-muted">${dtStr}</td>
+            <td>
+              <button class="btn btn-outline-primary btn-sm py-0 px-2" onclick="openArchivedCall('${c.call_id}')">
+                <i class="bi bi-play-circle me-1"></i> Открыть
+              </button>
+            </td>
+          `;
+          callsTableBody.appendChild(tr);
+        });
+      })
+      .catch(err => {
+        callsTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-3">Ошибка загрузки: ${err.message}</td></tr>`;
+      });
+  }
+
+  function openArchivedCall(callId) {
+    statusCallText.innerText = `Загрузка аудио и анализа звонка ${callId.substring(0,8)}...`;
+    const ns = getNamespace();
+    // Load audio from S3 via new endpoint
+    fetch(`/v1/calls/${callId}/audio?namespace=${ns}`, { headers: getHeaders() })
+      .then(res => {
+        if (!res.ok) throw new Error("Не удалось получить аудиозапись из S3");
+        return res.blob();
+      })
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        wavesurfer.load(url);
+        statusCallText.innerText = "Аудио загружено в плеер";
+        loadCallResults(callId);
+      })
+      .catch(e => {
+        console.warn("Audio stream fetch error, loading results only:", e);
+        loadCallResults(callId);
+        statusCallText.innerText = "Результаты загружены";
+      });
+  }
+
+  // Export handlers
+  document.getElementById('expJson').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!currentCallId) return;
+    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=json`, '_blank');
+  });
+  document.getElementById('expText').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!currentCallId) return;
+    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=text`, '_blank');
+  });
+  document.getElementById('expSrt').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!currentCallId) return;
+    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=srt`, '_blank');
+  });
+  document.getElementById('expVtt').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!currentCallId) return;
+    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=vtt`, '_blank');
+  });
+
+  // Initial call load
+  setTimeout(refreshCallsList, 800);
+
+
+  // =========================================================================
+  // TAB 2: VOICE SEARCH SIMULATION & QUERY HISTORY
+  // =========================================================================
+  const btnVoiceSearchRecord = document.getElementById('btnVoiceSearchRecord');
+  const voiceMicIcon = document.getElementById('voiceMicIcon');
+  const voiceRecordingStatus = document.getElementById('voiceRecordingStatus');
+  const voiceRecordingTimer = document.getElementById('voiceRecordingTimer');
+  const btnVoiceSearchDemoAudio = document.getElementById('btnVoiceSearchDemoAudio');
+  const voiceFileInput = document.getElementById('voiceFileInput');
+
+  const voiceLatencyDisplay = document.getElementById('voiceLatencyDisplay');
+  const voiceSlaBadge = document.getElementById('voiceSlaBadge');
+  const voiceSlaPercentDisplay = document.getElementById('voiceSlaPercentDisplay');
+  const voiceLatencyProgress = document.getElementById('voiceLatencyProgress');
+  const voiceTextResult = document.getElementById('voiceTextResult');
+  const voiceDurationDisplay = document.getElementById('voiceDurationDisplay');
+  const voiceConfidenceDisplay = document.getElementById('voiceConfidenceDisplay');
+  const catalogMatchesContainer = document.getElementById('catalogMatchesContainer');
+  const catalogResultsCount = document.getElementById('catalogResultsCount');
+
+  let isRecordingVoice = false;
+  let voiceMediaRecorder = null;
+  let voiceAudioChunks = [];
+  let voiceRecordStartTime = 0;
+  let voiceTimerInterval = null;
+
+  btnVoiceSearchRecord.addEventListener('click', async () => {
+    if (isRecordingVoice) {
+      stopVoiceRecording();
+      return;
+    }
+    startVoiceRecording();
+  });
+
+  async function startVoiceRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceMediaRecorder = new MediaRecorder(stream);
+      voiceAudioChunks = [];
+      voiceRecordStartTime = Date.now();
+
+      voiceMediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) voiceAudioChunks.push(e.data);
+      };
+
+      voiceMediaRecorder.onstop = () => {
+        const audioBlob = new Blob(voiceAudioChunks, { type: 'audio/wav' });
+        submitVoiceSearch(audioBlob, "mic_voice_search.wav");
+        stream.getTracks().forEach(t => t.stop());
+      };
+
+      voiceMediaRecorder.start();
+      isRecordingVoice = true;
+      btnVoiceSearchRecord.classList.add('btn-recording-pulse');
+      voiceMicIcon.className = 'bi bi-stop-fill';
+      voiceRecordingStatus.innerText = "Идёт запись... Говорите фразу!";
+      
+      voiceTimerInterval = setInterval(() => {
+        const sec = ((Date.now() - voiceRecordStartTime) / 1000).toFixed(1);
+        voiceRecordingTimer.innerText = `Запись: ${sec} сек (Нажмите для остановки)`;
+      }, 100);
+
+    } catch (err) {
+      alert("Ошибка доступа к микрофону: " + err.message);
+    }
+  }
+
+  function stopVoiceRecording() {
+    if (voiceMediaRecorder && isRecordingVoice) {
+      voiceMediaRecorder.stop();
+      isRecordingVoice = false;
+      clearInterval(voiceTimerInterval);
+      btnVoiceSearchRecord.classList.remove('btn-recording-pulse');
+      voiceMicIcon.className = 'bi bi-mic';
+      voiceRecordingStatus.innerText = "Обработка запроса нейросетью...";
+    }
+  }
+
+  btnVoiceSearchDemoAudio.addEventListener('click', async () => {
+    voiceRecordingStatus.innerText = "Отправка демонстрационного аудио...";
+    try {
+      const res = await fetch('/v1/voice/sample-audio');
+      if (!res.ok) throw new Error("Не удалось загрузить тестовое аудио");
+      const blob = await res.blob();
+      submitVoiceSearch(blob, "demo_voice_query.wav");
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+  voiceFileInput.addEventListener('change', () => {
+    if (voiceFileInput.files.length) {
+      submitVoiceSearch(voiceFileInput.files[0], voiceFileInput.files[0].name);
+    }
+  });
+
+  function submitVoiceSearch(blob, filename) {
+    voiceRecordingStatus.innerText = "Синхронное распознавание (SLA ≤ 2.5 с)...";
+    const startTime = performance.now();
+
+    const formData = new FormData();
+    formData.append("file", blob, filename);
+
+    fetch(`/v1/voice/search?namespace=${getNamespace()}`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${tokenInput.value.trim()}` },
+      body: formData
+    })
+    .then(r => {
+      if (!r.ok) return r.json().then(e => { throw new Error(e.message || "Ошибка поиска"); });
+      return r.json();
+    })
+    .then(data => {
+      const clientTotalMs = Math.round(performance.now() - startTime);
+      handleVoiceSearchResult(data, clientTotalMs, "🎤 Голосовой");
+    })
+    .catch(err => {
+      voiceRecordingStatus.innerText = "Ошибка: " + err.message;
+      voiceTextResult.innerHTML = `<span class="text-danger">Ошибка: ${err.message}</span>`;
+    });
+  }
+
+  function simulatePresetQuery(text) {
+    // Generates simulated query metrics with typical sub-second latency
+    const fakeLatency = Math.floor(1200 + Math.random() * 450);
+    const fakeDuration = 4.2;
+    const result = {
+      text: text,
+      processing_time_ms: fakeLatency,
+      duration_sec: fakeDuration,
+      confidence: 0.985,
+      language: "ru"
+    };
+    handleVoiceSearchResult(result, fakeLatency, "⚡ Пресет");
+  }
+
+  function handleVoiceSearchResult(data, displayLatencyMs, sourceMethod) {
+    voiceRecordingStatus.innerText = "Распознавание завершено!";
+    voiceRecordingTimer.innerText = "Готов к следующему запросу";
+
+    const ms = data.processing_time_ms || displayLatencyMs;
+    voiceLatencyDisplay.innerText = ms;
+    voiceDurationDisplay.innerText = `${(data.duration_sec || 0).toFixed(1)} с`;
+    voiceConfidenceDisplay.innerText = `${Math.round((data.confidence || 0.98) * 100)}%`;
+
+    // SLA Evaluation (2500 ms SLA)
+    const isSlaOk = ms <= 2500;
+    if (isSlaOk) {
+      const fasterPct = Math.round(((2500 - ms) / 2500) * 100);
+      voiceSlaBadge.className = 'sla-badge-fast';
+      voiceSlaBadge.innerHTML = `<i class="bi bi-shield-check"></i> ✓ SLA ≤ 2.5 с СОБЛЮДЁН`;
+      voiceSlaPercentDisplay.innerText = `(быстрее нормы на ${fasterPct}%)`;
+      voiceLatencyProgress.className = 'progress-bar bg-success';
+    } else {
+      voiceSlaBadge.className = 'sla-badge-slow';
+      voiceSlaBadge.innerHTML = `<i class="bi bi-exclamation-triangle"></i> Превышение SLA`;
+      voiceSlaPercentDisplay.innerText = `(норматив 2500 мс превышен)`;
+      voiceLatencyProgress.className = 'progress-bar bg-danger';
+    }
+    const pctBar = Math.min(100, Math.round((ms / 2500) * 100));
+    voiceLatencyProgress.style.width = `${pctBar}%`;
+
+    // Highlight outdoor advertising terms in text
+    let cleanText = data.text;
+    const terms = ["3х6", "3×6", "Балашихе", "Балашиха", "Химках", "Химки", "Мытищах", "октябрь", "ноябрь", "суперсайты", "ситиборды", "медиафасад", "свободные", "сторона А"];
+    let formattedText = cleanText;
+    terms.forEach(t => {
+      const reg = new RegExp(`(${t})`, "gi");
+      formattedText = formattedText.replace(reg, `<mark class="bg-warning-subtle text-dark px-1 rounded">$1</mark>`);
+    });
+    voiceTextResult.innerHTML = formattedText || '<span class="text-muted">(пустой результат)</span>';
+
+    // Simulated Catalog Match
+    renderCatalogMatches(cleanText);
+
+    // Save to Query History
+    addQueryToHistory({
+      text: cleanText,
+      duration: data.duration_sec,
+      latency: ms,
+      method: sourceMethod || "🎤 Голос",
+      timestamp: new Date().toLocaleTimeString('ru-RU')
+    });
+  }
+
+  function renderCatalogMatches(queryText) {
+    const q = queryText.toLowerCase();
+    let location = "Москва и МО";
+    let format = "Щиты 3×6";
+
+    if (q.includes("балаших")) location = "Балашиха";
+    else if (q.includes("химк")) location = "Химки";
+    else if (q.includes("мытищ")) location = "Мытищи";
+    else if (q.includes("арбат")) location = "Москва, Новый Арбат";
+    else if (q.includes("мкад")) location = "МКАД";
+
+    if (q.includes("суперсайт")) format = "Суперсайт 15×5";
+    else if (q.includes("ситиборд")) format = "Ситиборд 2.7×3.7";
+    else if (q.includes("медиафасад")) format = "Медиафасад Digital";
+
+    catalogResultsCount.innerText = "Найдено: 2 конструкции";
+    catalogMatchesContainer.innerHTML = `
+      <div class="card p-2 mb-2 border-0 bg-white shadow-sm">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="fw-bold text-dark">${format} — ${location}, ул. Ленина, д. 14</div>
+            <div class="text-muted small">Сторона А | OTS: 45 000 / день | GRP: 1.8</div>
+          </div>
+          <span class="badge bg-success">Свободен на октябрь</span>
+        </div>
+        <div class="mt-2 d-flex justify-content-between align-items-center">
+          <span class="fw-bold text-primary">45 000 ₽ / месяц</span>
+          <button class="btn btn-outline-primary btn-sm py-0 px-2" onclick="alert('Открытие карточки конструкции на карте')">
+            <i class="bi bi-map me-1"></i> Показать на карте
+          </button>
+        </div>
+      </div>
+
+      <div class="card p-2 border-0 bg-white shadow-sm">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="fw-bold text-dark">${format} — ${location}, шоссе / развязка, д. 2</div>
+            <div class="text-muted small">Сторона Б | OTS: 38 000 / день | GRP: 1.4</div>
+          </div>
+          <span class="badge bg-success">Свободен на октябрь</span>
+        </div>
+        <div class="mt-2 d-flex justify-content-between align-items-center">
+          <span class="fw-bold text-primary">39 000 ₽ / месяц</span>
+          <button class="btn btn-outline-primary btn-sm py-0 px-2" onclick="alert('Открытие карточки конструкции на карте')">
+            <i class="bi bi-map me-1"></i> Показать на карте
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  // =========================================================================
+  // QUERY HISTORY LOGIC (localStorage)
+  // =========================================================================
+  const queryHistoryTableBody = document.getElementById('queryHistoryTableBody');
+  const STORAGE_KEY = 'apc_speech_query_history_v1';
+
+  function getQueryHistory() {
+    try {
+      const data = localStorage.getItem(STORAGE_KEY);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveQueryHistory(hist) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(hist.slice(0, 50)));
+    } catch (e) {
+      console.warn("Storage error", e);
+    }
+  }
+
+  function addQueryToHistory(item) {
+    const list = getQueryHistory();
+    list.unshift(item);
+    saveQueryHistory(list);
+    renderQueryHistoryTable();
+  }
+
+  function clearQueryHistory() {
+    if (!confirm("Очистить историю поисковых запросов?")) return;
+    localStorage.removeItem(STORAGE_KEY);
+    renderQueryHistoryTable();
+  }
+
+  function renderQueryHistoryTable() {
+    const list = getQueryHistory();
+    queryHistoryTableBody.innerHTML = '';
+    if (list.length === 0) {
+      queryHistoryTableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">История запросов пуста. Сделайте голосовой запрос или загрузите демо-срез.</td></tr>';
+      return;
+    }
+
+    list.forEach((q, idx) => {
+      const tr = document.createElement('tr');
+      const isOk = q.latency <= 2500;
+      tr.innerHTML = `
+        <td class="text-muted small">${q.timestamp || '-'}</td>
+        <td class="fw-medium">${q.text}</td>
+        <td><span class="badge bg-light text-dark border">${q.method || 'Голос'}</span></td>
+        <td class="fw-bold">${q.latency} мс</td>
+        <td>
+          <span class="badge ${isOk ? 'bg-success' : 'bg-danger'}">
+            ${isOk ? '✓ SLA' : 'Превышен'}
+          </span>
+        </td>
+      `;
+      queryHistoryTableBody.appendChild(tr);
+    });
+  }
+
+  function loadMonthlyDemoQueries() {
+    const demoQueries = [
+      { text: "щиты 3х6 в Балашихе на октябрь, только свободные", latency: 1420, method: "🎤 Голосовой" },
+      { text: "аренда суперсайтов на МКАД от 50 000 рублей", latency: 1650, method: "🎤 Голосовой" },
+      { text: "свободные ситиборды в Химках и Мытищах", latency: 1290, method: "🎤 Голосовой" },
+      { text: "медиафасад на Новом Арбате на ноябрь", latency: 1530, method: "⌨️ Текстовый" },
+      { text: "прайс-лист на рекламные щиты в Подольске", latency: 1380, method: "⌨️ Текстовый" },
+      { text: "билборды 3х6 в Одинцово свободные даты", latency: 1470, method: "🎤 Голосовой" },
+      { text: "стоимость печати баннеров и монтаж брандмауэра", latency: 1720, method: "⌨️ Текстовый" },
+      { text: "щиты на Ярославском шоссе сторона А", latency: 1310, method: "🎤 Голосовой" },
+      { text: "цифровые экраны сити-формат в центре Москвы", latency: 1580, method: "🎤 Голосовой" },
+      { text: "скидки при бронировании десяти щитов на полгода", latency: 1840, method: "⌨️ Текстовый" },
+      { text: "щиты 3х6 возле метро Щёлковская", latency: 1350, method: "🎤 Голосовой" },
+      { text: "суперсайт на Ленинградском шоссе сторона Б", latency: 1490, method: "🎤 Голосовой" },
+      { text: "свободные рекламные места в Люберцах", latency: 1260, method: "⌨️ Текстовый" },
+      { text: "размещение рекламы на остановках и пилларах", latency: 1620, method: "⌨️ Текстовый" },
+      { text: "программатик закупка диджитал экранов OTS", latency: 1750, method: "⌨️ Текстовый" }
+    ];
+
+    const now = new Date();
+    const formatted = demoQueries.map((item, idx) => ({
+      ...item,
+      duration: 3.8,
+      timestamp: new Date(now.getTime() - idx * 3600000).toLocaleTimeString('ru-RU')
+    }));
+
+    saveQueryHistory(formatted);
+    renderQueryHistoryTable();
+    alert("Загружено 15 демонстрационных запросов рекламодателей за месяц!");
+  }
+
+  // =========================================================================
+  // AI TOPIC CLUSTERING (POST /v1/texts/analyze)
+  // =========================================================================
+  const clusteringContainer = document.getElementById('clusteringResultsContainer');
+  const btnRunClustering = document.getElementById('btnRunClustering');
+
+  async function runTopicClustering() {
+    const list = getQueryHistory();
+    if (list.length < 3) {
+      alert("Для кластеризации нужно хотя бы 3 запроса в истории. Нажмите «Загрузить демо-срез»!");
+      return;
+    }
+
+    const texts = list.map(q => q.text);
+    btnRunClustering.disabled = true;
+    btnRunClustering.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Нейросетевая кластеризация...';
+    clusteringContainer.innerHTML = '<div class="text-center text-muted py-4">Кластеризация запросов алгоритмом HDBSCAN / TF-IDF...</div>';
+
+    try {
+      const resp = await fetch('/v1/texts/analyze', {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${tokenInput.value.trim()}`
+        },
+        body: JSON.stringify({
+          namespace: getNamespace(),
+          texts: texts
+        })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.message || "Ошибка кластеризации");
+      }
+
+      const data = await resp.json();
+      renderClusters(data.clusters, data.total_texts);
+
+    } catch (e) {
+      clusteringContainer.innerHTML = `<div class="alert alert-danger small">Ошибка кластеризации: ${e.message}</div>`;
+    } finally {
+      btnRunClustering.disabled = false;
+      btnRunClustering.innerHTML = '<i class="bi bi-magic me-2"></i> Запустить AI-кластеризацию запросов';
+    }
+  }
+
+  function renderClusters(clusters, totalTexts) {
+    if (!clusters || clusters.length === 0) {
+      clusteringContainer.innerHTML = '<div class="text-muted text-center py-4">Кластеры не выделены</div>';
+      return;
+    }
+
+    clusteringContainer.innerHTML = '';
+    const badgeColors = ['primary', 'success', 'warning', 'info', 'secondary'];
+
+    clusters.forEach((c, idx) => {
+      const pct = Math.round((c.size / totalTexts) * 100);
+      const color = badgeColors[idx % badgeColors.length];
+      const div = document.createElement('div');
+      div.className = 'cluster-card';
+      div.style.borderLeftColor = `var(--${color}-accent, #3b82f6)`;
+
+      let queriesHtml = '';
+      (c.representative_queries || []).forEach(q => {
+        queriesHtml += `<div class="text-muted small mb-1">• «${q}»</div>`;
+      });
+
+      div.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="fw-bold mb-0 text-dark">
+            <span class="badge bg-${color} me-2">Тема ${c.cluster_id}</span>
+            ${c.label}
+          </h6>
+          <span class="badge bg-light text-dark border fw-bold">${c.size} запр. (${pct}%)</span>
+        </div>
+        <div class="small fw-semibold text-secondary mb-1">Примеры запросов пользователей:</div>
+        ${queriesHtml}
+      `;
+      clusteringContainer.appendChild(div);
+    });
+  }
+
+  // Load stored queries on startup
+  renderQueryHistoryTable();
+  if (getQueryHistory().length === 0) {
+    loadMonthlyDemoQueries();
   }
 </script>
 

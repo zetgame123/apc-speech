@@ -6,8 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
 from app.core.security import AuthContext, verify_auth
-from app.db.models import Analysis, Call, TranscriptSegment
+from app.db.models import Analysis, AudioObject, Call, TranscriptSegment
 from app.db.session import get_db
+from app.storage.s3 import get_storage
 
 router = APIRouter(prefix="/v1/calls", tags=["calls"])
 
@@ -124,6 +125,30 @@ async def get_analysis(
         "manager_checklist": analysis.manager_checklist,
         "deterministic_speech_metrics": analysis.speech_metrics,
     }
+
+
+@router.get("/{call_id}/audio")
+async def get_call_audio(
+    call_id: str,
+    namespace: str = Query(...),
+    auth: AuthContext = Depends(verify_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    auth.require_scope("read")
+
+    stmt = select(AudioObject).where(AudioObject.call_id == call_id, AudioObject.namespace == namespace)
+    audio_obj = (await db.execute(stmt)).scalars().first()
+    if not audio_obj:
+        raise AppError("audio_not_found", f"Аудио для звонка {call_id} не найдено", 404)
+
+    storage = get_storage()
+    try:
+        data = storage.download_bytes(audio_obj.s3_bucket, audio_obj.s3_key)
+    except Exception as e:
+        raise AppError("audio_fetch_failed", f"Не удалось получить аудиофайл: {str(e)}", 500)
+
+    media_type = audio_obj.mime_type or "audio/wav"
+    return Response(content=data, media_type=media_type)
 
 
 @router.get("")

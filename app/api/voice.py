@@ -1,7 +1,8 @@
 import io
+import os
 import time
 
-from fastapi import APIRouter, Depends, File, Header, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Header, Query, Request, Response, UploadFile
 from pydantic import BaseModel
 
 from app.api.rate_limit import rate_limit
@@ -61,10 +62,11 @@ async def voice_search(
     engine = get_voice_search_engine()
     audio_stream = io.BytesIO(clean_audio_bytes)
 
+    settings = get_settings()
     try:
         segments, meta = engine.transcribe(
             audio_stream,
-            beam_size=2,  # beam_size 2 enables hypothesis search, fixes homophone errors
+            beam_size=settings.voice_search_beam_size,
             vad_filter=True,
         )
     except Exception as e:
@@ -96,3 +98,31 @@ async def voice_search(
         duration_sec=duration,
         processing_time_ms=elapsed_ms,
     )
+
+
+@router.get(
+    "/sample-audio",
+    summary="Получение демонстрационного аудиофайла для голосового поиска",
+)
+async def get_sample_voice_audio():
+    static_sample = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        "static",
+        "sample_voice.wav",
+    )
+    if os.path.exists(static_sample):
+        with open(static_sample, "rb") as f:
+            data = f.read()
+        return Response(content=data, media_type="audio/wav")
+
+    sample_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "data",
+        "evaluation_suite",
+        "sample_clean_01_clean.wav",
+    )
+    if os.path.exists(sample_path):
+        with open(sample_path, "rb") as f:
+            data = f.read()
+        return Response(content=data, media_type="audio/wav")
+    raise AppError("sample_not_found", "Образец аудиофайла не найден", 404)
