@@ -46,6 +46,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY --chown=apcuser:apcgroup app/ /app/app/
 COPY --chown=apcuser:apcgroup config/ /app/config/
 COPY --chown=apcuser:apcgroup schemas/ /app/schemas/
+COPY --chown=apcuser:apcgroup scripts/ /app/scripts/
 COPY --chown=apcuser:apcgroup openapi.yaml /app/
 COPY --chown=apcuser:apcgroup pyproject.toml /app/
 

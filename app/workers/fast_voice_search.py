@@ -16,10 +16,18 @@ def prewarm():
     logger.info("voice_search_engine_prewarmed_ready")
 
 
-if __name__ == "__main__":
+async def main():
     prewarm()
     # Keep container alive if running as separate service
+    stop_event = asyncio.Event()
     try:
-        asyncio.get_event_loop().run_forever()
-    except (KeyboardInterrupt, SystemExit):
+        await stop_event.wait()
+    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
         logger.info("fast_voice_search_worker_stopped")
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
