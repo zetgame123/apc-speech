@@ -60,20 +60,28 @@ class AsrEngine:
         """Loads faster-whisper (CTranslate2) into memory."""
         try:
             from faster_whisper import WhisperModel
+
+            model_target = self.model_name
+            if not os.path.exists(model_target):
+                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                candidate = os.path.join(base_dir, model_target.lstrip("./"))
+                if os.path.exists(candidate):
+                    model_target = candidate
+
             logger.info(
                 "loading_asr_model",
-                model=self.model_name,
+                model=model_target,
                 device=self.device,
                 compute_type=self.compute_type,
             )
             self._model = WhisperModel(
-                self.model_name,
+                model_target,
                 device=self.device,
                 compute_type=self.compute_type,
                 cpu_threads=self.threads,
                 num_workers=1,
             )
-            logger.info("asr_model_loaded_successfully", model=self.model_name)
+            logger.info("asr_model_loaded_successfully", model=model_target)
         except Exception as e:
             logger.error("asr_model_load_error", error=str(e))
             raise
@@ -148,6 +156,7 @@ class AsrEngine:
 
 
 _asr_engine_instance: AsrEngine | None = None
+_voice_search_engine_instance: AsrEngine | None = None
 
 
 def get_asr_engine() -> AsrEngine:
@@ -155,3 +164,14 @@ def get_asr_engine() -> AsrEngine:
     if _asr_engine_instance is None:
         _asr_engine_instance = AsrEngine()
     return _asr_engine_instance
+
+
+def get_voice_search_engine() -> AsrEngine:
+    global _voice_search_engine_instance
+    if _voice_search_engine_instance is None:
+        settings = get_settings()
+        _voice_search_engine_instance = AsrEngine(
+            model_name=settings.voice_search_model_name,
+            compute_type="int8",
+        )
+    return _voice_search_engine_instance

@@ -75,6 +75,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+    volumes:
+      - ./models:/app/models:ro
     ports:
       - "8000:8000"
     healthcheck:
@@ -105,6 +107,10 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - ASR_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
+      - ASR_COMPUTE_TYPE=int8
+    volumes:
+      - ./models:/app/models:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 10s

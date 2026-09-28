@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, Header, Query, Request, UploadFile
 from pydantic import BaseModel
 
 from app.api.rate_limit import rate_limit
-from app.asr.engine import get_asr_engine
+from app.asr.engine import get_voice_search_engine
 from app.asr.preprocessor import AudioPreprocessor
 from app.core.config import get_settings
 from app.core.errors import AppError
@@ -58,7 +58,7 @@ async def voice_search(
     clean_audio_bytes = preprocessor.preprocess_memory(audio_bytes)
 
     # In-memory transcription via faster-whisper
-    engine = get_asr_engine()
+    engine = get_voice_search_engine()
     audio_stream = io.BytesIO(clean_audio_bytes)
 
     try:
