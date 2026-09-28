@@ -1,0 +1,854 @@
+openapi: 3.1.0
+info:
+  title: apc-speech Service API
+  version: 1.0.0
+  description: |
+    Автономный микросервис локального распознавания русской речи,
+    диаризации, семантического анализа звонков и голосового поиска
+    для платформы наружной рекламы.
+servers:
+  - url: /
+    description: Current Server
+
+paths:
+  /v1/voice/search:
+    post:
+      summary: Синхронный голосовой поиск
+      description: |
+        Быстрое распознавание короткого аудио (до 60 секунд) за <= 2.5 с без сохранения аудио на диск.
+        Используется интерактивной картой подбора конструкций.
+      operationId: voiceSearch
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: header
+          name: X-Request-Id
+          schema:
+            type: string
+          required: false
+        - in: query
+          name: namespace
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          audio/wav:
+            schema:
+              type: string
+              format: binary
+          audio/webm:
+            schema:
+              type: string
+              format: binary
+          audio/ogg:
+            schema:
+              type: string
+              format: binary
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Успешное распознавание
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceSearchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/jobs/upload:
+    post:
+      summary: Создание задания анализа через загрузку файла
+      description: Прием аудиофайла до 3 часов через multipart/form-data и создание асинхронного задания.
+      operationId: createJobUpload
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: header
+          name: X-Request-Id
+          schema:
+            type: string
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, namespace]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                namespace:
+                  type: string
+                callback_url:
+                  type: string
+                  format: uri
+                external_id:
+                  type: string
+                direction:
+                  type: string
+                  enum: [inbound, outbound]
+                manager_id:
+                  type: string
+                client_id:
+                  type: string
+                channel_manager:
+                  type: integer
+                  description: Номер канала менеджера в стерео (0 или 1)
+                vocabulary_hints:
+                  type: string
+                  description: Список дополнительных терминов через запятую
+      responses:
+        '202':
+          description: Задание принято в обработку
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAcceptedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /v1/jobs/by-url:
+    post:
+      summary: Создание задания анализа по ссылке на аудио
+      description: Скачивание аудиофайла по HTTP(S) ссылке (с защитой от SSRF) и создание асинхронного задания.
+      operationId: createJobByUrl
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: header
+          name: X-Request-Id
+          schema:
+            type: string
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobByUrlRequest'
+      responses:
+        '202':
+          description: Задание принято в обработку
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAcceptedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /v1/jobs/{job_id}:
+    get:
+      summary: Получение статуса и результата задания
+      operationId: getJob
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: namespace
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Текущий статус задания
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/calls/{call_id}/transcript:
+    get:
+      summary: Получение расшифровки звонка
+      operationId: getTranscript
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: call_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: namespace
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [json, text, srt, vtt]
+            default: json
+        - in: query
+          name: masked
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Транскрипт в запрошенном формате
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptResponse'
+            text/plain:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/calls/{call_id}/analysis:
+    get:
+      summary: Получение структурированного анализа звонка и метрик
+      operationId: getAnalysis
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: call_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: namespace
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Структурированный анализ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallAnalysisResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/calls:
+    get:
+      summary: Поиск и листинг звонков
+      operationId: listCalls
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: namespace
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: q
+          description: Полнотекстовый поиск по маскированному транскрипту
+          schema:
+            type: string
+        - in: query
+          name: manager_id
+          schema:
+            type: string
+        - in: query
+          name: inquiry_type
+          schema:
+            type: string
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Список звонков с пагинацией курсором
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallListResponse'
+
+  /v1/analytics/summary:
+    get:
+      summary: Сводная аналитика по звонкам
+      operationId: getAnalyticsSummary
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: namespace
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: date_from
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: date_to
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: manager_id
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Агрегированные метрики, тренды и распределение тем
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsSummaryResponse'
+
+  /v1/texts/analyze:
+    post:
+      summary: Анализ и кластеризация пачки текстов без аудио
+      description: Кластеризация поисковых запросов пользователей и извлечение тем.
+      operationId: analyzeTexts
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: header
+          name: X-Request-Id
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [namespace, texts]
+              properties:
+                namespace:
+                  type: string
+                texts:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  maxItems: 5000
+      responses:
+        '200':
+          description: Результаты кластеризации и распределение тем
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextAnalysisResponse'
+
+  /v1/data/delete:
+    delete:
+      summary: Каскадное удаление данных
+      description: Полное физическое удаление аудио из MinIO и записей из БД по звонку, клиенту или периоду.
+      operationId: deleteData
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: namespace
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: call_id
+          schema:
+            type: string
+        - in: query
+          name: client_id
+          schema:
+            type: string
+        - in: query
+          name: date_before
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Отчет об удаленных сущностях
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_calls:
+                    type: integer
+                  deleted_audio_files:
+                    type: integer
+                  deleted_transcripts:
+                    type: integer
+
+  /health:
+    get:
+      summary: Проверка работоспособности сервиса (Liveness)
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Сервис жив
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  version:
+                    type: string
+                    example: "1.0.0"
+
+  /ready:
+    get:
+      summary: Проверка готовности зависимостей сервиса (Readiness)
+      operationId: readinessCheck
+      responses:
+        '200':
+          description: Все зависимости доступны (БД, очередь, хранилище, модели)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ready"
+                  dependencies:
+                    type: object
+                    properties:
+                      database:
+                        type: boolean
+                      redis:
+                        type: boolean
+                      s3:
+                        type: boolean
+                      asr_model:
+                        type: boolean
+        '503':
+          description: Сервис не готов к приему трафика
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /metrics:
+    get:
+      summary: Экспорт метрик Prometheus
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Метрики в текстовом формате Prometheus
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Token
+
+  schemas:
+    VoiceSearchResponse:
+      type: object
+      required: [text, language, confidence, duration_sec, processing_time_ms]
+      properties:
+        text:
+          type: string
+          example: "щиты 3×6 в Балашихе на октябрь только свободные"
+        language:
+          type: string
+          example: "ru"
+        confidence:
+          type: number
+          example: 0.94
+        duration_sec:
+          type: number
+          example: 4.2
+        processing_time_ms:
+          type: integer
+          example: 1250
+
+    CreateJobByUrlRequest:
+      type: object
+      required: [namespace, url]
+      properties:
+        namespace:
+          type: string
+        url:
+          type: string
+          format: uri
+        callback_url:
+          type: string
+          format: uri
+        metadata:
+          type: object
+          properties:
+            external_id:
+              type: string
+            direction:
+              type: string
+              enum: [inbound, outbound]
+            manager_id:
+              type: string
+            client_id:
+              type: string
+            channel_mapping:
+              type: object
+              properties:
+                channel_0:
+                  type: string
+                channel_1:
+                  type: string
+        options:
+          type: object
+          properties:
+            vocabulary_hints:
+              type: array
+              items:
+                type: string
+            retention_audio_days:
+              type: integer
+              default: 14
+            retention_text_days:
+              type: integer
+              default: 365
+
+    JobAcceptedResponse:
+      type: object
+      required: [job_id, status, status_url, created_at]
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum: [queued, running]
+        status_url:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    JobStatusResponse:
+      type: object
+      required: [job_id, status, progress, created_at]
+      properties:
+        job_id:
+          type: string
+        call_id:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        step:
+          type: string
+          example: "asr_processing"
+        result_url:
+          type: string
+        error:
+          $ref: '#/components/schemas/ErrorResponse'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TranscriptResponse:
+      type: object
+      required: [call_id, segments, full_text]
+      properties:
+        call_id:
+          type: string
+        full_text:
+          type: string
+        segments:
+          type: array
+          items:
+            type: object
+            required: [start, end, speaker_label, speaker_role, text]
+            properties:
+              start:
+                type: number
+              end:
+                type: number
+              speaker_label:
+                type: string
+              speaker_role:
+                type: string
+                enum: [manager, client, participant]
+              text:
+                type: string
+              confidence:
+                type: number
+              words:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    word:
+                      type: string
+                    start:
+                      type: number
+                    end:
+                      type: number
+                    confidence:
+                      type: number
+
+    CallAnalysisResponse:
+      type: object
+      required: [call_id, schema_version, prompt_version, summary, call_result, inquiry_type, entities, agreements, sentiment, manager_checklist, deterministic_speech_metrics]
+      properties:
+        call_id:
+          type: string
+        schema_version:
+          type: string
+        prompt_version:
+          type: string
+        summary:
+          type: string
+        call_result:
+          type: string
+        inquiry_type:
+          type: string
+        entities:
+          type: object
+        agreements:
+          type: array
+          items:
+            type: object
+        sentiment:
+          type: object
+        manager_checklist:
+          type: object
+        deterministic_speech_metrics:
+          type: object
+          properties:
+            manager_speech_share:
+              type: number
+            client_speech_share:
+              type: number
+            interruptions_count:
+              type: integer
+            silence_duration_sec:
+              type: number
+            manager_wpm:
+              type: number
+            client_wpm:
+              type: number
+
+    CallListResponse:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              call_id:
+                type: string
+              external_id:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+              manager_id:
+                type: string
+              inquiry_type:
+                type: string
+              duration_sec:
+                type: integer
+              summary:
+                type: string
+        next_cursor:
+          type: string
+          nullable: true
+
+    AnalyticsSummaryResponse:
+      type: object
+      required: [total_calls, inquiry_distribution, checklist_averages, weekly_trends]
+      properties:
+        total_calls:
+          type: integer
+        inquiry_distribution:
+          type: object
+          additionalProperties:
+            type: integer
+        top_entities:
+          type: object
+          properties:
+            cities:
+              type: array
+              items:
+                type: object
+            formats:
+              type: array
+              items:
+                type: object
+        checklist_averages:
+          type: object
+          properties:
+            average_score:
+              type: number
+            greeting_pct:
+              type: number
+            need_identification_pct:
+              type: number
+            options_offered_pct:
+              type: number
+            next_step_named_pct:
+              type: number
+            contacts_taken_pct:
+              type: number
+        weekly_trends:
+          type: array
+          items:
+            type: object
+            properties:
+              week:
+                type: string
+              calls_count:
+                type: integer
+
+    TextAnalysisResponse:
+      type: object
+      required: [total_texts, clusters]
+      properties:
+        total_texts:
+          type: integer
+        clusters:
+          type: array
+          items:
+            type: object
+            properties:
+              cluster_id:
+                type: integer
+              label:
+                type: string
+              size:
+                type: integer
+              representative_queries:
+                type: array
+                items:
+                  type: string
+
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          example: "invalid_audio_format"
+        message:
+          type: string
+          example: "Неподдерживаемый аудиоформат или файл поврежден"
+        details:
+          type: object
+
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Не передан или невалиден Bearer-токен
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Объект не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    PayloadTooLarge:
+      description: Размер файла или аудио превышает допустимый лимит
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UnprocessableEntity:
+      description: Тело запроса синтаксически корректно, но не валидно по бизнес-логике
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Превышен лимит запросов (Rate Limit)
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Внутренняя ошибка сервиса
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CallAnalysisResult",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "prompt_version",
+    "summary",
+    "call_result",
+    "inquiry_type",
+    "entities",
+    "agreements",
+    "sentiment",
+    "manager_checklist",
+    "deterministic_speech_metrics"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["1.0.0"] },
+    "prompt_version": { "type": "string", "enum": ["v1.2-ru-outdoor"] },
+    "summary": { "type": "string", "maxLength": 1000 },
+    "call_result": {
+      "type": "string",
+      "enum": ["success_deal", "follow_up_scheduled", "info_provided", "client_declined", "unclear_spam"]
+    },
+    "inquiry_type": {
+      "type": "string",
+      "enum": [
+        "pricing", "availability", "inventory_search", "specs",
+        "order_status", "production", "documents_billing", "complaint",
+        "partnership_supply", "programmatic_digital", "spam_irrelevant", "other"
+      ]
+    },
+    "entities": {
+      "type": "object",
+      "required": ["cities", "formats"],
+      "properties": {
+        "cities": { "type": "array", "items": { "type": "string" } },
+        "formats": { "type": "array", "items": { "type": "string" } },
+        "quantity": { "type": ["integer", "null"] },
+        "target_period": { "type": ["string", "null"] },
+        "budget_rub": { "type": ["number", "null"] },
+        "product_category": { "type": ["string", "null"] }
+      }
+    },
+    "agreements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["who", "what", "deadline"],
+        "properties": {
+          "who": { "type": "string", "enum": ["manager", "client", "both"] },
+          "what": { "type": "string" },
+          "deadline": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "sentiment": {
+      "type": "object",
+      "required": ["client_overall", "manager_tone"],
+      "properties": {
+        "client_overall": { "type": "string", "enum": ["positive", "neutral", "negative", "conflict"] },
+        "manager_tone": { "type": "string", "enum": ["polite_constructive", "indifferent", "rude"] }
+      }
+    },
+    "manager_checklist": {
+      "type": "object",
+      "required": [
+        "greeting", "need_identification", "options_offered",
+        "next_step_named", "contacts_taken", "forbidden_words_found", "score"
+      ],
+      "properties": {
+        "greeting": { "type": "boolean" },
+        "need_identification": { "type": "boolean" },
+        "options_offered": { "type": "boolean" },
+        "next_step_named": { "type": "boolean" },
+        "contacts_taken": { "type": "boolean" },
+        "forbidden_words_found": { "type": "array", "items": { "type": "string" } },
+        "score": { "type": "integer", "minimum": 0, "maximum": 5 }
+      }
+    },
+    "deterministic_speech_metrics": {
+      "type": "object",
+      "description": "Рассчитывается СТРОГО детерминированным кодом без участия LLM",
+      "required": [
+        "manager_speech_share",
+        "client_speech_share",
+        "interruptions_count",
+        "silence_duration_sec",
+        "manager_wpm",
+        "client_wpm"
+      ],
+      "properties": {
+        "manager_speech_share": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "client_speech_share": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "interruptions_count": { "type": "integer", "minimum": 0 },
+        "silence_duration_sec": { "type": "number", "minimum": 0.0 },
+        "manager_wpm": { "type": "number" },
+        "client_wpm": { "type": "number" }
+      }
+    }
+  }
+}
