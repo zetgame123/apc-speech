@@ -3,7 +3,7 @@ import numpy as np
 import os
 from typing import List, Dict, Any
 
-def chunk_audio(audio_path: str, chunk_length_sec: int = 600, overlap_sec: int = 15) -> List[np.ndarray]:
+def chunk_audio(audio_path: str, chunk_length_sec: int = 600, overlap_sec: int = 15) -> List[Dict[str, Any]]:
     """Reads audio file in overlapping chunks."""
     info = sf.info(audio_path)
     sr = info.samplerate
@@ -22,6 +22,7 @@ def chunk_audio(audio_path: str, chunk_length_sec: int = 600, overlap_sec: int =
             "data": data,
             "start_sec": start_frame / sr,
             "end_sec": (start_frame + frames_to_read) / sr,
+            "overlap_sec": overlap_sec if (start_frame + frames_to_read) < total_frames else 0
         })
         if start_frame + chunk_frames >= total_frames:
             break
@@ -36,40 +37,30 @@ def merge_and_deduplicate(all_segments: List[List[Dict[str, Any]]], chunks_info:
     for i, (chunk_segs, info) in enumerate(zip(all_segments, chunks_info)):
         chunk_offset = info["start_sec"]
         
+        # Calculate boundaries for taking segments from this chunk
+        # If it's the first chunk, take everything up to the middle of the overlap with the NEXT chunk.
+        # If it's a middle chunk, take everything from the middle of the overlap with PREV chunk to middle of overlap with NEXT chunk.
+        
+        take_start = info["start_sec"]
+        if i > 0:
+            take_start = info["start_sec"] + (chunks_info[i-1]["overlap_sec"] / 2.0)
+            
+        take_end = info["end_sec"]
+        if i < len(all_segments) - 1:
+            take_end = info["end_sec"] - (info["overlap_sec"] / 2.0)
+        
         for s in chunk_segs:
             s_copy = dict(s)
             s_copy["start"] += chunk_offset
             s_copy["end"] += chunk_offset
-            if "words" in s_copy and s_copy["words"]:
-                for w in s_copy["words"]:
-                    w["start"] += chunk_offset
-                    w["end"] += chunk_offset
-            
-            # Deduplication: if this segment is strictly within the overlap region of the previous chunk
-            # and we already added a very similar segment, skip it.
-            # A simpler heuristic: only take segments whose mid-point is before the end of the step 
-            # (i.e. start_sec + chunk_length_sec - overlap_sec) UNLESS it's the last chunk.
             
             mid_point = (s_copy["start"] + s_copy["end"]) / 2.0
             
-            if i < len(all_segments) - 1:
-                # not the last chunk
-                chunk_step_end = info["end_sec"] - (info["end_sec"] - info["start_sec"] - (info["end_sec"] - info["start_sec"])) # wait
-                # overlap_sec is given, but info only has start_sec and end_sec
-                # Actually, the cutoff is the start of the next chunk + overlap_sec / 2
-                next_chunk_start = chunks_info[i+1]["start_sec"]
-                cutoff = next_chunk_start + 7.5 # half of 15s overlap
-                if mid_point > cutoff:
-                    continue # Skip this segment, let the next chunk handle it
-                    
-            if i > 0:
-                # For chunks > 0, we skipped the end of the previous chunk, but maybe the start of this chunk 
-                # overlaps with the end of the previous chunk.
-                # The cutoff was next_chunk_start + 7.5. We should only take segments after this cutoff.
-                prev_cutoff = info["start_sec"] + 7.5
-                if mid_point <= prev_cutoff:
-                    continue # Handled by previous chunk
-                    
-            merged.append(s_copy)
+            if mid_point >= take_start and mid_point < take_end:
+                if "words" in s_copy and s_copy["words"]:
+                    for w in s_copy["words"]:
+                        w["start"] += chunk_offset
+                        w["end"] += chunk_offset
+                merged.append(s_copy)
             
     return merged

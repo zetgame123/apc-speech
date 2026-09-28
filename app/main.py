@@ -94,6 +94,7 @@ async def app_error_handler(request: Request, exc: AppError):
         message=exc.message,
         status_code=exc.status_code,
         details=exc.details,
+        headers=exc.headers,
     )
 
 

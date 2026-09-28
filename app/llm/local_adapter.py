@@ -1,4 +1,6 @@
 import json
+import re
+from app.asr.normalizer import RussianTextNormalizer
 import os
 from typing import Any
 
@@ -84,7 +86,28 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         context: AnalysisContext,
     ) -> StructuredAnalysis:
         """Deterministic rule-based extractor based on YAML taxonomy and checklist."""
-        text_lower = text.lower()
+        normalizer = RussianTextNormalizer()
+        text_norm = normalizer.normalize(text)
+        text_lower = text_norm.lower()
+
+        budget_rub = None
+        budget_match = re.search(r'бюджет.*?(\d[\d\s]*000)\s*руб', text_lower)
+        if not budget_match:
+            budget_match = re.search(r'до\s+(\d[\d\s]*000)\s*руб', text_lower)
+        if budget_match:
+            try:
+                budget_rub = int(re.sub(r'\s+', '', budget_match.group(1)))
+            except ValueError:
+                pass
+
+        quantity = None
+        qty_match = re.search(r'(\d+)\s*(щит|сторон|поверхност|экран)', text_lower)
+        if qty_match:
+            try:
+                quantity = int(qty_match.group(1))
+            except ValueError:
+                pass
+
 
         # 1. Determine inquiry type
         detected_type = "other"
@@ -145,9 +168,9 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
             entities={
                 "cities": cities,
                 "formats": formats,
-                "quantity": None,
+                "quantity": quantity,
                 "target_period": None,
-                "budget_rub": None,
+                "budget_rub": budget_rub,
                 "product_category": None,
             },
             agreements=agreements,

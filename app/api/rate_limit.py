@@ -1,5 +1,6 @@
 import time
-from fastapi import Request, HTTPException
+from fastapi import Request
+from app.core.errors import AppError
 from app.queue.redis_streams import get_queue
 
 async def rate_limit(request: Request):
@@ -24,7 +25,9 @@ async def rate_limit(request: Request):
             await client.expire(redis_key, 20)
             
         if count > 5:
-            raise HTTPException(status_code=429, headers={"Retry-After": "10"}, detail="Rate limit exceeded")
+            raise AppError(error="rate_limit_exceeded", message="Rate limit exceeded", status_code=429, headers={"Retry-After": "10"})
+    except AppError:
+        raise
     except Exception as e:
         # If redis is down, we don't want to block the app completely, just log and pass
         pass

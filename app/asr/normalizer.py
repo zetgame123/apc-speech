@@ -40,7 +40,7 @@ class RussianTextNormalizer:
             (re.compile(r"\b(\d+)\s+месяц(ев|а)?\b", re.IGNORECASE), r"\1 мес."),
         ]
 
-        # Currencies
+        # Currencies & Percentages
         self.currency_patterns = [
             (re.compile(r"\bсто\s+тысяч\s+рублей\b", re.IGNORECASE), "100 000 руб."),
             (re.compile(r"\bдвести\s+тысяч\s+рублей\b", re.IGNORECASE), "200 000 руб."),
@@ -49,9 +49,24 @@ class RussianTextNormalizer:
             (re.compile(r"\b(\d+)\s+рублей\b", re.IGNORECASE), r"\1 руб."),
             (re.compile(r"\b(\d+)\s+рубля\b", re.IGNORECASE), r"\1 руб."),
             (re.compile(r"\b(\d+)\s+рубль\b", re.IGNORECASE), r"\1 руб."),
+            (re.compile(r"\bдвадцать\s+процентов\b", re.IGNORECASE), "20%"),
+            (re.compile(r"\bдесять\s+процентов\b", re.IGNORECASE), "10%"),
+            (re.compile(r"\b(\d+)\s+процент(а|ов)?\b", re.IGNORECASE), r"\1%"),
         ]
 
-        # Domain acoustic homophones (e.g. Whisper confusing "счетов" with "щитов" in advertising contexts)
+        # Dates
+        self.date_patterns = [
+            (re.compile(r"\bпервое\s+октября\b", re.IGNORECASE), "1 октября"),
+            (re.compile(r"\bдвадцать\s+шестой\s+год\b", re.IGNORECASE), "2026 г."),
+            (re.compile(r"\bс\s+мая\s+по\s+сентябрь\b", re.IGNORECASE), "с мая по сентябрь"),
+        ]
+        
+        # Phone
+        self.phone_patterns = [
+            (re.compile(r"\bплюс\s+семь\s+девятьсот\s+двадцать\s+шесть\b", re.IGNORECASE), "+7 926"),
+        ]
+
+        # Domain acoustic homophones
         self.homophone_patterns = [
             (re.compile(r"\bсчет(а|ов|ам|ами|ах)?\s+(3×6|6×3|3х6|6х3|три на шесть|шесть на три|ситиборд|билборд)", re.IGNORECASE), r"щит\1 \2"),
             (re.compile(r"\b(стоимость|цена|аренда|размещение|печать|монтаж|бронь)\s+счетов\b", re.IGNORECASE), r"\1 щитов"),
@@ -65,23 +80,24 @@ class RussianTextNormalizer:
 
         res = text
 
-        # 1. Billboard sizes
         for pattern, replacement in self.dimension_patterns:
             res = pattern.sub(replacement, res)
 
-        # 2. Currencies
         for pattern, replacement in self.currency_patterns:
             res = pattern.sub(replacement, res)
+            
+        for pattern, replacement in self.date_patterns:
+            res = pattern.sub(replacement, res)
+            
+        for pattern, replacement in self.phone_patterns:
+            res = pattern.sub(replacement, res)
 
-        # 3. Domain acoustic homophones
         for pattern, replacement in self.homophone_patterns:
             res = pattern.sub(replacement, res)
 
-        # 3. Time units
         for pattern, replacement in self.time_patterns:
             res = pattern.sub(replacement, res)
 
-        # 4. Collapse extra spaces
         res = re.sub(r"\s+", " ", res).strip()
 
         return res

@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, select
-from app.db.models import Call, Job
+from app.db.models import Call, AudioObject
 from app.db.session import AsyncSessionLocal
 from app.storage.s3 import get_storage
 from app.core.config import get_settings
@@ -13,21 +13,24 @@ async def run_cleanup():
     now = datetime.now(timezone.utc)
     
     # 1. Clean up audio files older than retention_audio_days
-    # Note: A real implementation would scan the DB for calls older than retention_audio_days 
-    # and delete their corresponding S3 objects, or just use S3 Bucket Lifecycle Rules.
-    # For this script, we'll delete S3 objects for calls that are older than audio retention.
-    
     audio_cutoff = now - timedelta(days=settings.retention_audio_days)
+    
     async with AsyncSessionLocal() as db:
-        stmt = select(Call.id).where(Call.created_at < audio_cutoff.replace(tzinfo=None))
-        old_calls = (await db.execute(stmt)).scalars().all()
+        # We query audio objects that are older than the retention limit
+        stmt = select(AudioObject).where(AudioObject.created_at < audio_cutoff.replace(tzinfo=None))
+        old_audio_objs = (await db.execute(stmt)).scalars().all()
         
-        for call_id in old_calls:
-            # The S3 key is usually call_id.wav or similar. 
-            # In jobs.py it's: f"{namespace}/{now.strftime('%Y/%m/%d')}/{call_id}{ext}"
-            # Because we don't store the exact S3 key in the DB (only the Call model),
-            # In a real app we'd query the Job or S3 directly.
-            pass
+        deleted_audio = 0
+        for audio in old_audio_objs:
+            # Delete from S3
+            success = storage.delete_object(bucket=audio.s3_bucket, key=audio.s3_key)
+            if success:
+                # Delete record from DB
+                await db.delete(audio)
+                deleted_audio += 1
+                
+        await db.commit()
+        print(f"Deleted {deleted_audio} expired audio files from S3.")
             
     # 2. Clean up expired DB records (text retention)
     async with AsyncSessionLocal() as db:

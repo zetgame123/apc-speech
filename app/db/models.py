@@ -35,6 +35,7 @@ class Call(Base):
     duration_sec = Column(Float, nullable=True)
     is_answering_machine = Column(Boolean, default=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
 
     # Relationships
     audio_objects = relationship("AudioObject", back_populates="call", cascade="all, delete-orphan")
