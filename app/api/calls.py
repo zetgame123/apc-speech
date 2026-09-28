@@ -1,8 +1,7 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, Query, Response, status
-from pydantic import BaseModel
-from sqlalchemy import desc, func, select
+
+from fastapi import APIRouter, Depends, Query, Response
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
@@ -130,12 +129,12 @@ async def get_analysis(
 @router.get("")
 async def list_calls(
     namespace: str = Query(...),
-    q: Optional[str] = Query(None, description="Полнотекстовый поиск"),
-    manager_id: Optional[str] = Query(None),
-    inquiry_type: Optional[str] = Query(None),
-    date_from: Optional[datetime] = Query(None),
-    date_to: Optional[datetime] = Query(None),
-    cursor: Optional[str] = Query(None),
+    q: str | None = Query(None, description="Полнотекстовый поиск"),
+    manager_id: str | None = Query(None),
+    inquiry_type: str | None = Query(None),
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    cursor: str | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
     auth: AuthContext = Depends(verify_auth),
     db: AsyncSession = Depends(get_db),

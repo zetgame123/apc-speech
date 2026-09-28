@@ -1,5 +1,5 @@
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from app.core.logging import get_logger
 
@@ -39,10 +39,10 @@ class RoleClassifier:
 
     def assign_stereo_roles(
         self,
-        ch0_segments: List[Dict[str, Any]],
-        ch1_segments: List[Dict[str, Any]],
-        channel_mapping: Optional[Dict[str, str]] = None,
-    ) -> Tuple[List[Dict[str, Any]], str]:
+        ch0_segments: list[dict[str, Any]],
+        ch1_segments: list[dict[str, Any]],
+        channel_mapping: dict[str, str] | None = None,
+    ) -> tuple[list[dict[str, Any]], str]:
         """
         Maps stereo channels directly to manager and client.
         Default: channel_0 = manager, channel_1 = client.
@@ -70,8 +70,8 @@ class RoleClassifier:
 
     def classify_mono_speakers(
         self,
-        segments: List[Dict[str, Any]],
-    ) -> Tuple[List[Dict[str, Any]], str]:
+        segments: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], str]:
         """
         Heuristic role assignment for mono audio segments labeled SPEAKER_0 and SPEAKER_1.
         Evaluates opening greetings, manager pitch markers, and client query phrases.

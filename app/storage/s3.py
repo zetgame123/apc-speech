@@ -1,5 +1,3 @@
-import io
-from typing import Optional
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
@@ -89,7 +87,7 @@ class S3Storage:
             return False
 
 
-_storage_instance: Optional[S3Storage] = None
+_storage_instance: S3Storage | None = None
 
 
 def get_storage() -> S3Storage:

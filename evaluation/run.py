@@ -1,7 +1,6 @@
 import argparse
 import json
 import os
-import time
 
 from evaluation.dataset_generator import build_synthetic_benchmark_suite
 from evaluation.der import calculate_der

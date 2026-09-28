@@ -1,5 +1,4 @@
 import re
-from typing import Dict
 
 # Word to digit mapping for Russian numbers
 NUMBER_WORDS = {

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any
 
 
 class SpeechMetricsCalculator:
@@ -7,9 +7,9 @@ class SpeechMetricsCalculator:
 
     def compute(
         self,
-        segments: List[Dict[str, Any]],
+        segments: list[dict[str, Any]],
         call_duration_sec: float,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Calculates deterministic acoustic speech metrics from timed segments."""
         if not segments or call_duration_sec <= 0:
             return {

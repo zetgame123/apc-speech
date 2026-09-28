@@ -1,5 +1,4 @@
 import re
-from typing import Tuple
 
 from app.asr.normalizer import RussianTextNormalizer
 
@@ -19,7 +18,7 @@ def normalize_eval_text(text: str) -> str:
     return t
 
 
-def calculate_wer_cer(reference: str, hypothesis: str) -> Tuple[float, float]:
+def calculate_wer_cer(reference: str, hypothesis: str) -> tuple[float, float]:
     """Computes Word Error Rate (WER) and Character Error Rate (CER)."""
     ref_norm = normalize_eval_text(reference)
     hyp_norm = normalize_eval_text(hypothesis)

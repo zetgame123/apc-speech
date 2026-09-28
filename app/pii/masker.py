@@ -1,5 +1,4 @@
 import re
-from typing import Dict, List, Tuple
 
 # Regex patterns for sensitive PII
 PHONE_REGEX = re.compile(
@@ -24,7 +23,7 @@ PASSPORT_RF_REGEX = re.compile(
 class PiiMasker:
     def __init__(self):
         self.phone_counter = 0
-        self.phone_cache: Dict[str, str] = {}
+        self.phone_cache: dict[str, str] = {}
 
     def mask_text(self, text: str) -> str:
         """

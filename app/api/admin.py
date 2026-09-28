@@ -1,11 +1,11 @@
 from datetime import datetime
-from typing import Optional
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import AuthContext, verify_auth
-from app.db.models import AudioObject, Call, TranscriptSegment
+from app.db.models import AudioObject, Call
 from app.db.session import get_db
 from app.storage.s3 import get_storage
 
@@ -15,9 +15,9 @@ router = APIRouter(prefix="/v1/data", tags=["admin"])
 @router.delete("/delete")
 async def delete_data(
     namespace: str = Query(...),
-    call_id: Optional[str] = Query(None),
-    client_id: Optional[str] = Query(None),
-    date_before: Optional[datetime] = Query(None),
+    call_id: str | None = Query(None),
+    client_id: str | None = Query(None),
+    date_before: datetime | None = Query(None),
     auth: AuthContext = Depends(verify_auth),
     db: AsyncSession = Depends(get_db),
 ):

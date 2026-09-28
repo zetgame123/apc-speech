@@ -1,9 +1,9 @@
 import json
 import os
-import re
+from typing import Any
+
 import httpx
 import yaml
-from typing import Any, Dict, List, Optional
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -20,14 +20,14 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         self.taxonomy = self._load_taxonomy()
         self.checklist_cfg = self._load_checklist()
 
-    def _load_taxonomy(self) -> Dict[str, Any]:
+    def _load_taxonomy(self) -> dict[str, Any]:
         path = "config/taxonomy.yaml"
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 return yaml.safe_load(f).get("categories", {})
         return {}
 
-    def _load_checklist(self) -> Dict[str, Any]:
+    def _load_checklist(self) -> dict[str, Any]:
         path = "config/checklist.yaml"
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:

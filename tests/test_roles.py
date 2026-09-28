@@ -1,4 +1,3 @@
-import pytest
 from app.diarization.roles import RoleClassifier
 
 

@@ -2,8 +2,6 @@ import json
 import os
 import resource
 import subprocess
-import tempfile
-from typing import Dict, List, Optional, Tuple
 
 from app.core.errors import AppError
 from app.core.logging import get_logger
@@ -26,7 +24,7 @@ class AudioPreprocessor:
     def __init__(self):
         pass
 
-    def probe_audio(self, file_path: str) -> Dict[str, any]:
+    def probe_audio(self, file_path: str) -> dict[str, any]:
         """Runs ffprobe securely to extract format, duration and channels."""
         cmd = [
             "ffprobe",
@@ -104,7 +102,7 @@ class AudioPreprocessor:
             logger.error("ffmpeg_convert_error", error=e.stderr.decode("utf-8", errors="ignore"))
             raise AppError("conversion_failed", "Ошибка при декодировании аудиофайла", 500)
 
-    def split_stereo_channels(self, input_path: str) -> Tuple[str, str]:
+    def split_stereo_channels(self, input_path: str) -> tuple[str, str]:
         """Splits a stereo file into two separate mono WAV files."""
         dir_name = os.path.dirname(input_path)
         base_name = os.path.splitext(os.path.basename(input_path))[0]

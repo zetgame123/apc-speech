@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import signal
-import traceback
+
 import httpx
 
 from app.core.config import get_settings

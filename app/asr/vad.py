@@ -1,5 +1,5 @@
-from typing import Any, Dict, List, Tuple
-from app.core.config import get_settings
+from typing import Any
+
 from app.core.logging import get_logger
 
 logger = get_logger("vad_detector")
@@ -12,8 +12,8 @@ class VadDetector:
     def get_speech_timestamps(
         self,
         audio_duration_sec: float,
-        vad_segments: List[Dict[str, float]],
-    ) -> Dict[str, Any]:
+        vad_segments: list[dict[str, float]],
+    ) -> dict[str, Any]:
         """Calculates total speech duration, silence duration, and speech ratio."""
         total_speech = sum(max(0.0, s["end"] - s["start"]) for s in vad_segments)
         total_silence = max(0.0, audio_duration_sec - total_speech)

@@ -1,12 +1,12 @@
-import io
 import os
-import yaml
-from typing import Any, Dict, List, Optional, Tuple, Union
-import numpy as np
+from typing import Any
 
+import numpy as np
+import yaml
+
+from app.asr.normalizer import RussianTextNormalizer
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.asr.normalizer import RussianTextNormalizer
 
 logger = get_logger("asr_engine")
 
@@ -21,9 +21,9 @@ DEFAULT_HINTS = (
 class AsrEngine:
     def __init__(
         self,
-        model_name: Optional[str] = None,
-        device: Optional[str] = None,
-        compute_type: Optional[str] = None,
+        model_name: str | None = None,
+        device: str | None = None,
+        compute_type: str | None = None,
     ):
         settings = get_settings()
         self.model_name = model_name or settings.asr_model_name
@@ -78,12 +78,12 @@ class AsrEngine:
 
     def transcribe(
         self,
-        audio: Union[str, np.ndarray],
+        audio: str | np.ndarray,
         language: str = "ru",
         beam_size: int = 2,
-        initial_prompt: Optional[str] = None,
+        initial_prompt: str | None = None,
         vad_filter: bool = True,
-    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """
         Transcribes audio with faster-whisper with strict anti-hallucination flags.
         Returns (segments, info).
@@ -142,7 +142,7 @@ class AsrEngine:
         return segments, meta_info
 
 
-_asr_engine_instance: Optional[AsrEngine] = None
+_asr_engine_instance: AsrEngine | None = None
 
 
 def get_asr_engine() -> AsrEngine:

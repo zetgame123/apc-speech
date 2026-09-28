@@ -1,6 +1,5 @@
-import os
 from functools import lru_cache
-from typing import List, Optional
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -77,6 +76,6 @@ class Settings(BaseSettings):
     retention_text_days: int = Field(default=365, alias="RETENTION_TEXT_DAYS")
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     return Settings()

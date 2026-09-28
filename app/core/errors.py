@@ -1,5 +1,6 @@
-from typing import Any, Dict, Optional
-from fastapi import HTTPException, status
+from typing import Any
+
+from fastapi import status
 from fastapi.responses import JSONResponse
 
 
@@ -9,7 +10,7 @@ class AppError(Exception):
         error: str,
         message: str,
         status_code: int = status.HTTP_400_BAD_REQUEST,
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ):
         self.error = error
         self.message = message
@@ -22,7 +23,7 @@ def error_response(
     error: str,
     message: str,
     status_code: int = status.HTTP_400_BAD_REQUEST,
-    details: Optional[Dict[str, Any]] = None,
+    details: dict[str, Any] | None = None,
 ) -> JSONResponse:
     content = {
         "error": error,

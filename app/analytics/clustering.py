@@ -1,5 +1,3 @@
-import re
-from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from sklearn.cluster import HDBSCAN, AgglomerativeClustering
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -42,8 +40,8 @@ class TopicClusteringEngine:
 
     def fit_transform_texts(
         self,
-        texts: List[str],
-    ) -> Tuple[List[int], Dict[int, str], List[float]]:
+        texts: list[str],
+    ) -> tuple[list[int], dict[int, str], list[float]]:
         """
         Embeds texts, performs clustering with HDBSCAN / Agglomerative fallback,
         and generates descriptive topic labels via class-based TF-IDF.
@@ -75,7 +73,7 @@ class TopicClusteringEngine:
             labels = clusterer.fit_predict(dense_vectors)
 
         # If all points were classified as noise (-1), group into single cluster
-        if all(l == -1 for l in labels):
+        if all(lbl == -1 for lbl in labels):
             labels = np.zeros(n_samples, dtype=int)
 
         # 3. Compute cluster representative labels via c-TF-IDF
@@ -85,12 +83,11 @@ class TopicClusteringEngine:
 
     def _generate_cluster_labels(
         self,
-        texts: List[str],
+        texts: list[str],
         labels: np.ndarray,
-    ) -> Dict[int, str]:
+    ) -> dict[int, str]:
         unique_labels = set(labels)
-        cluster_names: Dict[int, str] = {}
-        feature_names = self.vectorizer.get_feature_names_out()
+        cluster_names: dict[int, str] = {}
 
         for lab in unique_labels:
             if lab == -1:

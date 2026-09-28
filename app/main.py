@@ -1,11 +1,11 @@
 import uuid
 from contextlib import asynccontextmanager
+
+import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-import structlog
 
-from app.api import admin, analytics, calls, health, jobs, voice
+from app.api import admin, analytics, calls, dashboard, health, jobs, voice
 from app.core.config import get_settings
 from app.core.errors import AppError, error_response
 from app.core.logging import get_logger, setup_logging
@@ -98,8 +98,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         details={"error": str(exc)} if settings.debug else None,
     )
 
-
-from app.api import admin, analytics, calls, dashboard, health, jobs, voice
 
 # Register API Routers
 app.include_router(health.router)

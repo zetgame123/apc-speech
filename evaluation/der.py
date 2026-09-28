@@ -1,11 +1,10 @@
-from typing import Dict, List, Tuple
 
 
 def calculate_der(
-    reference_segments: List[Dict[str, any]],
-    hypothesis_segments: List[Dict[str, any]],
+    reference_segments: list[dict[str, any]],
+    hypothesis_segments: list[dict[str, any]],
     collar_sec: float = 0.25,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """
     Computes Diarization Error Rate (DER) breakdown:
     Missed Speech, False Alarm, Speaker Confusion.

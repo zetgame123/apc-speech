@@ -1,9 +1,20 @@
 import hashlib
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, Response, UploadFile, status
-from pydantic import BaseModel, HttpUrl
+from typing import Any
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,12 +40,12 @@ class JobAcceptedResponse(BaseModel):
 
 class JobStatusResponse(BaseModel):
     job_id: str
-    call_id: Optional[str] = None
+    call_id: str | None = None
     status: str
     progress: int
     step: str
-    result_url: Optional[str] = None
-    error: Optional[Dict[str, Any]] = None
+    result_url: str | None = None
+    error: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -42,9 +53,9 @@ class JobStatusResponse(BaseModel):
 class CreateJobByUrlRequest(BaseModel):
     namespace: str
     url: str
-    callback_url: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
-    options: Optional[Dict[str, Any]] = None
+    callback_url: str | None = None
+    metadata: dict[str, Any] | None = None
+    options: dict[str, Any] | None = None
 
 
 @router.post(
@@ -57,15 +68,15 @@ async def create_job_upload(
     response: Response,
     namespace: str = Form(...),
     file: UploadFile = File(...),
-    callback_url: Optional[str] = Form(None),
-    external_id: Optional[str] = Form(None),
-    direction: Optional[str] = Form("inbound"),
-    manager_id: Optional[str] = Form(None),
-    client_id: Optional[str] = Form(None),
-    channel_manager: Optional[int] = Form(None),
-    vocabulary_hints: Optional[str] = Form(None),
-    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
-    x_request_id: Optional[str] = Header(None, alias="X-Request-Id"),
+    callback_url: str | None = Form(None),
+    external_id: str | None = Form(None),
+    direction: str | None = Form("inbound"),
+    manager_id: str | None = Form(None),
+    client_id: str | None = Form(None),
+    channel_manager: int | None = Form(None),
+    vocabulary_hints: str | None = Form(None),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    x_request_id: str | None = Header(None, alias="X-Request-Id"),
     auth: AuthContext = Depends(verify_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -184,8 +195,8 @@ async def create_job_upload(
 async def create_job_by_url(
     req: CreateJobByUrlRequest,
     response: Response,
-    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
-    x_request_id: Optional[str] = Header(None, alias="X-Request-Id"),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    x_request_id: str | None = Header(None, alias="X-Request-Id"),
     auth: AuthContext = Depends(verify_auth),
     db: AsyncSession = Depends(get_db),
 ):

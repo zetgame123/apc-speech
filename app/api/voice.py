@@ -1,7 +1,7 @@
 import io
 import time
-from typing import Optional
-from fastapi import APIRouter, Depends, File, Header, Query, Request, UploadFile, status
+
+from fastapi import APIRouter, Depends, File, Header, Query, Request, UploadFile
 from pydantic import BaseModel
 
 from app.asr.engine import get_asr_engine
@@ -30,9 +30,9 @@ class VoiceSearchResponse(BaseModel):
 async def voice_search(
     request: Request,
     namespace: str = Query(..., description="Namespace изоляции данных"),
-    file: Optional[UploadFile] = File(None),
+    file: UploadFile | None = File(None),
     auth: AuthContext = Depends(verify_auth),
-    x_request_id: Optional[str] = Header(None),
+    x_request_id: str | None = Header(None),
 ):
     start_time = time.time()
     auth.require_scope("write")

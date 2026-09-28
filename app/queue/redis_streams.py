@@ -1,6 +1,8 @@
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
+
 import redis.asyncio as aioredis
+
 from app.core.config import get_settings
 from app.core.logging import get_logger
 
@@ -16,7 +18,7 @@ class RedisQueue:
     def __init__(self):
         settings = get_settings()
         self.redis_url = settings.redis_url
-        self.client: Optional[aioredis.Redis] = None
+        self.client: aioredis.Redis | None = None
 
     async def get_client(self) -> aioredis.Redis:
         if self.client is None:
@@ -36,11 +38,11 @@ class RedisQueue:
             try:
                 await client.xgroup_create(stream, group, id="0", mkstream=True)
                 logger.info("redis_group_created", stream=stream, group=group)
-            except Exception as e:
+            except Exception:
                 # Group already exists
                 pass
 
-    async def enqueue_long_job(self, job_id: str, data: Dict[str, Any]) -> str:
+    async def enqueue_long_job(self, job_id: str, data: dict[str, Any]) -> str:
         client = await self.get_client()
         payload = {
             "job_id": job_id,
@@ -50,7 +52,7 @@ class RedisQueue:
         logger.info("job_enqueued", job_id=job_id, stream=STREAM_LONG_JOBS, msg_id=msg_id)
         return msg_id
 
-    async def enqueue_callback(self, job_id: str, callback_url: str, payload: Dict[str, Any]) -> str:
+    async def enqueue_callback(self, job_id: str, callback_url: str, payload: dict[str, Any]) -> str:
         client = await self.get_client()
         msg_payload = {
             "job_id": job_id,
@@ -67,7 +69,7 @@ class RedisQueue:
         group: str,
         consumer: str,
         block_ms: int = 2000,
-    ) -> Optional[Tuple[str, str, Dict[str, Any]]]:
+    ) -> tuple[str, str, dict[str, Any]] | None:
         client = await self.get_client()
         try:
             entries = await client.xreadgroup(
@@ -106,7 +108,7 @@ class RedisQueue:
             return False
 
 
-_queue_instance: Optional[RedisQueue] = None
+_queue_instance: RedisQueue | None = None
 
 
 def get_queue() -> RedisQueue:

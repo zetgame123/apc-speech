@@ -1,4 +1,3 @@
-import pytest
 from app.asr.normalizer import RussianTextNormalizer
 
 

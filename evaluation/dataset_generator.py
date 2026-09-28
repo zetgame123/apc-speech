@@ -4,7 +4,6 @@ import os
 import struct
 import subprocess
 import wave
-from typing import Dict, List, Tuple
 
 from app.core.logging import get_logger
 
@@ -65,7 +64,7 @@ def apply_telephony_degradation(
     subprocess.run(cmd, capture_output=True, check=True)
 
 
-def build_synthetic_benchmark_suite(output_dir: str = "data/evaluation_suite") -> Dict[str, any]:
+def build_synthetic_benchmark_suite(output_dir: str = "data/evaluation_suite") -> dict[str, any]:
     """Generates a reproducible evaluation suite with ground truth transcripts."""
     os.makedirs(output_dir, exist_ok=True)
 

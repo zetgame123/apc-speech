@@ -1,28 +1,30 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analytics.clustering import TopicClusteringEngine
 from app.core.security import AuthContext, verify_auth
 from app.db.models import Analysis, Call
 from app.db.session import get_db
 
 router = APIRouter(prefix="/v1", tags=["analytics"])
+clustering_engine = TopicClusteringEngine()
 
 
 class TextAnalyzeRequest(BaseModel):
     namespace: str
-    texts: List[str]
+    texts: list[str]
 
 
 @router.get("/analytics/summary")
 async def get_analytics_summary(
     namespace: str = Query(...),
-    date_from: Optional[datetime] = Query(None),
-    date_to: Optional[datetime] = Query(None),
-    manager_id: Optional[str] = Query(None),
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    manager_id: str | None = Query(None),
     auth: AuthContext = Depends(verify_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -41,8 +43,8 @@ async def get_analytics_summary(
     total_calls = len(calls)
     call_ids = [c.id for c in calls]
 
-    inquiry_dist: Dict[str, int] = {}
-    checklist_scores: List[int] = []
+    inquiry_dist: dict[str, int] = {}
+    checklist_scores: list[int] = []
 
     if call_ids:
         analysis_stmt = select(Analysis).where(Analysis.call_id.in_(call_ids))
@@ -81,11 +83,6 @@ async def get_analytics_summary(
     }
 
 
-from app.analytics.clustering import TopicClusteringEngine
-
-clustering_engine = TopicClusteringEngine()
-
-
 @router.post("/texts/analyze")
 async def analyze_texts(
     req: TextAnalyzeRequest,
@@ -96,7 +93,7 @@ async def analyze_texts(
     labels, cluster_names, _ = clustering_engine.fit_transform_texts(req.texts)
 
     # Group texts by cluster
-    grouped: Dict[int, List[str]] = {}
+    grouped: dict[int, list[str]] = {}
     for text, label in zip(req.texts, labels):
         grouped.setdefault(label, []).append(text)
 

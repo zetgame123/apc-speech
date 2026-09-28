@@ -1,4 +1,3 @@
-import pytest
 from app.analytics.clustering import TopicClusteringEngine
 
 
@@ -20,13 +19,13 @@ def test_clustering_engine_with_sample_queries():
     assert len(cluster_names) >= 2
     assert len(vectors) == len(queries)
     # Check that labels are valid integers
-    for l in labels:
-        assert isinstance(l, int)
+    for lbl in labels:
+        assert isinstance(lbl, int)
 
 
 def test_clustering_single_query():
     engine = TopicClusteringEngine()
-    labels, cluster_names, vectors = engine.fit_transform_texts(["одиночный запрос"])
+    labels, cluster_names, _vectors = engine.fit_transform_texts(["одиночный запрос"])
 
     assert labels == [0]
     assert len(cluster_names) == 1

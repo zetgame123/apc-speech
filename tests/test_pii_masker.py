@@ -1,4 +1,5 @@
 import pytest
+
 from app.pii.masker import PiiMasker
 
 

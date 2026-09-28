@@ -1,4 +1,3 @@
-import pytest
 from app.metrics.speech_metrics import SpeechMetricsCalculator
 
 

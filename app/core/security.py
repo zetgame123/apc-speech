@@ -3,9 +3,9 @@ import hmac
 import ipaddress
 import socket
 import time
-from typing import Optional, Set
 from urllib.parse import urlparse
-from fastapi import Header, HTTPException, Security, status
+
+from fastapi import Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import get_settings
@@ -32,7 +32,7 @@ def hash_token(token: str) -> str:
 
 
 class AuthContext:
-    def __init__(self, token: str, scopes: Set[str], namespace: Optional[str] = None):
+    def __init__(self, token: str, scopes: set[str], namespace: str | None = None):
         self.token = token
         self.scopes = scopes
         self.namespace = namespace
@@ -49,7 +49,7 @@ class AuthContext:
 
 
 def verify_auth(
-    credentials: Optional[HTTPAuthorizationCredentials] = Security(security_bearer),
+    credentials: HTTPAuthorizationCredentials | None = Security(security_bearer),
 ) -> AuthContext:
     settings = get_settings()
 
@@ -131,6 +131,6 @@ def validate_ssrf_url(url: str) -> str:
 
 def sign_callback_payload(secret: str, raw_body: bytes) -> tuple[int, str]:
     timestamp = int(time.time())
-    message = f"{timestamp}.".encode("utf-8") + raw_body
+    message = f"{timestamp}.".encode() + raw_body
     signature = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
     return timestamp, f"sha256={signature}"

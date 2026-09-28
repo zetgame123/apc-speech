@@ -1,12 +1,11 @@
 import asyncio
 import os
 import signal
-import sys
 import tempfile
 import traceback
-from datetime import datetime
+
 import httpx
-from sqlalchemy import select, update
+from sqlalchemy import update
 
 from app.asr.engine import get_asr_engine
 from app.asr.preprocessor import AudioPreprocessor
@@ -14,7 +13,7 @@ from app.asr.vad import VadDetector
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
 from app.core.security import validate_ssrf_url
-from app.db.models import Analysis, AudioObject, Call, Job, TranscriptSegment
+from app.db.models import Analysis, Call, Job, TranscriptSegment
 from app.db.session import AsyncSessionLocal
 from app.diarization.roles import RoleClassifier
 from app.llm.local_adapter import LocalLlamaCppAdapter
