@@ -40,3 +40,12 @@ async def test_auth_unauthorized():
         assert resp.status_code == 401
         data = resp.json()
         assert data["error"] == "unauthorized"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_endpoint():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/dashboard")
+        assert resp.status_code == 200
+        assert "APC-SPEECH" in resp.text
+        assert "audioPlayer" in resp.text

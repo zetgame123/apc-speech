@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>APC-SPEECH | Аналитика и караоке-транскрипт</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <style>
+    body { background-color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
+    .header-bar { background: linear-gradient(135deg, #1e293b, #0f172a); color: white; padding: 1.25rem 0; }
+    .chat-container { max-height: 580px; overflow-y: auto; padding: 1rem; background: white; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .msg-bubble { margin-bottom: 1rem; padding: 0.75rem 1rem; border-radius: 12px; max-width: 85%; }
+    .msg-manager { background-color: #eff6ff; border: 1px solid #bfdbfe; margin-right: auto; }
+    .msg-client { background-color: #f0fdf4; border: 1px solid #bbf7d0; margin-left: auto; text-align: left; }
+    .speaker-badge { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; margin-bottom: 0.25rem; }
+    .word-span { cursor: pointer; padding: 2px 1px; border-radius: 3px; transition: background-color 0.15s; }
+    .word-span:hover { background-color: #fde047; }
+    .word-active { background-color: #facc15 !important; font-weight: bold; }
+    .badge-deal { background-color: #10b981; }
+    .badge-follow { background-color: #3b82f6; }
+    .card-metric { border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-radius: 8px; }
+  </style>
+</head>
+<body>
+
+<div class="header-bar shadow-sm">
+  <div class="container d-flex justify-content-between align-items-center">
+    <div>
+      <h4 class="mb-0 fw-bold">🎙️ APC-SPEECH Analytics & Karaoke Player</h4>
+      <small class="text-secondary">Локальный сервис анализа русской речи и контроля стандартов наружной рекламы</small>
+    </div>
+    <span class="badge bg-success px-3 py-2">Profile: Small (2 vCPU / 4 GB RAM)</span>
+  </div>
+</div>
+
+<div class="container my-4">
+  <div class="row g-4">
+    <!-- Left Column: Audio Player and Karaoke Transcript -->
+    <div class="col-lg-7">
+      <div class="card card-metric p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h5 class="fw-bold mb-0">Аудиозапись звонка</h5>
+          <span class="badge bg-secondary" id="callExternalId">ID: call_outdoor_msk_104</span>
+        </div>
+        <!-- Standard HTML5 Audio Element -->
+        <audio id="audioPlayer" controls class="w-100 my-2">
+          <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=" type="audio/wav">
+          Ваш браузер не поддерживает элемент audio.
+        </audio>
+        <small class="text-muted">💡 Нажмите на любое слово в репликах ниже, чтобы мгновенно перемотать аудио на нужную секунду.</small>
+      </div>
+
+      <div class="card card-metric p-3">
+        <h5 class="fw-bold mb-3">Синхронная расшифровка диалога</h5>
+        <div class="chat-container" id="chatBox">
+          <!-- Dynamic segments injected here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Structured Insights, Checklist, Speech Metrics -->
+    <div class="col-lg-5">
+      <!-- Call Summary Card -->
+      <div class="card card-metric p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="badge bg-primary px-2 py-1" id="inquiryBadge">Подбор инвентаря</span>
+          <span class="badge badge-deal px-2 py-1" id="callResultBadge">Сделка / Договоренность</span>
+        </div>
+        <h6 class="fw-bold">Краткое резюме диалога</h6>
+        <p class="text-secondary small mb-3" id="callSummaryText">
+          Клиент запросил подбор щитов формата 3×6 в Балашихе на октябрь. Менеджер уточнил даты, предложил 3 свободные стороны А на шоссе Энтузиастов и зафиксировал отправку КП до 18:00.
+        </p>
+
+        <h6 class="fw-bold">Извлеченные сущности</h6>
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          <span class="badge bg-light text-dark border">Город: Балашиха</span>
+          <span class="badge bg-light text-dark border">Формат: 3×6 (щит)</span>
+          <span class="badge bg-light text-dark border">Период: Октябрь</span>
+          <span class="badge bg-light text-dark border">Количество: 3 стороны</span>
+        </div>
+      </div>
+
+      <!-- Manager Quality Checklist -->
+      <div class="card card-metric p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="fw-bold mb-0">Чек-лист качества менеджера</h6>
+          <span class="badge bg-success fs-6" id="checklistScore">Оценка: 5 / 5</span>
+        </div>
+        <ul class="list-group list-group-flush small" id="checklistUl">
+          <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+            1. Приветствие и представление компании
+            <span class="badge bg-success rounded-pill">✓ Да</span>
+          </li>
+          <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+            2. Выявление потребностей (локация, формат)
+            <span class="badge bg-success rounded-pill">✓ Да</span>
+          </li>
+          <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+            3. Предложение вариантов инвентаря
+            <span class="badge bg-success rounded-pill">✓ Да</span>
+          </li>
+          <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+            4. Обозначение следующего шага со сроком
+            <span class="badge bg-success rounded-pill">✓ Да</span>
+          </li>
+          <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+            5. Взятие контактных данных
+            <span class="badge bg-success rounded-pill">✓ Да</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Deterministic Speech Metrics Card -->
+      <div class="card card-metric p-3">
+        <h6 class="fw-bold mb-3">Акустические метрики речи (Без LLM)</h6>
+        
+        <div class="mb-3">
+          <div class="d-flex justify-content-between small mb-1">
+            <span>Доля речи: Менеджер vs Клиент</span>
+            <span class="fw-bold">58% / 42%</span>
+          </div>
+          <div class="progress" style="height: 8px;">
+            <div class="progress-bar bg-primary" style="width: 58%"></div>
+            <div class="progress-bar bg-success" style="width: 42%"></div>
+          </div>
+        </div>
+
+        <div class="row text-center g-2">
+          <div class="col-4">
+            <div class="p-2 border rounded bg-light">
+              <small class="text-muted d-block">Темп менеджера</small>
+              <span class="fw-bold">132 сл/мин</span>
+            </div>
+          </div>
+          <div class="col-4">
+            <div class="p-2 border rounded bg-light">
+              <small class="text-muted d-block">Перебивания</small>
+              <span class="fw-bold text-warning">1 раз</span>
+            </div>
+          </div>
+          <div class="col-4">
+            <div class="p-2 border rounded bg-light">
+              <small class="text-muted d-block">Паузы тишины</small>
+              <span class="fw-bold">3.2 с</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Demo timed segments with word timestamps for Karaoke synchronization
+  const demoSegments = [
+    {
+      role: 'manager',
+      speaker: 'Менеджер',
+      start: 0.0,
+      end: 4.2,
+      words: [
+        { word: 'Здравствуйте!', start: 0.1, end: 0.8 },
+        { word: 'Агентство', start: 0.9, end: 1.5 },
+        { word: 'наружной', start: 1.6, end: 2.1 },
+        { word: 'рекламы,', start: 2.2, end: 2.8 },
+        { word: 'слушаю', start: 3.0, end: 3.5 },
+        { word: 'вас.', start: 3.6, end: 4.0 }
+      ]
+    },
+    {
+      role: 'client',
+      speaker: 'Клиент',
+      start: 4.5,
+      end: 9.8,
+      words: [
+        { word: 'Добрый', start: 4.6, end: 5.0 },
+        { word: 'день,', start: 5.1, end: 5.4 },
+        { word: 'подскажите,', start: 5.6, end: 6.2 },
+        { word: 'свободны', start: 6.4, end: 6.9 },
+        { word: 'ли', start: 7.0, end: 7.1 },
+        { word: 'щиты', start: 7.3, end: 7.8 },
+        { word: '3×6', start: 8.0, end: 8.4 },
+        { word: 'в', start: 8.5, end: 8.6 },
+        { word: 'Балашихе', start: 8.7, end: 9.2 },
+        { word: 'на', start: 9.3, end: 9.4 },
+        { word: 'октябрь?', start: 9.5, end: 9.8 }
+      ]
+    },
+    {
+      role: 'manager',
+      speaker: 'Менеджер',
+      start: 10.2,
+      end: 16.5,
+      words: [
+        { word: 'Да,', start: 10.3, end: 10.6 },
+        { word: 'конечно!', start: 10.7, end: 11.2 },
+        { word: 'Есть', start: 11.4, end: 11.7 },
+        { word: 'отличная', start: 11.8, end: 12.3 },
+        { word: 'сторона', start: 12.4, end: 12.9 },
+        { word: 'А', start: 13.0, end: 13.2 },
+        { word: 'на', start: 13.3, end: 13.4 },
+        { word: 'шоссе', start: 13.5, end: 13.9 },
+        { word: 'Энтузиастов.', start: 14.0, end: 14.8 },
+        { word: 'Направлю', start: 15.0, end: 15.5 },
+        { word: 'расчет', start: 15.6, end: 16.0 },
+        { word: 'на', start: 16.1, end: 16.2 },
+        { word: 'почту.', start: 16.3, end: 16.5 }
+      ]
+    }
+  ];
+
+  const audio = document.getElementById('audioPlayer');
+  const chatBox = document.getElementById('chatBox');
+
+  // Render chat with clickable words
+  demoSegments.forEach((seg, segIdx) => {
+    const bubble = document.createElement('div');
+    bubble.className = `msg-bubble msg-${seg.role}`;
+    
+    const badge = document.createElement('div');
+    badge.className = `speaker-badge ${seg.role === 'manager' ? 'text-primary' : 'text-success'}`;
+    badge.innerText = `${seg.speaker} (${seg.start.toFixed(1)}s - ${seg.end.toFixed(1)}s)`;
+    bubble.appendChild(badge);
+
+    const textContainer = document.createElement('div');
+    seg.words.forEach(w => {
+      const span = document.createElement('span');
+      span.className = 'word-span';
+      span.innerText = w.word + ' ';
+      span.dataset.start = w.start;
+      span.dataset.end = w.end;
+      
+      // Jump audio to timestamp when clicked
+      span.addEventListener('click', () => {
+        audio.currentTime = w.start;
+        audio.play();
+      });
+
+      textContainer.appendChild(span);
+    });
+
+    bubble.appendChild(textContainer);
+    chatBox.appendChild(bubble);
+  });
+
+  // Karaoke Real-Time Highlighter
+  audio.addEventListener('timeupdate', () => {
+    const curTime = audio.currentTime;
+    const allWords = document.querySelectorAll('.word-span');
+    allWords.forEach(span => {
+      const s = parseFloat(span.dataset.start);
+      const e = parseFloat(span.dataset.end);
+      if (curTime >= s && curTime <= e) {
+        span.classList.add('word-active');
+      } else {
+        span.classList.remove('word-active');
+      }
+    });
+  });
+</script>
+
+</body>
+</html>

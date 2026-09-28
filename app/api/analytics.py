@@ -81,6 +81,11 @@ async def get_analytics_summary(
     }
 
 
+from app.analytics.clustering import TopicClusteringEngine
+
+clustering_engine = TopicClusteringEngine()
+
+
 @router.post("/texts/analyze")
 async def analyze_texts(
     req: TextAnalyzeRequest,
@@ -88,36 +93,24 @@ async def analyze_texts(
 ):
     auth.require_scope("write")
 
-    # Group texts by basic keyword clusters
-    clusters_map = {
-        "Подбор мест и форматов": [],
-        "Стоимость и прайс": [],
-        "Свободные щиты": [],
-        "Прочие запросы": [],
-    }
+    labels, cluster_names, _ = clustering_engine.fit_transform_texts(req.texts)
 
-    for text in req.texts:
-        t_low = text.lower()
-        if any(w in t_low for w in ["щит", "суперсайт", "3х6", "формат", "балашиха", "химки"]):
-            clusters_map["Подбор мест и форматов"].append(text)
-        elif any(w in t_low for w in ["цена", "прайс", "стоимость", "руб"]):
-            clusters_map["Стоимость и прайс"].append(text)
-        elif any(w in t_low for w in ["свобод", "занят", "период", "октябрь"]):
-            clusters_map["Свободные щиты"].append(text)
-        else:
-            clusters_map["Прочие запросы"].append(text)
+    # Group texts by cluster
+    grouped: Dict[int, List[str]] = {}
+    for text, label in zip(req.texts, labels):
+        grouped.setdefault(label, []).append(text)
 
     clusters_output = []
     cid = 1
-    for label, queries in clusters_map.items():
-        if queries:
-            clusters_output.append({
-                "cluster_id": cid,
-                "label": label,
-                "size": len(queries),
-                "representative_queries": queries[:3],
-            })
-            cid += 1
+    for label, queries in grouped.items():
+        name = cluster_names.get(label, f"Кластер {cid}")
+        clusters_output.append({
+            "cluster_id": cid,
+            "label": name,
+            "size": len(queries),
+            "representative_queries": queries[:3],
+        })
+        cid += 1
 
     return {
         "total_texts": len(req.texts),

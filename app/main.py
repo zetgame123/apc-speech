@@ -99,6 +99,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 
+from app.api import admin, analytics, calls, dashboard, health, jobs, voice
+
 # Register API Routers
 app.include_router(health.router)
 app.include_router(voice.router)
@@ -106,3 +108,4 @@ app.include_router(jobs.router)
 app.include_router(calls.router)
 app.include_router(analytics.router)
 app.include_router(admin.router)
+app.include_router(dashboard.router)
