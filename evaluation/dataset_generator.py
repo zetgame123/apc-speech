@@ -3,6 +3,7 @@ import os
 import subprocess
 
 from gtts import gTTS
+
 from app.core.logging import get_logger
 
 logger = get_logger("synthetic_dataset_generator")
@@ -12,7 +13,7 @@ def generate_speech_wav(text: str, output_path: str):
     tts = gTTS(text, lang='ru')
     temp_mp3 = output_path.replace(".wav", ".mp3")
     tts.save(temp_mp3)
-    
+
     cmd = [
         "ffmpeg",
         "-nostdin",

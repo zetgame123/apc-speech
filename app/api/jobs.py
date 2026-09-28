@@ -1,4 +1,3 @@
-from app.api.rate_limit import rate_limit
 import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -19,6 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.rate_limit import rate_limit
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.logging import get_logger
@@ -114,7 +114,7 @@ async def create_job_upload(
     # Generate IDs
     job_id = str(uuid.uuid4())
     call_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Upload raw audio to MinIO
     storage = get_storage()
@@ -205,6 +205,7 @@ async def create_job_by_url(
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("write")
+    settings = get_settings()
 
     # SSRF Protection
     safe_url = validate_ssrf_url(req.url)
@@ -223,7 +224,7 @@ async def create_job_by_url(
 
     job_id = str(uuid.uuid4())
     call_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     meta = req.metadata or {}
 
     call = Call(

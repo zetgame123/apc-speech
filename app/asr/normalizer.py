@@ -60,7 +60,7 @@ class RussianTextNormalizer:
             (re.compile(r"\bдвадцать\s+шестой\s+год\b", re.IGNORECASE), "2026 г."),
             (re.compile(r"\bс\s+мая\s+по\s+сентябрь\b", re.IGNORECASE), "с мая по сентябрь"),
         ]
-        
+
         # Phone
         self.phone_patterns = [
             (re.compile(r"\bплюс\s+семь\s+девятьсот\s+двадцать\s+шесть\b", re.IGNORECASE), "+7 926"),
@@ -85,10 +85,10 @@ class RussianTextNormalizer:
 
         for pattern, replacement in self.currency_patterns:
             res = pattern.sub(replacement, res)
-            
+
         for pattern, replacement in self.date_patterns:
             res = pattern.sub(replacement, res)
-            
+
         for pattern, replacement in self.phone_patterns:
             res = pattern.sub(replacement, res)
 

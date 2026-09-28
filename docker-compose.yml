@@ -74,6 +74,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://apc_user:secure_pass@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
+      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
     ports:
       - "8000:8000"
     healthcheck:
@@ -103,6 +104,12 @@ services:
       - DATABASE_URL=postgresql+asyncpg://apc_user:secure_pass@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
+      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     deploy:
       resources:
         limits:
@@ -123,6 +130,12 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://apc_user:secure_pass@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
+      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     deploy:
       resources:
         limits:
@@ -139,6 +152,14 @@ services:
       redis: { condition: service_healthy }
     env_file:
       - .env.example
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     deploy:
       resources:
         limits:

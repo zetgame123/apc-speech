@@ -112,13 +112,13 @@ async def process_job(job_id: str, data: dict):
 
             ch0_chunks = chunk_audio(ch0_pcm, chunk_length_sec=600, overlap_sec=15)
             ch1_chunks = chunk_audio(ch1_pcm, chunk_length_sec=600, overlap_sec=15)
-            
+
             all_segs_ch0 = []
             for chunk in ch0_chunks:
                 segs, _ = asr_engine.transcribe(chunk["data"])
                 all_segs_ch0.append(segs)
             segs_ch0 = merge_and_deduplicate(all_segs_ch0, ch0_chunks)
-            
+
             all_segs_ch1 = []
             for chunk in ch1_chunks:
                 segs, _ = asr_engine.transcribe(chunk["data"])
@@ -130,18 +130,18 @@ async def process_job(job_id: str, data: dict):
                 segs_ch0, segs_ch1, channel_mapping
             )
         else:
-            
+
             # Mono branch
             mono_pcm = os.path.join(tmp_dir, "mono_pcm.wav")
             preprocessor.convert_to_pcm16(input_audio_path, mono_pcm)
-            
+
             chunks_info = chunk_audio(mono_pcm, chunk_length_sec=600, overlap_sec=15)
             all_raw_segments = []
-            
+
             for chunk in chunks_info:
                 segs, _ = asr_engine.transcribe(chunk["data"])
                 all_raw_segments.append(segs)
-                
+
             raw_segments = merge_and_deduplicate(all_raw_segments, chunks_info)
 
             # Use local audio-based diarization

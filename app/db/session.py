@@ -46,4 +46,8 @@ async def init_db():
         except Exception:
             pass
         await conn.run_sync(Base.metadata.create_all)
+        try:
+            await conn.execute(text("ALTER TABLE calls ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;"))
+        except Exception:
+            pass
 

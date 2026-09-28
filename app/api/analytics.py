@@ -1,7 +1,9 @@
-from datetime import datetime
+import csv
+import io
 from collections import defaultdict
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,10 +48,10 @@ async def get_analytics_summary(
 
     inquiry_dist: dict[str, int] = {}
     checklist_scores: list[int] = []
-    
+
     cities_counter = defaultdict(int)
     formats_counter = defaultdict(int)
-    
+
     chk_metrics = {
         "greeting": 0,
         "need_identification": 0,
@@ -58,7 +60,7 @@ async def get_analytics_summary(
         "contacts_taken": 0,
     }
     chk_count = 0
-    
+
     weekly_trends_dict = defaultdict(int)
 
     for c in calls:
@@ -73,13 +75,13 @@ async def get_analytics_summary(
         for a in analyses:
             itype = a.inquiry_type or "other"
             inquiry_dist[itype] = inquiry_dist.get(itype, 0) + 1
-            
+
             if a.entities:
                 for city in a.entities.get("cities", []):
                     cities_counter[city] += 1
                 for fmt in a.entities.get("formats", []):
                     formats_counter[fmt] += 1
-                    
+
             if a.manager_checklist:
                 chk_count += 1
                 if "score" in a.manager_checklist:
@@ -93,10 +95,10 @@ async def get_analytics_summary(
         if checklist_scores
         else 0.0
     )
-    
+
     top_cities = [{"name": k, "count": v} for k, v in sorted(cities_counter.items(), key=lambda x: x[1], reverse=True)[:5]]
     top_formats = [{"name": k, "count": v} for k, v in sorted(formats_counter.items(), key=lambda x: x[1], reverse=True)[:5]]
-    
+
     weekly_trends = [{"week": k, "calls_count": v} for k, v in sorted(weekly_trends_dict.items())]
 
     return {
@@ -149,9 +151,6 @@ async def analyze_texts(
         "clusters": clusters_output,
     }
 
-import io
-import csv
-from fastapi import Response
 
 @router.get("/analytics/export_csv")
 async def export_analytics_csv(

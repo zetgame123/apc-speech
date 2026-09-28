@@ -39,6 +39,7 @@ echo "    ${SEARCH_RESP}"
 echo -e "\n[Шаг 3] Загрузка телефонного звонка на полный анализ..."
 JOB_RESP=$(curl -s -X POST "${API_URL}/v1/jobs/upload" \
   -H "Authorization: Bearer ${TOKEN}" \
+  -H "Idempotency-Key: e2e-demo-$(date +%s%N)" \
   -F "namespace=${NAMESPACE}" \
   -F "file=@${AUDIO_FILE}" \
   -F "external_id=demo_call_999" \

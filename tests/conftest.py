@@ -1,9 +1,10 @@
 import pytest
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from app.db.models import Base
-from app.main import app
-from app.db.session import get_db
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
 from app.core.config import get_settings
+from app.db.models import Base
+from app.db.session import get_db
+from app.main import app
 
 # Create in-memory SQLite for testing
 engine = create_async_engine(
@@ -20,11 +21,11 @@ async def override_get_db():
 async def setup_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     app.dependency_overrides[get_db] = override_get_db
-    
+
     yield
-    
+
     # Teardown
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -37,6 +38,5 @@ def override_get_settings():
     return settings
 
 app.dependency_overrides[get_settings] = override_get_settings
-from app.core.config import get_settings
 get_settings().dev_token = "dev-token"
 get_settings().debug = True

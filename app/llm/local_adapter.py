@@ -1,12 +1,12 @@
 import json
-import re
-from app.asr.normalizer import RussianTextNormalizer
 import os
+import re
 from typing import Any
 
 import httpx
 import yaml
 
+from app.asr.normalizer import RussianTextNormalizer
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.llm.port import AnalysisContext, AnalysisModelPort, StructuredAnalysis
