@@ -57,7 +57,7 @@ async def voice_search(
     try:
         segments, meta = engine.transcribe(
             audio_stream,
-            beam_size=1,  # Greedy search for maximum speed
+            beam_size=2,  # beam_size 2 enables hypothesis search, fixes homophone errors
             vad_filter=True,
         )
     except Exception as e:

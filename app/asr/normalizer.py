@@ -51,6 +51,13 @@ class RussianTextNormalizer:
             (re.compile(r"\b(\d+)\s+рубль\b", re.IGNORECASE), r"\1 руб."),
         ]
 
+        # Domain acoustic homophones (e.g. Whisper confusing "счетов" with "щитов" in advertising contexts)
+        self.homophone_patterns = [
+            (re.compile(r"\bсчет(а|ов|ам|ами|ах)?\s+(3×6|6×3|3х6|6х3|три на шесть|шесть на три|ситиборд|билборд)", re.IGNORECASE), r"щит\1 \2"),
+            (re.compile(r"\b(стоимость|цена|аренда|размещение|печать|монтаж|бронь)\s+счетов\b", re.IGNORECASE), r"\1 щитов"),
+            (re.compile(r"\bсчетов\s+в\s+([А-Яа-яA-Za-z]+)", re.IGNORECASE), r"щитов в \1"),
+        ]
+
     def normalize(self, text: str) -> str:
         """Applies rule-based Inverse Text Normalization to Russian speech text."""
         if not text:
@@ -64,6 +71,10 @@ class RussianTextNormalizer:
 
         # 2. Currencies
         for pattern, replacement in self.currency_patterns:
+            res = pattern.sub(replacement, res)
+
+        # 3. Domain acoustic homophones
+        for pattern, replacement in self.homophone_patterns:
             res = pattern.sub(replacement, res)
 
         # 3. Time units

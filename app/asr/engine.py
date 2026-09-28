@@ -1,7 +1,6 @@
 import os
 from typing import Any
 
-import numpy as np
 import yaml
 
 from app.asr.normalizer import RussianTextNormalizer
@@ -11,10 +10,12 @@ from app.core.logging import get_logger
 logger = get_logger("asr_engine")
 
 DEFAULT_HINTS = (
-    "Разговор о наружной рекламе: щит, суперсайт, ситиборд, сити-формат, пиллар, "
-    "призматрон, брандмауэр, медиафасад, экран, диджитал, сторона А, сторона Б, "
-    "3х6, 6х3, GRP, OTS, монтаж, демонтаж, печать, бронь, Балашиха, Химки, Мытищи, "
-    "Подольск, Одинцово, Красногорск."
+    "Разговор о наружной рекламе: рекламные щиты, стоимость щитов 3х6, аренда щитов, "
+    "билборды, суперсайты, ситиборды, сити-формат, пиллары, призматроны, брандмауэры, медиафасады, "
+    "сторона А, сторона Б, три на шесть, 6х3, GRP, OTS, бронь, Балашиха, Химки, Мытищи, Подольск."
+)
+DEFAULT_HOTWORDS = (
+    "щит щиты щитов щитах билборд билборды суперсайт ситиборд медиафасад 3х6 Балашиха Балашихе"
 )
 
 
@@ -35,15 +36,16 @@ class AsrEngine:
         self.vocabulary_prompt = self._load_vocabulary_hints()
 
     def _load_vocabulary_hints(self) -> str:
-        hints_file = "config/vocabulary_hints.yaml"
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        hints_file = os.path.join(base_dir, "config", "vocabulary_hints.yaml")
         if os.path.exists(hints_file):
             try:
                 with open(hints_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f)
                     terms = data.get("domain_terms", [])
                     cities = data.get("cities", [])
-                    all_hints = terms + cities
-                    return "Термины наружной рекламы: " + ", ".join(all_hints) + "."
+                    all_hints = terms[:30] + cities[:10]
+                    return "Разговор о наружной рекламе: " + ", ".join(all_hints) + "."
             except Exception as e:
                 logger.warning("hints_load_failed", error=str(e))
         return DEFAULT_HINTS
@@ -78,28 +80,31 @@ class AsrEngine:
 
     def transcribe(
         self,
-        audio: str | np.ndarray,
+        audio: Any,
         language: str = "ru",
         beam_size: int = 2,
         initial_prompt: str | None = None,
         vad_filter: bool = True,
+        hotwords: str | None = None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """
         Transcribes audio with faster-whisper with strict anti-hallucination flags.
         Returns (segments, info).
         """
         prompt = (initial_prompt or "") + " " + self.vocabulary_prompt
+        applied_hotwords = hotwords or DEFAULT_HOTWORDS
 
         segments_iter, info = self.model.transcribe(
             audio,
             language=language,
             beam_size=beam_size,
             initial_prompt=prompt,
+            hotwords=applied_hotwords,
             vad_filter=vad_filter,
             vad_parameters=dict(
-                threshold=0.5,
-                min_silence_duration_ms=400,
-                speech_pad_ms=200,
+                threshold=0.4,
+                min_silence_duration_ms=300,
+                speech_pad_ms=350,
             ),
             word_timestamps=True,
             condition_on_previous_text=False,  # CRITICAL: prevents repeating loops
