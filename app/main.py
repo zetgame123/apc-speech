@@ -1,0 +1,108 @@
+import uuid
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import structlog
+
+from app.api import admin, analytics, calls, health, jobs, voice
+from app.core.config import get_settings
+from app.core.errors import AppError, error_response
+from app.core.logging import get_logger, setup_logging
+from app.db.session import init_db
+from app.queue.redis_streams import get_queue
+from app.storage.s3 import get_storage
+
+settings = get_settings()
+setup_logging(settings.log_level)
+logger = get_logger("main")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("service_startup_beginning", profile=settings.app_profile)
+    # 1. Initialize DB tables
+    try:
+        await init_db()
+        logger.info("database_initialized")
+    except Exception as e:
+        logger.warning("database_init_failed", error=str(e))
+
+    # 2. Ensure S3 buckets exist
+    try:
+        storage = get_storage()
+        storage.ensure_buckets()
+        logger.info("s3_buckets_initialized")
+    except Exception as e:
+        logger.warning("s3_buckets_init_failed", error=str(e))
+
+    # 3. Ensure Redis Streams groups
+    try:
+        queue = get_queue()
+        await queue.ensure_groups()
+        logger.info("redis_streams_groups_initialized")
+    except Exception as e:
+        logger.warning("redis_groups_init_failed", error=str(e))
+
+    yield
+
+    logger.info("service_shutdown_completed")
+
+
+app = FastAPI(
+    title="apc-speech Service",
+    version="1.0.0",
+    description="Autonomous local speech recognition, diarization, and semantic analysis service",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.debug else None,
+    redoc_url=None,
+)
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.middleware("http")
+async def request_id_and_logging_middleware(request: Request, call_next):
+    req_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
+    structlog.contextvars.bind_contextvars(request_id=req_id)
+
+    response = await call_next(request)
+    response.headers["X-Request-Id"] = req_id
+    return response
+
+
+@app.exception_handler(AppError)
+async def app_error_handler(request: Request, exc: AppError):
+    return error_response(
+        error=exc.error,
+        message=exc.message,
+        status_code=exc.status_code,
+        details=exc.details,
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error("unhandled_exception", error=str(exc))
+    return error_response(
+        error="internal_server_error",
+        message="Внутренняя непредвиденная ошибка сервиса",
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        details={"error": str(exc)} if settings.debug else None,
+    )
+
+
+# Register API Routers
+app.include_router(health.router)
+app.include_router(voice.router)
+app.include_router(jobs.router)
+app.include_router(calls.router)
+app.include_router(analytics.router)
+app.include_router(admin.router)

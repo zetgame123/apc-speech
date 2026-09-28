@@ -1,0 +1,91 @@
+import io
+import time
+from typing import Optional
+from fastapi import APIRouter, Depends, File, Header, Query, Request, UploadFile, status
+from pydantic import BaseModel
+
+from app.asr.engine import get_asr_engine
+from app.core.config import get_settings
+from app.core.errors import AppError
+from app.core.logging import get_logger
+from app.core.security import AuthContext, verify_auth
+
+router = APIRouter(prefix="/v1/voice", tags=["voice"])
+logger = get_logger("voice_search_api")
+
+
+class VoiceSearchResponse(BaseModel):
+    text: str
+    language: str
+    confidence: float
+    duration_sec: float
+    processing_time_ms: int
+
+
+@router.post(
+    "/search",
+    response_model=VoiceSearchResponse,
+    summary="Синхронный голосовой поиск",
+)
+async def voice_search(
+    request: Request,
+    namespace: str = Query(..., description="Namespace изоляции данных"),
+    file: Optional[UploadFile] = File(None),
+    auth: AuthContext = Depends(verify_auth),
+    x_request_id: Optional[str] = Header(None),
+):
+    start_time = time.time()
+    auth.require_scope("write")
+
+    # Read audio bytes either from multipart file or direct raw body
+    if file:
+        audio_bytes = await file.read()
+    else:
+        audio_bytes = await request.body()
+
+    if not audio_bytes:
+        raise AppError("empty_audio", "Тело запроса не содержит аудиоданных", 400)
+
+    # Size check (max 10MB for 60s audio)
+    if len(audio_bytes) > 10 * 1024 * 1024:
+        raise AppError("payload_too_large", "Размер аудио для голосового поиска превышает 10 МБ", 413)
+
+    # In-memory transcription via faster-whisper
+    engine = get_asr_engine()
+    audio_stream = io.BytesIO(audio_bytes)
+
+    try:
+        segments, meta = engine.transcribe(
+            audio_stream,
+            beam_size=1,  # Greedy search for maximum speed
+            vad_filter=True,
+        )
+    except Exception as e:
+        logger.error("voice_search_transcribe_error", error=str(e))
+        raise AppError("transcription_failed", "Ошибка распознавания голосового запроса", 500)
+
+    duration = meta.get("duration", 0.0)
+    settings = get_settings()
+    if duration > settings.voice_search_max_duration_sec:
+        raise AppError(
+            "duration_exceeded",
+            f"Длительность аудио ({duration} с) превышает лимит ({settings.voice_search_max_duration_sec} с)",
+            400,
+        )
+
+    full_text = " ".join(s["text"] for s in segments).strip()
+    avg_conf = (
+        sum(s.get("confidence", 0.0) for s in segments) / len(segments)
+        if segments else 0.0
+    )
+
+    elapsed_ms = int((time.time() - start_time) * 1000)
+    logger.info("voice_search_completed", duration=duration, latency_ms=elapsed_ms, text=full_text)
+
+    return VoiceSearchResponse(
+        text=full_text,
+        language=meta.get("language", "ru"),
+        confidence=round(avg_conf, 3),
+        duration_sec=duration,
+        processing_time_ms=elapsed_ms,
+    )
