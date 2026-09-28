@@ -78,8 +78,37 @@ def run_benchmark():
                 "status": "PASS" if wer <= 0.25 else "FAIL",
             }
 
-    # Diarization metrics placeholder/calculation
+    # Real acoustic diarization & DER calculation
     der_metrics = {"der": 0.0, "speaker_confusion_rate": 0.0}
+    dialogue_sample = next((s for s in manifest if s["type"] == "dialogue"), None)
+    if dialogue_sample and os.path.exists(dialogue_sample["audio_file"]):
+        from app.diarization.mono_diarizer import MonoDiarizer
+        from app.diarization.roles import RoleClassifier
+
+        mono_diarizer = MonoDiarizer(num_speakers=2)
+        role_classifier = RoleClassifier()
+
+        segs, _ = asr.transcribe(dialogue_sample["audio_file"])
+        diarized_segs = mono_diarizer.diarize(dialogue_sample["audio_file"], segs)
+        classified_segs, _ = role_classifier.classify_mono_speakers(diarized_segs)
+
+        ref_roles = dialogue_sample.get("speaker_roles", [])
+        total_ref_duration = sum(r["end"] - r["start"] for r in ref_roles)
+        confusion_duration = 0.0
+
+        for ref in ref_roles:
+            for pred in classified_segs:
+                overlap_start = max(ref["start"], pred["start"])
+                overlap_end = min(ref["end"], pred["end"])
+                if overlap_end > overlap_start:
+                    overlap_dur = overlap_end - overlap_start
+                    if pred.get("speaker_role") != ref.get("speaker_role"):
+                        confusion_duration += overlap_dur
+
+        if total_ref_duration > 0:
+            der = min(1.0, confusion_duration / total_ref_duration)
+            der_metrics["der"] = round(der, 3)
+            der_metrics["speaker_confusion_rate"] = round(der, 3)
 
     results["profile"] = args.profile
     results["diarization"] = {
@@ -100,7 +129,8 @@ def run_benchmark():
     all_pass = all([
         results.get("clean_speech", {}).get("status") == "PASS",
         results.get("telephony_8khz", {}).get("status") == "PASS",
-        results.get("voice_search_latency", {}).get("status") == "PASS"
+        results.get("voice_search_latency", {}).get("status") == "PASS",
+        results.get("diarization", {}).get("status") == "PASS",
     ])
     if all_pass:
         print("  BENCHMARK COMPLETED: ALL TARGETS PASSED")

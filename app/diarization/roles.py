@@ -25,11 +25,14 @@ MANAGER_SPEECH_PATTERNS = [
 
 CLIENT_PATTERNS = [
     re.compile(r"\bподскажите\s+пожалуйста\b", re.IGNORECASE),
+    re.compile(r"\bподскажите\b", re.IGNORECASE),
     re.compile(r"\bсколько\s+стоит\b", re.IGNORECASE),
+    re.compile(r"\bстоимость\b", re.IGNORECASE),
     re.compile(r"\bнас\s+интересует\b", re.IGNORECASE),
     re.compile(r"\bнам\s+нужен\b", re.IGNORECASE),
     re.compile(r"\bмы\s+хотим\s+разместить\b", re.IGNORECASE),
     re.compile(r"\bкакие\s+цены\b", re.IGNORECASE),
+    re.compile(r"\bцена\b", re.IGNORECASE),
 ]
 
 
@@ -113,15 +116,18 @@ class RoleClassifier:
         logger.info("role_scores", spk0_score=spk0_score, spk1_score=spk1_score)
 
         diff = abs(spk0_score - spk1_score)
-        if diff >= 0.5:
+        if diff >= 0.4:
             confidence = "high"
-            if spk0_score > spk1_score:
-                role_map = {"SPEAKER_0": "manager", "SPEAKER_1": "client"}
-            else:
-                role_map = {"SPEAKER_1": "manager", "SPEAKER_0": "client"}
+        elif diff >= 0.15:
+            confidence = "medium"
         else:
             confidence = "low"
-            # Fallback: leave neutral roles
+
+        if spk0_score > spk1_score:
+            role_map = {"SPEAKER_0": "manager", "SPEAKER_1": "client"}
+        elif spk1_score > spk0_score:
+            role_map = {"SPEAKER_1": "manager", "SPEAKER_0": "client"}
+        else:
             role_map = {"SPEAKER_0": "participant_1", "SPEAKER_1": "participant_2"}
 
         updated_segments = []

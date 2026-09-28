@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+from typing import Any
 
 from gtts import gTTS
 
@@ -57,7 +58,68 @@ def apply_telephony_degradation(
     ]
     subprocess.run(cmd, capture_output=True, check=True)
 
-def build_synthetic_benchmark_suite(output_dir: str = "data/evaluation_suite") -> dict[str, any]:
+def generate_dialogue_wav(text1: str, text2: str, output_path: str) -> list[dict[str, Any]]:
+    """Generates two-speaker dialogue with acoustic pitch differentiation."""
+    import numpy as np
+    import soundfile as sf
+
+    t1 = output_path.replace(".wav", "_spk1.mp3")
+    w1 = output_path.replace(".wav", "_spk1.wav")
+    gTTS(text1, lang="ru").save(t1)
+    subprocess.run(
+        ["ffmpeg", "-nostdin", "-y", "-i", t1, "-ar", "16000", "-ac", "1", w1],
+        check=True,
+        capture_output=True,
+    )
+    d1, sr = sf.read(w1, dtype="float32")
+    dur1 = len(d1) / sr
+
+    t2 = output_path.replace(".wav", "_spk2.mp3")
+    w2 = output_path.replace(".wav", "_spk2.wav")
+    gTTS(text2, lang="ru").save(t2)
+    # Apply pitch shift to second speaker for acoustic differentiation
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-y",
+            "-i",
+            t2,
+            "-af",
+            "asetrate=16000*1.22,aresample=16000",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            w2,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    d2, _ = sf.read(w2, dtype="float32")
+    dur2 = len(d2) / sr
+
+    pause_dur = 0.5
+    pause = np.zeros(int(sr * pause_dur), dtype=np.float32)
+    combined = np.concatenate([d1, pause, d2])
+    sf.write(output_path, combined, sr)
+
+    for p in [t1, w1, t2, w2]:
+        if os.path.exists(p):
+            os.remove(p)
+
+    roles = [
+        {"start": 0.0, "end": round(dur1, 2), "speaker_role": "client"},
+        {
+            "start": round(dur1 + pause_dur, 2),
+            "end": round(dur1 + pause_dur + dur2, 2),
+            "speaker_role": "manager",
+        },
+    ]
+    return roles
+
+
+def build_synthetic_benchmark_suite(output_dir: str = "data/evaluation_suite") -> dict[str, Any]:
     """Generates a reproducible evaluation suite with ground truth transcripts."""
     os.makedirs(output_dir, exist_ok=True)
 
@@ -78,17 +140,20 @@ def build_synthetic_benchmark_suite(output_dir: str = "data/evaluation_suite") -
             "id": "sample_dialogue_01",
             "reference": "Здравствуйте! Подскажите стоимость суперсайта на Ленинградке. Добрый день, стоимость двести тысяч рублей в месяц.",
             "type": "dialogue",
-            "speaker_roles": [
-                {"start": 0.0, "end": 2.8, "speaker_role": "client"},
-                {"start": 3.0, "end": 6.0, "speaker_role": "manager"},
-            ],
+            "spk1_text": "Здравствуйте! Подскажите стоимость суперсайта на Ленинградке.",
+            "spk2_text": "Добрый день, стоимость двести тысяч рублей в месяц.",
         },
     ]
 
     manifest = []
     for item in samples:
         base_clean = os.path.join(output_dir, f"{item['id']}_clean.wav")
-        generate_speech_wav(item["reference"], base_clean)
+        if item["type"] == "dialogue":
+            roles = generate_dialogue_wav(item["spk1_text"], item["spk2_text"], base_clean)
+            item_roles = roles
+        else:
+            generate_speech_wav(item["reference"], base_clean)
+            item_roles = item["speaker_roles"]
 
         if item["type"] in ("telephony", "dialogue"):
             tel_wav = os.path.join(output_dir, f"{item['id']}_telephony_8k.wav")
@@ -102,7 +167,7 @@ def build_synthetic_benchmark_suite(output_dir: str = "data/evaluation_suite") -
             "audio_file": audio_file,
             "reference": item["reference"],
             "type": item["type"],
-            "speaker_roles": item["speaker_roles"],
+            "speaker_roles": item_roles,
         })
 
     manifest_path = os.path.join(output_dir, "manifest.json")
