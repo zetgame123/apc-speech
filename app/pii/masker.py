@@ -67,4 +67,8 @@ class PiiMasker:
             raise ValueError("PII Leak detected: Unmasked bank card found in text!")
         if EMAIL_REGEX.search(text):
             raise ValueError("PII Leak detected: Unmasked email found in text!")
+        if PASSPORT_RF_REGEX.search(text):
+            raise ValueError("PII Leak detected: Unmasked passport found in text!")
+        if PHONE_REGEX.search(text):
+            raise ValueError("PII Leak detected: Unmasked phone found in text!")
         return True

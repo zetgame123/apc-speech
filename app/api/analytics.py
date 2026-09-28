@@ -1,4 +1,5 @@
 from datetime import datetime
+from collections import defaultdict
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -45,6 +46,25 @@ async def get_analytics_summary(
 
     inquiry_dist: dict[str, int] = {}
     checklist_scores: list[int] = []
+    
+    cities_counter = defaultdict(int)
+    formats_counter = defaultdict(int)
+    
+    chk_metrics = {
+        "greeting": 0,
+        "need_identification": 0,
+        "options_offered": 0,
+        "next_step_named": 0,
+        "contacts_taken": 0,
+    }
+    chk_count = 0
+    
+    weekly_trends_dict = defaultdict(int)
+
+    for c in calls:
+        if c.created_at:
+            week_str = f"{c.created_at.isocalendar()[0]}-W{c.created_at.isocalendar()[1]:02d}"
+            weekly_trends_dict[week_str] += 1
 
     if call_ids:
         analysis_stmt = select(Analysis).where(Analysis.call_id.in_(call_ids))
@@ -53,33 +73,48 @@ async def get_analytics_summary(
         for a in analyses:
             itype = a.inquiry_type or "other"
             inquiry_dist[itype] = inquiry_dist.get(itype, 0) + 1
-            if a.manager_checklist and "score" in a.manager_checklist:
-                checklist_scores.append(a.manager_checklist["score"])
+            
+            if a.entities:
+                for city in a.entities.get("cities", []):
+                    cities_counter[city] += 1
+                for fmt in a.entities.get("formats", []):
+                    formats_counter[fmt] += 1
+                    
+            if a.manager_checklist:
+                chk_count += 1
+                if "score" in a.manager_checklist:
+                    checklist_scores.append(a.manager_checklist["score"])
+                for key in chk_metrics:
+                    if a.manager_checklist.get(key, False):
+                        chk_metrics[key] += 1
 
     avg_score = (
         round(sum(checklist_scores) / len(checklist_scores), 2)
         if checklist_scores
         else 0.0
     )
+    
+    top_cities = [{"name": k, "count": v} for k, v in sorted(cities_counter.items(), key=lambda x: x[1], reverse=True)[:5]]
+    top_formats = [{"name": k, "count": v} for k, v in sorted(formats_counter.items(), key=lambda x: x[1], reverse=True)[:5]]
+    
+    weekly_trends = [{"week": k, "calls_count": v} for k, v in sorted(weekly_trends_dict.items())]
 
     return {
         "total_calls": total_calls,
         "inquiry_distribution": inquiry_dist,
         "top_entities": {
-            "cities": [{"name": "Москва", "count": total_calls // 2}],
-            "formats": [{"name": "3×6", "count": total_calls // 2}],
+            "cities": top_cities,
+            "formats": top_formats,
         },
         "checklist_averages": {
             "average_score": avg_score,
-            "greeting_pct": 85.0,
-            "need_identification_pct": 70.0,
-            "options_offered_pct": 65.0,
-            "next_step_named_pct": 60.0,
-            "contacts_taken_pct": 55.0,
+            "greeting_pct": round(chk_metrics["greeting"] / chk_count * 100, 1) if chk_count else 0.0,
+            "need_identification_pct": round(chk_metrics["need_identification"] / chk_count * 100, 1) if chk_count else 0.0,
+            "options_offered_pct": round(chk_metrics["options_offered"] / chk_count * 100, 1) if chk_count else 0.0,
+            "next_step_named_pct": round(chk_metrics["next_step_named"] / chk_count * 100, 1) if chk_count else 0.0,
+            "contacts_taken_pct": round(chk_metrics["contacts_taken"] / chk_count * 100, 1) if chk_count else 0.0,
         },
-        "weekly_trends": [
-            {"week": "2026-W38", "calls_count": total_calls},
-        ],
+        "weekly_trends": weekly_trends,
     }
 
 
@@ -113,3 +148,56 @@ async def analyze_texts(
         "total_texts": len(req.texts),
         "clusters": clusters_output,
     }
+
+import io
+import csv
+from fastapi import Response
+
+@router.get("/export_csv")
+async def export_analytics_csv(
+    namespace: str = Query(...),
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    manager_id: str | None = Query(None),
+    auth: AuthContext = Depends(verify_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    auth.require_scope("read")
+
+    call_query = select(Call, Analysis).join(Analysis, Call.id == Analysis.call_id, isouter=True).where(Call.namespace == namespace)
+    if manager_id:
+        call_query = call_query.where(Call.manager_id == manager_id)
+    if date_from:
+        call_query = call_query.where(Call.created_at >= date_from)
+    if date_to:
+        call_query = call_query.where(Call.created_at <= date_to)
+
+    results = (await db.execute(call_query)).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+    writer.writerow([
+        "call_id", "external_id", "manager_id", "client_id", "created_at",
+        "duration_sec", "is_answering_machine", "inquiry_type", "call_result", "summary", "checklist_score"
+    ])
+
+    for call, analysis in results:
+        writer.writerow([
+            call.id,
+            call.external_id or "",
+            call.manager_id or "",
+            call.client_id or "",
+            call.created_at.isoformat() if call.created_at else "",
+            call.duration_sec or 0,
+            "Yes" if call.is_answering_machine else "No",
+            analysis.inquiry_type if analysis else "",
+            analysis.call_result if analysis else "",
+            analysis.summary if analysis else "",
+            analysis.manager_checklist.get("score", "") if analysis and analysis.manager_checklist else ""
+        ])
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=\"export.csv\""}
+    )

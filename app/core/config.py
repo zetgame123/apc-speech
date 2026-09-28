@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # Auth & Security
     # Format: token:scope:namespace (comma-separated), or plain tokens in dev mode
     api_tokens_hashed: str = Field(default="", alias="API_TOKENS_HASHED")
-    dev_token: str = Field(default="dev-token", alias="DEV_TOKEN")
+    dev_token: str | None = Field(default=None, alias="DEV_TOKEN")
     callback_signing_secret: str = Field(default="dev-secret-key-32-chars-minimum!!", alias="CALLBACK_SIGNING_SECRET")
 
     # Database

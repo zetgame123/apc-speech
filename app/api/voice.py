@@ -1,6 +1,8 @@
+from app.api.rate_limit import rate_limit
 import io
 import time
 
+from app.api.rate_limit import rate_limit
 from fastapi import APIRouter, Depends, File, Header, Query, Request, UploadFile
 from pydantic import BaseModel
 
@@ -33,6 +35,7 @@ async def voice_search(
     namespace: str = Query(..., description="Namespace изоляции данных"),
     file: UploadFile | None = File(None),
     auth: AuthContext = Depends(verify_auth),
+    _=Depends(rate_limit),
     x_request_id: str | None = Header(None),
 ):
     start_time = time.time()

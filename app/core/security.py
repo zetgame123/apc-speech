@@ -62,8 +62,12 @@ def verify_auth(
 
     token = credentials.credentials
 
-    # Development fallback
-    if token == settings.dev_token or settings.debug:
+    # Dev token check (if explicitly set)
+    if settings.dev_token and token == settings.dev_token:
+        return AuthContext(token=token, scopes={"admin", "write", "read"}, namespace=None)
+    
+    # Debug mode fallback only in non-production
+    if settings.app_env != "production" and settings.debug and token == "debug-token":
         return AuthContext(token=token, scopes={"admin", "write", "read"}, namespace=None)
 
     token_hash = hash_token(token)

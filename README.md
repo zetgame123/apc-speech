@@ -17,6 +17,9 @@
 ```bash
 cp .env.example .env
 ```
+Отредактируйте `.env` и задайте безопасные значения, в частности:
+- Убедитесь, что `DEV_TOKEN` установлен в надежное значение или очищен (по умолчанию он пуст, что отключает dev-доступ). Для локальной разработки можете установить `DEV_TOKEN=dev-token`.
+- Измените `CALLBACK_SIGNING_SECRET`.
 
 ### 2. Запуск комплекса (Профиль `small`: 2 vCPU / 4 GB RAM, без GPU)
 ```bash
@@ -90,7 +93,7 @@ curl -X GET "http://localhost:8000/v1/calls/{call_id}/transcript?namespace=outdo
 │   ├── storage/                # MinIO S3 клиент с управлением retention
 │   ├── queue/                  # Redis Streams producer/consumer
 │   ├── asr/                    # FFmpeg, Silero VAD, faster-whisper, ITN
-│   ├── diarization/            # Стерео-сплит, моно d-vectors, эвристики ролей
+│   ├── diarization/            # Стерео-сплит, моно-диаризация (MFCC + KMeans), эвристики ролей
 │   ├── metrics/                # Детерминированные акустические метрики (WPM, паузы)
 │   ├── pii/                    # Regex + Natasha NER маскирование ПДн
 │   ├── llm/                    # Порт семантического анализа и адаптеры (Local/External)
@@ -118,3 +121,9 @@ curl -X GET "http://localhost:8000/v1/calls/{call_id}/transcript?namespace=outdo
   ```bash
   pytest -v
   ```
+
+### Очистка устаревших данных
+Для удаления данных по истечении сроков хранения запускайте скрипт:
+```bash
+docker compose exec api python3 -m scripts.cleanup
+```

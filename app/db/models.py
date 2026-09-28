@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -34,7 +34,7 @@ class Call(Base):
     client_id = Column(String(100), nullable=True, index=True)
     duration_sec = Column(Float, nullable=True)
     is_answering_machine = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     # Relationships
     audio_objects = relationship("AudioObject", back_populates="call", cascade="all, delete-orphan")
@@ -60,7 +60,7 @@ class AudioObject(Base):
     file_size_bytes = Column(Integer, nullable=True)
     channels_layout = Column(String(20), default="mono")
     expires_at = Column(DateTime, nullable=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     call = relationship("Call", back_populates="audio_objects")
 
@@ -104,7 +104,7 @@ class Analysis(Base):
     sentiment = Column(JSONB, nullable=True)
     manager_checklist = Column(JSONB, nullable=True)
     speech_metrics = Column(JSONB, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     call = relationship("Call", back_populates="analysis")
 
@@ -122,8 +122,8 @@ class Job(Base):
     file_hash_sha256 = Column(String(64), nullable=True, index=True)
     callback_url = Column(String(512), nullable=True)
     error_details = Column(JSONB, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     call = relationship("Call", back_populates="jobs")
 
@@ -141,7 +141,7 @@ class CallbackLog(Base):
     attempt = Column(Integer, nullable=False)
     http_status = Column(Integer, nullable=True)
     response_body = Column(Text, nullable=True)
-    sent_at = Column(DateTime, default=datetime.utcnow)
+    sent_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Embedding(Base):
@@ -150,4 +150,4 @@ class Embedding(Base):
     call_id = Column(String(36), ForeignKey("calls.id", ondelete="CASCADE"), primary_key=True)
     namespace = Column(String(100), nullable=False, index=True)
     vector_json = Column(JSONB, nullable=False)  # Stores vector array (can also map to pgvector column)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

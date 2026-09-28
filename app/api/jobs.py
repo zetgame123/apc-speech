@@ -1,6 +1,7 @@
+from app.api.rate_limit import rate_limit
 import hashlib
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import (
@@ -78,6 +79,7 @@ async def create_job_upload(
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     x_request_id: str | None = Header(None, alias="X-Request-Id"),
     auth: AuthContext = Depends(verify_auth),
+    _=Depends(rate_limit),
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("write")
@@ -112,7 +114,7 @@ async def create_job_upload(
     # Generate IDs
     job_id = str(uuid.uuid4())
     call_id = str(uuid.uuid4())
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Upload raw audio to MinIO
     storage = get_storage()
@@ -133,6 +135,7 @@ async def create_job_upload(
         manager_id=manager_id,
         client_id=client_id,
         created_at=now,
+        expires_at=now + timedelta(days=settings.retention_text_days),
     )
     db.add(call)
 
@@ -198,6 +201,7 @@ async def create_job_by_url(
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     x_request_id: str | None = Header(None, alias="X-Request-Id"),
     auth: AuthContext = Depends(verify_auth),
+    _=Depends(rate_limit),
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("write")
@@ -219,7 +223,7 @@ async def create_job_by_url(
 
     job_id = str(uuid.uuid4())
     call_id = str(uuid.uuid4())
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     meta = req.metadata or {}
 
     call = Call(
@@ -230,6 +234,7 @@ async def create_job_by_url(
         manager_id=meta.get("manager_id"),
         client_id=meta.get("client_id"),
         created_at=now,
+        expires_at=now + timedelta(days=settings.retention_text_days),
     )
     db.add(call)
 
@@ -276,6 +281,7 @@ async def get_job(
     job_id: str,
     namespace: str = Query(...),
     auth: AuthContext = Depends(verify_auth),
+    _=Depends(rate_limit),
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("read")

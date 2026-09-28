@@ -852,3 +852,44 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+  /v1/analytics/export_csv:
+    get:
+      summary: Экспорт аналитики в CSV
+      description: Выгрузка данных звонков и аналитики в CSV формате.
+      operationId: exportAnalyticsCSV
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: namespace
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: manager_id
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Успешный экспорт
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'

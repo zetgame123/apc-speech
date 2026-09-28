@@ -100,6 +100,8 @@ async def process_job(job_id: str, data: dict):
         final_segments = []
         is_answering_machine = False
 
+
+        from app.workers.chunking import chunk_audio, merge_and_deduplicate
         if is_stereo:
             # Stereo branch: Split channels
             ch0_wav, ch1_wav = preprocessor.split_stereo_channels(input_audio_path)
@@ -108,22 +110,44 @@ async def process_job(job_id: str, data: dict):
             preprocessor.convert_to_pcm16(ch0_wav, ch0_pcm)
             preprocessor.convert_to_pcm16(ch1_wav, ch1_pcm)
 
-            segs_ch0, _ = asr_engine.transcribe(ch0_pcm)
-            segs_ch1, _ = asr_engine.transcribe(ch1_pcm)
+            ch0_chunks = chunk_audio(ch0_pcm, chunk_length_sec=600, overlap_sec=15)
+            ch1_chunks = chunk_audio(ch1_pcm, chunk_length_sec=600, overlap_sec=15)
+            
+            all_segs_ch0 = []
+            for chunk in ch0_chunks:
+                segs, _ = asr_engine.transcribe(chunk["data"])
+                all_segs_ch0.append(segs)
+            segs_ch0 = merge_and_deduplicate(all_segs_ch0, ch0_chunks)
+            
+            all_segs_ch1 = []
+            for chunk in ch1_chunks:
+                segs, _ = asr_engine.transcribe(chunk["data"])
+                all_segs_ch1.append(segs)
+            segs_ch1 = merge_and_deduplicate(all_segs_ch1, ch1_chunks)
 
             channel_mapping = data.get("metadata", {}).get("channel_mapping")
             final_segments, role_conf = role_classifier.assign_stereo_roles(
                 segs_ch0, segs_ch1, channel_mapping
             )
         else:
+            
             # Mono branch
             mono_pcm = os.path.join(tmp_dir, "mono_pcm.wav")
             preprocessor.convert_to_pcm16(input_audio_path, mono_pcm)
-            raw_segments, _ = asr_engine.transcribe(mono_pcm)
+            
+            chunks_info = chunk_audio(mono_pcm, chunk_length_sec=600, overlap_sec=15)
+            all_raw_segments = []
+            
+            for chunk in chunks_info:
+                segs, _ = asr_engine.transcribe(chunk["data"])
+                all_raw_segments.append(segs)
+                
+            raw_segments = merge_and_deduplicate(all_raw_segments, chunks_info)
 
-            # Assign dummy speaker labels for role heuristic
-            for i, s in enumerate(raw_segments):
-                s["speaker_label"] = "SPEAKER_0" if i % 2 == 0 else "SPEAKER_1"
+            # Use local audio-based diarization
+            from app.diarization.mono_diarizer import MonoDiarizer
+            mono_diarizer = MonoDiarizer(num_speakers=2)
+            raw_segments = mono_diarizer.diarize(mono_pcm, raw_segments)
 
             final_segments, role_conf = role_classifier.classify_mono_speakers(raw_segments)
 

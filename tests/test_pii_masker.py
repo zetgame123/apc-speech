@@ -42,3 +42,15 @@ def test_assert_no_leaked_pii():
     unsafe_text = "Клиент оставил карту 4276 3800 1234 5678 для списания"
     with pytest.raises(ValueError, match="PII Leak"):
         masker.assert_no_leaked_pii(unsafe_text)
+
+    unsafe_text_email = "Почта test@example.com"
+    with pytest.raises(ValueError, match="PII Leak"):
+        masker.assert_no_leaked_pii(unsafe_text_email)
+
+    unsafe_text_phone = "Мой телефон +7 926 123 45 67"
+    with pytest.raises(ValueError, match="PII Leak"):
+        masker.assert_no_leaked_pii(unsafe_text_phone)
+
+    unsafe_text_passport = "Вот паспорт 4510 123456"
+    with pytest.raises(ValueError, match="PII Leak"):
+        masker.assert_no_leaked_pii(unsafe_text_passport)
