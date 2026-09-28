@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, File, Header, Query, Request, UploadFile
 from pydantic import BaseModel
 
 from app.asr.engine import get_asr_engine
+from app.asr.preprocessor import AudioPreprocessor
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.logging import get_logger
@@ -50,9 +51,13 @@ async def voice_search(
     if len(audio_bytes) > 10 * 1024 * 1024:
         raise AppError("payload_too_large", "Размер аудио для голосового поиска превышает 10 МБ", 413)
 
+    # Preprocess in-memory (DC offset removal via 80Hz HPF, volume normalization -16 LUFS, 16kHz mono)
+    preprocessor = AudioPreprocessor()
+    clean_audio_bytes = preprocessor.preprocess_memory(audio_bytes)
+
     # In-memory transcription via faster-whisper
     engine = get_asr_engine()
-    audio_stream = io.BytesIO(audio_bytes)
+    audio_stream = io.BytesIO(clean_audio_bytes)
 
     try:
         segments, meta = engine.transcribe(

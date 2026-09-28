@@ -65,6 +65,40 @@ class AudioPreprocessor:
             logger.error("ffprobe_error", error=str(e), file_path=file_path)
             raise AppError("invalid_audio", "Не удалось прочитать аудиофайл или повреждены метаданные", 400)
 
+    def preprocess_memory(self, audio_bytes: bytes) -> bytes:
+        """
+        Fast in-memory audio cleaning for real-time voice search:
+        - High-pass filter (80 Hz) to eliminate microphone DC offset and sub-rumble
+        - Loudnorm to normalize speech volume to -16 LUFS
+        - Resamples to 16 kHz 16-bit mono PCM WAV
+        """
+        cmd = [
+            "ffmpeg",
+            "-nostdin",
+            "-y",
+            "-threads", "1",
+            "-i", "pipe:0",
+            "-vn",
+            "-af", "highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11",
+            "-ar", "16000",
+            "-ac", "1",
+            "-f", "wav",
+            "pipe:1",
+        ]
+        try:
+            res = subprocess.run(
+                cmd,
+                input=audio_bytes,
+                capture_output=True,
+                check=True,
+                timeout=10,
+                preexec_fn=set_process_limits,
+            )
+            return res.stdout
+        except Exception as e:
+            logger.warning("memory_audio_preprocess_fallback", error=str(e))
+            return audio_bytes
+
     def convert_to_pcm16(
         self,
         input_path: str,
@@ -80,7 +114,7 @@ class AudioPreprocessor:
             "-threads", "1",
             "-i", input_path,
             "-vn",
-            "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+            "-af", "highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11",
             "-ar", str(target_sample_rate),
             "-ac", str(channels),
             "-f", "wav",

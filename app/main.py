@@ -44,6 +44,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("redis_groups_init_failed", error=str(e))
 
+    # 4. Warm up ASR engine to eliminate cold-start latency
+    try:
+        from app.asr.engine import get_asr_engine
+        engine = get_asr_engine()
+        engine.load_model()
+        logger.info("asr_engine_warmed_up")
+    except Exception as e:
+        logger.warning("asr_warmup_failed", error=str(e))
+
     yield
 
     logger.info("service_shutdown_completed")
