@@ -14,9 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 # Compile and install wheel dependencies into virtual environment
 ENV UV_COMPILE_BYTECODE=1
+ENV UV_PROJECT_ENVIRONMENT="/opt/venv"
 RUN uv sync --frozen --no-dev
 
 
@@ -37,7 +38,7 @@ RUN groupadd -g 10001 apcgroup && \
     useradd -u 10000 -g apcgroup -s /bin/bash -m apcuser
 
 # Copy virtual environment from builder
-COPY --from=builder /build/.venv /opt/venv
+COPY --from=builder /opt/venv /opt/venv
 ENV VIRTUAL_ENV="/opt/venv"
 ENV PATH="/opt/venv/bin:$PATH"
 
