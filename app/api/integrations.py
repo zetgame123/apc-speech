@@ -13,7 +13,6 @@ from app.core.errors import AppError
 from app.core.logging import get_logger
 from app.core.security import (
     AuthContext,
-    security_bearer,
     validate_ssrf_url,
     verify_auth,
 )

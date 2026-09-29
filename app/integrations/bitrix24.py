@@ -1,5 +1,5 @@
-import re
 from typing import Any
+
 import httpx
 
 from app.core.logging import get_logger
@@ -117,7 +117,7 @@ def format_timeline_comment(
     if entities.get("budget"):
         notable_entities.append(f"Бюджет: {entities['budget']}")
     if notable_entities:
-        lines.append(f"🏷 [b]Сущности рекламы:[/b]\n" + "\n".join(f"  • {e}" for e in notable_entities))
+        lines.append("🏷 [b]Сущности рекламы:[/b]\n" + "\n".join(f"  • {e}" for e in notable_entities))
 
     if full_text:
         # Limit preview transcript if extremely long

@@ -56,3 +56,4 @@ tmp/
 *.flac
 *.m4a
 *.webm
+gitleaks*

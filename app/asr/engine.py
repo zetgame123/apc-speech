@@ -134,9 +134,9 @@ class AsrEngine:
             hotwords=applied_hotwords,
             vad_filter=vad_filter,
             vad_parameters=dict(
-                threshold=0.4,
-                min_silence_duration_ms=300,
-                speech_pad_ms=350,
+                threshold=0.2,
+                min_silence_duration_ms=150,
+                speech_pad_ms=250,
             ),
             word_timestamps=True,
             condition_on_previous_text=False,  # CRITICAL: prevents repeating loops

@@ -106,3 +106,32 @@ def test_mono_diarizer_edge_cases():
     res = diarizer.diarize("/path/to/missing/file.wav", segs)
     assert len(res) == 1
     assert "speaker_label" in res[0]
+
+
+def test_split_segment_into_turns_with_pauses():
+    """Verify that a single merged segment is split into dialogue turns based on word timestamps and pauses."""
+    from app.diarization.mono_diarizer import split_segment_into_turns
+
+    seg = {
+        "start": 0.0,
+        "end": 5.0,
+        "text": "Здравствуйте, чем могу помочь? Я хочу оформить заказ.",
+        "words": [
+            {"word": "Здравствуйте,", "start": 0.1, "end": 0.8, "confidence": 0.95},
+            {"word": " чем", "start": 0.85, "end": 1.1, "confidence": 0.92},
+            {"word": " могу", "start": 1.12, "end": 1.4, "confidence": 0.94},
+            {"word": " помочь?", "start": 1.42, "end": 1.9, "confidence": 0.96},
+            # 0.5s pause between question and answer
+            {"word": " Я", "start": 2.4, "end": 2.6, "confidence": 0.91},
+            {"word": " хочу", "start": 2.62, "end": 3.0, "confidence": 0.93},
+            {"word": " оформить", "start": 3.05, "end": 3.6, "confidence": 0.95},
+            {"word": " заказ.", "start": 3.65, "end": 4.1, "confidence": 0.94},
+        ],
+    }
+
+    turns = split_segment_into_turns([seg], min_pause_sec=0.35)
+    assert len(turns) == 2
+    assert "помочь?" in turns[0]["text"]
+    assert "заказ." in turns[1]["text"]
+    assert turns[0]["end"] == 1.9
+    assert turns[1]["start"] == 2.4

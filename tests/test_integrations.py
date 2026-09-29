@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.integrations.bitrix24 import format_timeline_comment, parse_bitrix24_webhook
