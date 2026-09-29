@@ -3,7 +3,7 @@ import json
 import os
 import time
 
-from app.asr.engine import get_asr_engine
+from app.asr.engine import get_asr_engine, get_voice_search_engine
 from app.asr.normalizer import RussianTextNormalizer
 from evaluation.dataset_generator import build_synthetic_benchmark_suite
 from evaluation.wer_cer import calculate_wer_cer
@@ -26,18 +26,19 @@ def run_benchmark():
     with open(manifest_path, "r", encoding="utf-8") as f:
         manifest = json.load(f)
 
-    # Initialize Engine
+    # Initialize Engines
     asr = get_asr_engine()
+    vs_engine = get_voice_search_engine()
     normalizer = RussianTextNormalizer()
 
     latency_sample = next((s for s in manifest if s["type"] == "clean"), None)
-    # Warmup
+    # Warmup voice search engine
     if latency_sample and os.path.exists(latency_sample["audio_file"]):
-        asr.transcribe(latency_sample["audio_file"])
+        vs_engine.transcribe(latency_sample["audio_file"], beam_size=1)
 
     if latency_sample and os.path.exists(latency_sample["audio_file"]):
         start_t = time.perf_counter()
-        asr.transcribe(latency_sample["audio_file"])
+        vs_engine.transcribe(latency_sample["audio_file"], beam_size=1)
         end_t = time.perf_counter()
         voice_search_latency_ms = int((end_t - start_t) * 1000)
     else:

@@ -380,6 +380,7 @@ class RussianTextNormalizer:
             (re.compile(r"\bсанкт\s*[-]?\s*петербург(а|е|у|ом)?\b", re.IGNORECASE), r"Санкт-Петербург\1"),
             (re.compile(r"\bпетербург(а|е|у|ом)?\b", re.IGNORECASE), r"Петербург\1"),
             (re.compile(r"\bпитер(а|е|у|ом)?\b", re.IGNORECASE), r"Питер\1"),
+            (re.compile(r"\bв\s+балашихи\b", re.IGNORECASE), "в Балашихе"),
             (re.compile(r"\bбалаших(а|е|и|у|ой)\b", re.IGNORECASE), r"Балаших\1"),
             (re.compile(r"\bхимк(и|ах|ам|ами)\b", re.IGNORECASE), r"Химк\1"),
             (re.compile(r"\bмытищ(и|ах|ам|ами)?\b", re.IGNORECASE), lambda m: "Мытищ" + (m.group(1) or "")),

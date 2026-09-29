@@ -654,7 +654,108 @@ paths:
           content:
             text/plain:
               schema:
+  /v1/analytics/export_csv:
+    get:
+      summary: Экспорт аналитики в CSV
+      description: Выгрузка данных звонков и аналитики в CSV формате.
+      operationId: exportAnalyticsCSV
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: namespace
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: manager_id
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Успешный экспорт
+          content:
+            text/csv:
+              schema:
                 type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/admin/tokens/revoke:
+    post:
+      summary: Горячий отзыв токена
+      description: Добавление хэша токена в список отозванных без перезапуска сервиса (требуется scope admin).
+      operationId: revokeToken
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token_hash]
+              properties:
+                token_hash:
+                  type: string
+                  description: SHA-256 хэш отзываемого токена
+      responses:
+        '200':
+          description: Токен успешно отозван
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token_hash:
+                    type: string
+                  revoked:
+                    type: boolean
+                  was_new:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/tokens/revoked:
+    get:
+      summary: Список отозванных токенов
+      description: Получение списка всех отозванных хэшей токенов (требуется scope admin).
+      operationId: listRevokedTokens
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Список хэшей отозванных токенов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked_hashes:
+                    type: array
+                    items:
+                      type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
 components:
   securitySchemes:
@@ -1017,44 +1118,4 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
-  /v1/analytics/export_csv:
-    get:
-      summary: Экспорт аналитики в CSV
-      description: Выгрузка данных звонков и аналитики в CSV формате.
-      operationId: exportAnalyticsCSV
-      security:
-        - BearerAuth: []
-      parameters:
-        - in: query
-          name: namespace
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: date_from
-          schema:
-            type: string
-            format: date-time
-        - in: query
-          name: date_to
-          schema:
-            type: string
-            format: date-time
-        - in: query
-          name: manager_id
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Успешный экспорт
-          content:
-            text/csv:
-              schema:
-                type: string
-                format: binary
-        "400":
-          $ref: '#/components/responses/BadRequest'
-        "401":
-          $ref: '#/components/responses/Unauthorized'
-        "500":
-          $ref: '#/components/responses/InternalError'
+
