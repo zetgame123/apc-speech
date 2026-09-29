@@ -1,18 +1,50 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import AuthContext, verify_auth
+from app.core.security import (
+    AuthContext,
+    list_revoked_tokens,
+    revoke_token,
+    verify_auth,
+)
 from app.db.models import AudioObject, Call
 from app.db.session import get_db
 from app.storage.s3 import get_storage
 
-router = APIRouter(prefix="/v1/data", tags=["admin"])
+router = APIRouter(tags=["admin"])
 
 
-@router.delete("/delete")
+# --- Token revocation (hot, without restart) ---
+
+class RevokeTokenRequest(BaseModel):
+    token_hash: str
+
+
+@router.post("/v1/admin/tokens/revoke")
+async def revoke_token_endpoint(
+    body: RevokeTokenRequest,
+    auth: AuthContext = Depends(verify_auth),
+):
+    auth.require_scope("admin")
+    was_new = revoke_token(body.token_hash)
+    return {"token_hash": body.token_hash, "revoked": True, "was_new": was_new}
+
+
+@router.get("/v1/admin/tokens/revoked")
+async def list_revoked_tokens_endpoint(
+    auth: AuthContext = Depends(verify_auth),
+):
+    auth.require_scope("admin")
+    return {"revoked_hashes": list_revoked_tokens()}
+
+
+# --- Data deletion ---
+
+@router.delete("/v1/data/delete")
 async def delete_data(
     namespace: str = Query(...),
     call_id: str | None = Query(None),

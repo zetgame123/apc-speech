@@ -191,6 +191,23 @@ async def list_calls(
     if date_to:
         query = query.where(Call.created_at <= date_to)
 
+    # Fulltext search: find calls whose transcript segments contain the query string
+    if q:
+        matching_call_ids = (
+            select(TranscriptSegment.call_id)
+            .where(TranscriptSegment.text_masked.ilike(f"%{q}%"))
+            .distinct()
+        )
+        query = query.where(Call.id.in_(matching_call_ids))
+
+    # Filter by inquiry type via Analysis table
+    if inquiry_type:
+        calls_with_type = (
+            select(Analysis.call_id)
+            .where(Analysis.inquiry_type == inquiry_type)
+        )
+        query = query.where(Call.id.in_(calls_with_type))
+
     if cursor:
         query = query.where(Call.id < cursor)
 

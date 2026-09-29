@@ -21,6 +21,19 @@ logger = get_logger("main")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("service_startup_beginning", profile=settings.app_profile)
+
+    # Security validations at startup
+    if settings.app_env == "production":
+        if not settings.callback_signing_secret or len(settings.callback_signing_secret) < 32:
+            logger.error(
+                "CRITICAL: CALLBACK_SIGNING_SECRET is missing or too short for production! "
+                "Set a random string of at least 32 characters."
+            )
+        if "*" in settings.cors_allowed_origins:
+            logger.warning("CORS_ALLOWED_ORIGINS is set to '*' in production — restrict to specific domains")
+        if settings.dev_token:
+            logger.warning("DEV_TOKEN is set in production — consider removing it")
+
     # 1. Initialize DB tables
     try:
         await init_db()
@@ -67,10 +80,11 @@ app = FastAPI(
     redoc_url=None,
 )
 
-# CORS
+# CORS - configurable via CORS_ALLOWED_ORIGINS env var
+_origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

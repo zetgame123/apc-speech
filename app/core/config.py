@@ -26,7 +26,10 @@ class Settings(BaseSettings):
     # Format: token:scope:namespace (comma-separated), or plain tokens in dev mode
     api_tokens_hashed: str = Field(default="", alias="API_TOKENS_HASHED")
     dev_token: str | None = Field(default=None, alias="DEV_TOKEN")
-    callback_signing_secret: str = Field(default="dev-secret-key-32-chars-minimum!!", alias="CALLBACK_SIGNING_SECRET")
+    callback_signing_secret: str = Field(default="", alias="CALLBACK_SIGNING_SECRET")
+
+    # CORS — comma-separated list of allowed origins, "*" allows all (dev only)
+    cors_allowed_origins: str = Field(default="http://localhost:3000,http://localhost:8000", alias="CORS_ALLOWED_ORIGINS")
 
     # Database
     database_url: str = Field(

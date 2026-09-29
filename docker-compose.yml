@@ -4,8 +4,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: apc_speech
-      POSTGRES_USER: ${DB_USER:-apc_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-secure_pass}
+      POSTGRES_USER: ${DB_USER:?DB_USER is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -41,10 +41,10 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret_pass}
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio_admin}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret_pass}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
     volumes:
       - miniodata:/data
     healthcheck:
@@ -52,6 +52,23 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  alembic-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m alembic upgrade head
+    depends_on:
+      postgres: { condition: service_healthy }
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:?DB_USER is required}:${DB_PASSWORD:?DB_PASSWORD is required}@postgres:5432/apc_speech
     deploy:
       resources:
         limits:
@@ -68,13 +85,14 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }
+      alembic-migrate: { condition: service_completed_successfully }
     env_file:
-      - .env.example
+      - .env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://apc_user:secure_pass@postgres:5432/apc_speech
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:?}:${DB_PASSWORD:?}@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
-      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - DEV_TOKEN=${DEV_TOKEN:-}
       - ASR_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
       - VOICE_SEARCH_MODEL_NAME=./models/whisper-small
       - VOICE_SEARCH_BEAM_SIZE=1
@@ -104,13 +122,14 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }
+      alembic-migrate: { condition: service_completed_successfully }
     env_file:
-      - .env.example
+      - .env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://apc_user:secure_pass@postgres:5432/apc_speech
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:?}:${DB_PASSWORD:?}@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
-      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - DEV_TOKEN=${DEV_TOKEN:-}
       - ASR_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
       - ASR_COMPUTE_TYPE=int8
     volumes:
@@ -135,12 +154,13 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+      alembic-migrate: { condition: service_completed_successfully }
     env_file:
-      - .env.example
+      - .env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://apc_user:secure_pass@postgres:5432/apc_speech
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:?}:${DB_PASSWORD:?}@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
-      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - DEV_TOKEN=${DEV_TOKEN:-}
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 10s
@@ -161,10 +181,10 @@ services:
     depends_on:
       redis: { condition: service_healthy }
     env_file:
-      - .env.example
+      - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - DEV_TOKEN=${DEV_TOKEN:-}
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 10s

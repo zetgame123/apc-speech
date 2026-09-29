@@ -71,6 +71,15 @@ def verify_auth(
         return AuthContext(token=token, scopes={"admin", "write", "read"}, namespace=None)
 
     token_hash = hash_token(token)
+
+    # Check if token has been revoked (in-memory set, managed via admin API)
+    if token_hash in _revoked_token_hashes:
+        raise AppError(
+            error="token_revoked",
+            message="Токен был отозван",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
     configured_tokens = [t.strip() for t in settings.api_tokens_hashed.split(",") if t.strip()]
 
     for entry in configured_tokens:
@@ -87,6 +96,28 @@ def verify_auth(
         message="Предоставлен недействительный токен авторизации",
         status_code=status.HTTP_401_UNAUTHORIZED,
     )
+
+
+# --- Token revocation support (hot, without restart) ---
+_revoked_token_hashes: set[str] = set()
+
+
+def revoke_token(token_hash: str) -> bool:
+    """Add a token hash to the revocation set. Returns True if newly revoked."""
+    if token_hash in _revoked_token_hashes:
+        return False
+    _revoked_token_hashes.add(token_hash)
+    return True
+
+
+def unrevoke_token(token_hash: str) -> bool:
+    """Remove a token hash from the revocation set."""
+    return _revoked_token_hashes.discard(token_hash) is None and token_hash not in _revoked_token_hashes
+
+
+def list_revoked_tokens() -> list[str]:
+    """Return list of revoked token hashes."""
+    return list(_revoked_token_hashes)
 
 
 def validate_ssrf_url(url: str) -> str:
