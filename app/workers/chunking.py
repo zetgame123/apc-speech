@@ -28,6 +28,7 @@ def find_best_silence_split(
     # 1. Try Silero VAD speech timestamps
     try:
         from faster_whisper.vad import get_speech_timestamps
+
         speech_intervals = get_speech_timestamps(audio, sampling_rate=sr)
     except Exception as e:
         logger.debug("vad_chunk_timestamp_fallback", error=str(e))
@@ -69,7 +70,7 @@ def find_best_silence_split(
 
     # 2. Fallback: Short-time RMS energy minimization
     frame_len = int(0.05 * sr)  # 50 ms
-    hop_len = int(0.025 * sr)   # 25 ms
+    hop_len = int(0.025 * sr)  # 25 ms
     search_audio = audio[min_split_sample:max_split_sample]
 
     if len(search_audio) < frame_len:
@@ -105,13 +106,15 @@ def chunk_audio_adaptive(
         data, _ = sf.read(audio_path, dtype="float32")
         if data.ndim > 1:
             data = np.mean(data, axis=1)
-        return [{
-            "data": data,
-            "start_sec": 0.0,
-            "end_sec": total_sec,
-            "overlap_sec": 0.0,
-            "is_silence_split": True,
-        }]
+        return [
+            {
+                "data": data,
+                "start_sec": 0.0,
+                "end_sec": total_sec,
+                "overlap_sec": 0.0,
+                "is_silence_split": True,
+            }
+        ]
 
     audio, _ = sf.read(audio_path, dtype="float32")
     if audio.ndim > 1:
@@ -129,25 +132,29 @@ def chunk_audio_adaptive(
         )
 
         chunk_data = audio[current_start:split_sample]
-        chunks.append({
-            "data": chunk_data,
-            "start_sec": current_start / sr,
-            "end_sec": split_sample / sr,
-            "overlap_sec": 0.0,
-            "is_silence_split": True,
-        })
+        chunks.append(
+            {
+                "data": chunk_data,
+                "start_sec": current_start / sr,
+                "end_sec": split_sample / sr,
+                "overlap_sec": 0.0,
+                "is_silence_split": True,
+            }
+        )
         current_start = split_sample
 
     # Trailing chunk
     if current_start < total_frames:
         chunk_data = audio[current_start:total_frames]
-        chunks.append({
-            "data": chunk_data,
-            "start_sec": current_start / sr,
-            "end_sec": total_frames / sr,
-            "overlap_sec": 0.0,
-            "is_silence_split": True,
-        })
+        chunks.append(
+            {
+                "data": chunk_data,
+                "start_sec": current_start / sr,
+                "end_sec": total_frames / sr,
+                "overlap_sec": 0.0,
+                "is_silence_split": True,
+            }
+        )
 
     logger.info(
         "adaptive_vad_chunking_complete",
@@ -191,13 +198,17 @@ def chunk_audio(
     while start_frame < total_frames:
         frames_to_read = min(chunk_frames, total_frames - start_frame)
         data, _ = sf.read(audio_path, frames=frames_to_read, start=start_frame, dtype="float32")
-        chunks.append({
-            "data": data,
-            "start_sec": start_frame / sr,
-            "end_sec": (start_frame + frames_to_read) / sr,
-            "overlap_sec": overlap_sec if (start_frame + frames_to_read) < total_frames else 0.0,
-            "is_silence_split": False,
-        })
+        chunks.append(
+            {
+                "data": data,
+                "start_sec": start_frame / sr,
+                "end_sec": (start_frame + frames_to_read) / sr,
+                "overlap_sec": overlap_sec
+                if (start_frame + frames_to_read) < total_frames
+                else 0.0,
+                "is_silence_split": False,
+            }
+        )
         if start_frame + chunk_frames >= total_frames:
             break
         start_frame += step_frames

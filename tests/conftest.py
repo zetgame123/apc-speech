@@ -13,9 +13,11 @@ engine = create_async_engine(
 )
 TestingSessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
 async def override_get_db():
     async with TestingSessionLocal() as session:
         yield session
+
 
 @pytest.fixture(autouse=True)
 async def setup_db():
@@ -31,11 +33,13 @@ async def setup_db():
         await conn.run_sync(Base.metadata.drop_all)
     app.dependency_overrides.clear()
 
+
 def override_get_settings():
     settings = get_settings()
     settings.dev_token = "dev-token"
     settings.debug = True
     return settings
+
 
 app.dependency_overrides[get_settings] = override_get_settings
 get_settings().dev_token = "dev-token"

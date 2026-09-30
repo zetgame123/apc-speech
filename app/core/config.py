@@ -5,11 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Application Profile
     app_profile: str = Field(default="small", alias="APP_PROFILE")
@@ -29,12 +25,14 @@ class Settings(BaseSettings):
     callback_signing_secret: str = Field(default="", alias="CALLBACK_SIGNING_SECRET")
 
     # CORS — comma-separated list of allowed origins, "*" allows all (dev only)
-    cors_allowed_origins: str = Field(default="http://localhost:3000,http://localhost:8000", alias="CORS_ALLOWED_ORIGINS")
+    cors_allowed_origins: str = Field(
+        default="http://localhost:3000,http://localhost:8000", alias="CORS_ALLOWED_ORIGINS"
+    )
 
     # Database
     database_url: str = Field(
         default="postgresql+asyncpg://apc_user:secure_pass@localhost:5432/apc_speech",
-        alias="DATABASE_URL"
+        alias="DATABASE_URL",
     )
     db_pool_size: int = Field(default=10, alias="DB_POOL_SIZE")
     db_max_overflow: int = Field(default=5, alias="DB_MAX_OVERFLOW")
@@ -70,7 +68,9 @@ class Settings(BaseSettings):
     local_llm_model: str = Field(default="qwen2.5-7b-instruct", alias="LOCAL_LLM_MODEL")
 
     # External LLM (Disabled by default)
-    llm_external_provider_enabled: bool = Field(default=False, alias="LLM_EXTERNAL_PROVIDER_ENABLED")
+    llm_external_provider_enabled: bool = Field(
+        default=False, alias="LLM_EXTERNAL_PROVIDER_ENABLED"
+    )
     llm_external_provider_url: str = Field(default="", alias="LLM_EXTERNAL_PROVIDER_URL")
     llm_external_provider_api_key: str = Field(default="", alias="LLM_EXTERNAL_PROVIDER_API_KEY")
 

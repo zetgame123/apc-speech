@@ -25,8 +25,18 @@ def test_mono_heuristic_role_classification():
     classifier = RoleClassifier()
 
     segments = [
-        {"start": 0.0, "end": 4.0, "speaker_label": "SPEAKER_0", "text": "Здравствуйте! Компания Наружка, меня зовут Алексей."},
-        {"start": 4.5, "end": 8.0, "speaker_label": "SPEAKER_1", "text": "Добрый день, подскажите пожалуйста по ценам на щиты в Химках."},
+        {
+            "start": 0.0,
+            "end": 4.0,
+            "speaker_label": "SPEAKER_0",
+            "text": "Здравствуйте! Компания Наружка, меня зовут Алексей.",
+        },
+        {
+            "start": 4.5,
+            "end": 8.0,
+            "speaker_label": "SPEAKER_1",
+            "text": "Добрый день, подскажите пожалуйста по ценам на щиты в Химках.",
+        },
     ]
 
     classified, conf = classifier.classify_mono_speakers(segments)

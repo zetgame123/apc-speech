@@ -28,9 +28,12 @@ class AudioPreprocessor:
         """Runs ffprobe securely to extract format, duration and channels."""
         cmd = [
             "ffprobe",
-            "-v", "error",
-            "-show_entries", "format=duration,size,bit_rate:stream=codec_name,channels,sample_rate",
-            "-of", "json",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration,size,bit_rate:stream=codec_name,channels,sample_rate",
+            "-of",
+            "json",
             file_path,
         ]
 
@@ -63,7 +66,9 @@ class AudioPreprocessor:
             raise AppError("probe_timeout", "Превышено время анализа аудиофайла", 400)
         except Exception as e:
             logger.error("ffprobe_error", error=str(e), file_path=file_path)
-            raise AppError("invalid_audio", "Не удалось прочитать аудиофайл или повреждены метаданные", 400)
+            raise AppError(
+                "invalid_audio", "Не удалось прочитать аудиофайл или повреждены метаданные", 400
+            )
 
     def preprocess_memory(self, audio_bytes: bytes) -> bytes:
         """
@@ -76,13 +81,19 @@ class AudioPreprocessor:
             "ffmpeg",
             "-nostdin",
             "-y",
-            "-threads", "1",
-            "-i", "pipe:0",
+            "-threads",
+            "1",
+            "-i",
+            "pipe:0",
             "-vn",
-            "-af", "highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11",
-            "-ar", "16000",
-            "-ac", "1",
-            "-f", "wav",
+            "-af",
+            "highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            "-f",
+            "wav",
             "pipe:1",
         ]
         try:
@@ -111,13 +122,19 @@ class AudioPreprocessor:
             "ffmpeg",
             "-nostdin",
             "-y",
-            "-threads", "1",
-            "-i", input_path,
+            "-threads",
+            "1",
+            "-i",
+            input_path,
             "-vn",
-            "-af", "highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11",
-            "-ar", str(target_sample_rate),
-            "-ac", str(channels),
-            "-f", "wav",
+            "-af",
+            "highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11",
+            "-ar",
+            str(target_sample_rate),
+            "-ac",
+            str(channels),
+            "-f",
+            "wav",
             output_path,
         ]
 
@@ -147,10 +164,16 @@ class AudioPreprocessor:
             "ffmpeg",
             "-nostdin",
             "-y",
-            "-threads", "1",
-            "-i", input_path,
-            "-map_channel", "0.0.0", ch0_path,
-            "-map_channel", "0.0.1", ch1_path,
+            "-threads",
+            "1",
+            "-i",
+            input_path,
+            "-map_channel",
+            "0.0.0",
+            ch0_path,
+            "-map_channel",
+            "0.0.1",
+            ch1_path,
         ]
 
         try:

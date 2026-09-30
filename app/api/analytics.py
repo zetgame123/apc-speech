@@ -1,7 +1,7 @@
 import csv
 import io
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel
@@ -9,6 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics.clustering import TopicClusteringEngine
+from app.api.rate_limit import rate_limit
+from app.core.errors import AppError
 from app.core.security import AuthContext, verify_auth
 from app.db.models import Analysis, Call
 from app.db.session import get_db
@@ -32,6 +34,7 @@ async def get_analytics_summary(
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("read")
+    auth.verify_namespace(namespace)
 
     # Base query for calls in namespace
     call_query = select(Call).where(Call.namespace == namespace)
@@ -90,14 +93,16 @@ async def get_analytics_summary(
                     if a.manager_checklist.get(key, False):
                         chk_metrics[key] += 1
 
-    avg_score = (
-        round(sum(checklist_scores) / len(checklist_scores), 2)
-        if checklist_scores
-        else 0.0
-    )
+    avg_score = round(sum(checklist_scores) / len(checklist_scores), 2) if checklist_scores else 0.0
 
-    top_cities = [{"name": k, "count": v} for k, v in sorted(cities_counter.items(), key=lambda x: x[1], reverse=True)[:5]]
-    top_formats = [{"name": k, "count": v} for k, v in sorted(formats_counter.items(), key=lambda x: x[1], reverse=True)[:5]]
+    top_cities = [
+        {"name": k, "count": v}
+        for k, v in sorted(cities_counter.items(), key=lambda x: x[1], reverse=True)[:5]
+    ]
+    top_formats = [
+        {"name": k, "count": v}
+        for k, v in sorted(formats_counter.items(), key=lambda x: x[1], reverse=True)[:5]
+    ]
 
     weekly_trends = [{"week": k, "calls_count": v} for k, v in sorted(weekly_trends_dict.items())]
 
@@ -110,11 +115,23 @@ async def get_analytics_summary(
         },
         "checklist_averages": {
             "average_score": avg_score,
-            "greeting_pct": round(chk_metrics["greeting"] / chk_count * 100, 1) if chk_count else 0.0,
-            "need_identification_pct": round(chk_metrics["need_identification"] / chk_count * 100, 1) if chk_count else 0.0,
-            "options_offered_pct": round(chk_metrics["options_offered"] / chk_count * 100, 1) if chk_count else 0.0,
-            "next_step_named_pct": round(chk_metrics["next_step_named"] / chk_count * 100, 1) if chk_count else 0.0,
-            "contacts_taken_pct": round(chk_metrics["contacts_taken"] / chk_count * 100, 1) if chk_count else 0.0,
+            "greeting_pct": round(chk_metrics["greeting"] / chk_count * 100, 1)
+            if chk_count
+            else 0.0,
+            "need_identification_pct": round(
+                chk_metrics["need_identification"] / chk_count * 100, 1
+            )
+            if chk_count
+            else 0.0,
+            "options_offered_pct": round(chk_metrics["options_offered"] / chk_count * 100, 1)
+            if chk_count
+            else 0.0,
+            "next_step_named_pct": round(chk_metrics["next_step_named"] / chk_count * 100, 1)
+            if chk_count
+            else 0.0,
+            "contacts_taken_pct": round(chk_metrics["contacts_taken"] / chk_count * 100, 1)
+            if chk_count
+            else 0.0,
         },
         "weekly_trends": weekly_trends,
     }
@@ -124,8 +141,28 @@ async def get_analytics_summary(
 async def analyze_texts(
     req: TextAnalyzeRequest,
     auth: AuthContext = Depends(verify_auth),
+    _=Depends(rate_limit),
 ):
     auth.require_scope("write")
+    auth.verify_namespace(req.namespace)
+
+    if not req.texts:
+        return {"total_texts": 0, "clusters": []}
+
+    if len(req.texts) > 500:
+        raise AppError(
+            error="payload_too_large",
+            message="Максимальное количество текстов для анализа за один запрос: 500",
+            status_code=413,
+        )
+
+    for idx, text in enumerate(req.texts):
+        if len(text) > 50000:
+            raise AppError(
+                error="payload_too_large",
+                message=f"Текст #{idx + 1} превышает максимальную длину 50 000 символов",
+                status_code=413,
+            )
 
     labels, cluster_names, _ = clustering_engine.fit_transform_texts(req.texts)
 
@@ -138,12 +175,14 @@ async def analyze_texts(
     cid = 1
     for label, queries in grouped.items():
         name = cluster_names.get(label, f"Кластер {cid}")
-        clusters_output.append({
-            "cluster_id": cid,
-            "label": name,
-            "size": len(queries),
-            "representative_queries": queries[:3],
-        })
+        clusters_output.append(
+            {
+                "cluster_id": cid,
+                "label": name,
+                "size": len(queries),
+                "representative_queries": queries[:3],
+            }
+        )
         cid += 1
 
     return {
@@ -162,8 +201,13 @@ async def export_analytics_csv(
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("read")
+    auth.verify_namespace(namespace)
 
-    call_query = select(Call, Analysis).join(Analysis, Call.id == Analysis.call_id, isouter=True).where(Call.namespace == namespace)
+    call_query = (
+        select(Call, Analysis)
+        .join(Analysis, Call.id == Analysis.call_id, isouter=True)
+        .where(Call.namespace == namespace)
+    )
     if manager_id:
         call_query = call_query.where(Call.manager_id == manager_id)
     if date_from:
@@ -175,28 +219,46 @@ async def export_analytics_csv(
 
     output = io.StringIO()
     writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
-    writer.writerow([
-        "call_id", "external_id", "manager_id", "client_id", "created_at",
-        "duration_sec", "is_answering_machine", "inquiry_type", "call_result", "summary", "checklist_score"
-    ])
+    writer.writerow(
+        [
+            "call_id",
+            "external_id",
+            "manager_id",
+            "client_id",
+            "created_at",
+            "duration_sec",
+            "is_answering_machine",
+            "inquiry_type",
+            "call_result",
+            "summary",
+            "checklist_score",
+        ]
+    )
 
     for call, analysis in results:
-        writer.writerow([
-            call.id,
-            call.external_id or "",
-            call.manager_id or "",
-            call.client_id or "",
-            call.created_at.isoformat() if call.created_at else "",
-            call.duration_sec or 0,
-            "Yes" if call.is_answering_machine else "No",
-            analysis.inquiry_type if analysis else "",
-            analysis.call_result if analysis else "",
-            analysis.summary if analysis else "",
-            analysis.manager_checklist.get("score", "") if analysis and analysis.manager_checklist else ""
-        ])
+        created_str = (
+            call.created_at.replace(tzinfo=timezone.utc).isoformat() if call.created_at else ""
+        )
+        writer.writerow(
+            [
+                call.id,
+                call.external_id or "",
+                call.manager_id or "",
+                call.client_id or "",
+                created_str,
+                call.duration_sec or 0,
+                "Yes" if call.is_answering_machine else "No",
+                analysis.inquiry_type if analysis else "",
+                analysis.call_result if analysis else "",
+                analysis.summary if analysis else "",
+                analysis.manager_checklist.get("score", "")
+                if analysis and analysis.manager_checklist
+                else "",
+            ]
+        )
 
     return Response(
         content=output.getvalue(),
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": "attachment; filename=\"export.csv\""}
+        headers={"Content-Disposition": 'attachment; filename="export.csv"'},
     )

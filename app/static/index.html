@@ -669,6 +669,16 @@
   // =========================================================================
   // GLOBAL STATE & STORAGE
   // =========================================================================
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   const tokenInput = document.getElementById('apiToken');
   const namespaceInput = document.getElementById('namespaceInput');
   let currentCallId = null;
@@ -903,7 +913,7 @@
       const badge = document.createElement('div');
       badge.className = `speaker-badge ${isManager ? 'text-primary' : 'text-success'}`;
       badge.innerHTML = `
-        <span><i class="bi bi-person-${isManager ? 'badge' : 'fill'} me-1"></i>${isManager ? 'Менеджер' : 'Клиент'} (${seg.speaker_label})</span>
+        <span><i class="bi bi-person-${isManager ? 'badge' : 'fill'} me-1"></i>${isManager ? 'Менеджер' : 'Клиент'} (${escapeHtml(seg.speaker_label)})</span>
         <span class="text-muted fw-normal">${seg.start.toFixed(1)}s - ${seg.end.toFixed(1)}s</span>
       `;
       bubble.appendChild(badge);
@@ -950,23 +960,23 @@
     const e = analysis.entities || {};
     let count = 0;
     if (e.cities && e.cities.length) {
-      entBox.innerHTML += `<span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">📍 ${e.cities.join(', ')}</span>`;
+      entBox.innerHTML += `<span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">📍 ${escapeHtml(e.cities.join(', '))}</span>`;
       count++;
     }
     if (e.formats && e.formats.length) {
-      entBox.innerHTML += `<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">📐 ${e.formats.join(', ')}</span>`;
+      entBox.innerHTML += `<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">📐 ${escapeHtml(e.formats.join(', '))}</span>`;
       count++;
     }
     if (e.budget_rub) {
-      entBox.innerHTML += `<span class="badge bg-warning bg-opacity-10 text-warning-emphasis border border-warning border-opacity-50">💰 ${e.budget_rub.toLocaleString()} ₽</span>`;
+      entBox.innerHTML += `<span class="badge bg-warning bg-opacity-10 text-warning-emphasis border border-warning border-opacity-50">💰 ${escapeHtml(e.budget_rub.toLocaleString())} ₽</span>`;
       count++;
     }
     if (e.quantity) {
-      entBox.innerHTML += `<span class="badge bg-info bg-opacity-10 text-info-emphasis border border-info border-opacity-50">🔢 ${e.quantity} шт.</span>`;
+      entBox.innerHTML += `<span class="badge bg-info bg-opacity-10 text-info-emphasis border border-info border-opacity-50">🔢 ${escapeHtml(e.quantity)} шт.</span>`;
       count++;
     }
     if (e.period) {
-      entBox.innerHTML += `<span class="badge bg-secondary bg-opacity-10 text-secondary border">📅 ${e.period}</span>`;
+      entBox.innerHTML += `<span class="badge bg-secondary bg-opacity-10 text-secondary border">📅 ${escapeHtml(e.period)}</span>`;
       count++;
     }
     if (!count) entBox.innerHTML = '<span class="text-muted small">Сущности не определены</span>';
@@ -1031,15 +1041,18 @@
           const tr = document.createElement('tr');
           const durStr = c.duration_sec ? `${Math.round(c.duration_sec)} с` : '-';
           const dtStr = c.created_at ? new Date(c.created_at).toLocaleString('ru-RU') : '-';
+          const safeId = escapeHtml(c.call_id);
+          const safeExternalId = c.external_id ? escapeHtml(c.external_id) : '<span class="text-muted">-</span>';
+          const safeManagerId = c.manager_id ? escapeHtml(c.manager_id) : 'Автоматически';
           tr.innerHTML = `
-            <td><code>${c.call_id.substring(0, 8)}...</code></td>
-            <td>${c.external_id || '<span class="text-muted">-</span>'}</td>
-            <td><span class="badge bg-light text-dark border">${c.manager_id || 'Автоматически'}</span></td>
+            <td><code>${safeId.substring(0, 8)}...</code></td>
+            <td>${safeExternalId}</td>
+            <td><span class="badge bg-light text-dark border">${safeManagerId}</span></td>
             <td>${durStr}</td>
             <td>${c.is_answering_machine ? '<span class="badge bg-danger">Автоответчик</span>' : '<span class="badge bg-success">Живой разговор</span>'}</td>
             <td class="small text-muted">${dtStr}</td>
             <td>
-              <button class="btn btn-outline-primary btn-sm py-0 px-2" onclick="openArchivedCall('${c.call_id}')">
+              <button class="btn btn-outline-primary btn-sm py-0 px-2" onclick="openArchivedCall('${safeId}')">
                 <i class="bi bi-play-circle me-1"></i> Открыть
               </button>
             </td>
@@ -1048,7 +1061,7 @@
         });
       })
       .catch(err => {
-        callsTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-3">Ошибка загрузки: ${err.message}</td></tr>`;
+        callsTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-3">Ошибка загрузки: ${escapeHtml(err.message)}</td></tr>`;
       });
   }
 
@@ -1384,10 +1397,10 @@
       const tr = document.createElement('tr');
       const isOk = q.latency <= 2500;
       tr.innerHTML = `
-        <td class="text-muted small">${q.timestamp || '-'}</td>
-        <td class="fw-medium">${q.text}</td>
-        <td><span class="badge bg-light text-dark border">${q.method || 'Голос'}</span></td>
-        <td class="fw-bold">${q.latency} мс</td>
+        <td class="text-muted small">${escapeHtml(q.timestamp || '-')}</td>
+        <td class="fw-medium">${escapeHtml(q.text)}</td>
+        <td><span class="badge bg-light text-dark border">${escapeHtml(q.method || 'Голос')}</span></td>
+        <td class="fw-bold">${escapeHtml(q.latency)} мс</td>
         <td>
           <span class="badge ${isOk ? 'bg-success' : 'bg-danger'}">
             ${isOk ? '✓ SLA' : 'Превышен'}
@@ -1469,7 +1482,7 @@
       renderClusters(data.clusters, data.total_texts);
 
     } catch (e) {
-      clusteringContainer.innerHTML = `<div class="alert alert-danger small">Ошибка кластеризации: ${e.message}</div>`;
+      clusteringContainer.innerHTML = `<div class="alert alert-danger small">Ошибка кластеризации: ${escapeHtml(e.message)}</div>`;
     } finally {
       btnRunClustering.disabled = false;
       btnRunClustering.innerHTML = '<i class="bi bi-magic me-2"></i> Запустить AI-кластеризацию запросов';
@@ -1494,14 +1507,14 @@
 
       let queriesHtml = '';
       (c.representative_queries || []).forEach(q => {
-        queriesHtml += `<div class="text-muted small mb-1">• «${q}»</div>`;
+        queriesHtml += `<div class="text-muted small mb-1">• «${escapeHtml(q)}»</div>`;
       });
 
       div.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-2">
           <h6 class="fw-bold mb-0 text-dark">
             <span class="badge bg-${color} me-2">Тема ${c.cluster_id}</span>
-            ${c.label}
+            ${escapeHtml(c.label)}
           </h6>
           <span class="badge bg-light text-dark border fw-bold">${c.size} запр. (${pct}%)</span>
         </div>

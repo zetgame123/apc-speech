@@ -45,26 +45,30 @@ def split_segment_into_turns(
             # Split on noticeable inter-word pause OR sentence punctuation with a small pause
             if pause >= min_pause_sec or (has_sentence_end and pause >= 0.20):
                 turn_text = "".join(w["word"] for w in cur_words).strip()
-                out.append({
-                    "start": cur_words[0]["start"],
-                    "end": cur_words[-1]["end"],
-                    "text": turn_text,
-                    "words": list(cur_words),
-                    "confidence": float(np.mean([w.get("confidence", 0.9) for w in cur_words])),
-                })
+                out.append(
+                    {
+                        "start": cur_words[0]["start"],
+                        "end": cur_words[-1]["end"],
+                        "text": turn_text,
+                        "words": list(cur_words),
+                        "confidence": float(np.mean([w.get("confidence", 0.9) for w in cur_words])),
+                    }
+                )
                 cur_words = [w_next]
             else:
                 cur_words.append(w_next)
 
         if cur_words:
             turn_text = "".join(w["word"] for w in cur_words).strip()
-            out.append({
-                "start": cur_words[0]["start"],
-                "end": cur_words[-1]["end"],
-                "text": turn_text,
-                "words": list(cur_words),
-                "confidence": float(np.mean([w.get("confidence", 0.9) for w in cur_words])),
-            })
+            out.append(
+                {
+                    "start": cur_words[0]["start"],
+                    "end": cur_words[-1]["end"],
+                    "text": turn_text,
+                    "words": list(cur_words),
+                    "confidence": float(np.mean([w.get("confidence", 0.9) for w in cur_words])),
+                }
+            )
 
     return out
 
@@ -90,7 +94,9 @@ class MonoDiarizer:
             for p in candidates:
                 if os.path.exists(p):
                     try:
-                        self.campplus_session = ort.InferenceSession(p, providers=["CPUExecutionProvider"])
+                        self.campplus_session = ort.InferenceSession(
+                            p, providers=["CPUExecutionProvider"]
+                        )
                         logger.info("campplus_model_loaded", path=p)
                         break
                     except Exception as e:
@@ -174,11 +180,13 @@ class MonoDiarizer:
         centroid = float(np.mean(librosa.feature.spectral_centroid(y=segment_audio, sr=sr)))
         rolloff = float(np.mean(librosa.feature.spectral_rolloff(y=segment_audio, sr=sr)))
 
-        return np.concatenate([
-            [pitch_med, pitch_std, rms, centroid, rolloff],
-            mfcc_mean,
-            mfcc_std,
-        ])
+        return np.concatenate(
+            [
+                [pitch_med, pitch_std, rms, centroid, rolloff],
+                mfcc_mean,
+                mfcc_std,
+            ]
+        )
 
     def diarize(self, audio_path: str, segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
@@ -268,7 +276,11 @@ class MonoDiarizer:
                 c1 = np.mean(X[mask1], axis=0)
                 if use_cosine:
                     norm0, norm1 = np.linalg.norm(c0), np.linalg.norm(c1)
-                    sep = 1.0 - float(np.dot(c0, c1) / (norm0 * norm1)) if norm0 > 0 and norm1 > 0 else 0.0
+                    sep = (
+                        1.0 - float(np.dot(c0, c1) / (norm0 * norm1))
+                        if norm0 > 0 and norm1 > 0
+                        else 0.0
+                    )
                     thresh = self.min_speaker_distance
                 else:
                     sep = float(np.linalg.norm(c0 - c1))
@@ -283,7 +295,12 @@ class MonoDiarizer:
                 dur = turns[curr_idx].get("end", 0.0) - turns[curr_idx].get("start", 0.0)
                 gap_prev = turns[curr_idx].get("start", 0.0) - turns[prev_idx].get("end", 0.0)
 
-                if dur < 0.8 and gap_prev < 0.5 and labels[i - 1] == labels[i + 1] and labels[i] != labels[i - 1]:
+                if (
+                    dur < 0.8
+                    and gap_prev < 0.5
+                    and labels[i - 1] == labels[i + 1]
+                    and labels[i] != labels[i - 1]
+                ):
                     labels[i] = labels[i - 1]
 
         for valid_idx, label in zip(valid_indices, labels):

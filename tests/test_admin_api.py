@@ -1,12 +1,12 @@
 import os
 
-os.environ.setdefault('DATABASE_URL', 'sqlite+aiosqlite:///:memory:')
-os.environ.setdefault('DEBUG', 'true')
-os.environ.setdefault('DEV_TOKEN', 'dev-token')
-os.environ.setdefault('APP_ENV', 'test')
-os.environ.setdefault('REDIS_URL', 'redis://localhost:6379/0')
-os.environ.setdefault('S3_ENDPOINT_URL', 'http://localhost:9000')
-os.environ.setdefault('CALLBACK_SIGNING_SECRET', 'test-secret-key-32-characters!!!')
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("DEBUG", "true")
+os.environ.setdefault("DEV_TOKEN", "dev-token")
+os.environ.setdefault("APP_ENV", "test")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("S3_ENDPOINT_URL", "http://localhost:9000")
+os.environ.setdefault("CALLBACK_SIGNING_SECRET", "test-secret-key-32-characters!!!")
 
 import pytest
 from httpx import ASGITransport, AsyncClient

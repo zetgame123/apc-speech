@@ -5,6 +5,7 @@ Monitors S3 raw audio bucket inbox prefix (e.g., 'inbox/' or 'inbox/<namespace>/
 automatically registers processing jobs for newly uploaded audio files, moves them
 into processing/calls storage, and enqueues them in Redis Streams.
 """
+
 import argparse
 import asyncio
 import os
@@ -122,7 +123,9 @@ async def process_inbox_file(
     logger.info("inbox_job_enqueued_successfully", job_id=job_id, call_id=call_id)
 
 
-async def scan_inbox(bucket: str, prefix: str = "inbox/", namespace: str = "default", language: str = "ru"):
+async def scan_inbox(
+    bucket: str, prefix: str = "inbox/", namespace: str = "default", language: str = "ru"
+):
     storage = get_storage()
     objects = storage.list_objects(bucket, prefix=prefix)
     valid_objects = [o for o in objects if o["key"] != prefix and o["size"] > 0]
@@ -146,10 +149,18 @@ async def scan_inbox(bucket: str, prefix: str = "inbox/", namespace: str = "defa
 
 async def main():
     parser = argparse.ArgumentParser(description="APC-Speech S3 Inbox Ingestion Watcher")
-    parser.add_argument("--interval", type=int, default=10, help="Poll interval in seconds (default: 10)")
-    parser.add_argument("--namespace", type=str, default="default", help="Default namespace (default: default)")
-    parser.add_argument("--prefix", type=str, default="inbox/", help="S3 inbox prefix (default: inbox/)")
-    parser.add_argument("--bucket", type=str, default=None, help="S3 bucket name (default from settings)")
+    parser.add_argument(
+        "--interval", type=int, default=10, help="Poll interval in seconds (default: 10)"
+    )
+    parser.add_argument(
+        "--namespace", type=str, default="default", help="Default namespace (default: default)"
+    )
+    parser.add_argument(
+        "--prefix", type=str, default="inbox/", help="S3 inbox prefix (default: inbox/)"
+    )
+    parser.add_argument(
+        "--bucket", type=str, default=None, help="S3 bucket name (default from settings)"
+    )
     parser.add_argument("--language", type=str, default="ru", help="Speech language (default: ru)")
     parser.add_argument("--once", action="store_true", help="Run scan once and exit")
     args = parser.parse_args()
@@ -167,12 +178,16 @@ async def main():
     )
 
     if args.once:
-        await scan_inbox(bucket, prefix=args.prefix, namespace=args.namespace, language=args.language)
+        await scan_inbox(
+            bucket, prefix=args.prefix, namespace=args.namespace, language=args.language
+        )
         return
 
     while True:
         try:
-            await scan_inbox(bucket, prefix=args.prefix, namespace=args.namespace, language=args.language)
+            await scan_inbox(
+                bucket, prefix=args.prefix, namespace=args.namespace, language=args.language
+            )
         except Exception as e:
             logger.error("inbox_scan_failed", error=str(e))
         await asyncio.sleep(args.interval)

@@ -14,7 +14,6 @@ from app.core.logging import get_logger
 from app.core.security import (
     AuthContext,
     validate_ssrf_url,
-    verify_auth,
 )
 from app.db.models import Call, Job
 from app.db.session import get_db
@@ -42,7 +41,6 @@ async def verify_integration_auth(
     Authenticates integration webhooks.
     Supports either standard Authorization: Bearer <token> or query parameters (?token=... or ?auth_token=...).
     """
-    settings = get_settings()
     provided_token = token or auth_token
 
     if not provided_token:
@@ -51,23 +49,15 @@ async def verify_integration_auth(
             provided_token = auth_header.replace("Bearer ", "").strip()
 
     if not provided_token:
-        # Fallback to verify_auth logic
-        return verify_auth(None)
+        raise AppError(
+            error="unauthorized",
+            message="Отсутствует токен авторизации вебхука",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
 
-    if settings.dev_token and provided_token == settings.dev_token:
-        return AuthContext(token=provided_token, scopes={"admin", "write", "read"}, namespace=None)
+    from app.core.security import authenticate_token
 
-    if settings.app_env != "production" and settings.debug and provided_token == "debug-token":
-        return AuthContext(token=provided_token, scopes={"admin", "write", "read"}, namespace=None)
-
-    # In production, check API keys in DB or settings
-    from app.core.security import hash_token
-    t_hash = hash_token(provided_token)
-    if t_hash in getattr(settings, "_cached_api_keys", {}):
-        key_info = settings._cached_api_keys[t_hash]
-        return AuthContext(token=provided_token, scopes=set(key_info.scopes), namespace=key_info.namespace)
-
-    raise AppError("unauthorized", "Недействительный токен авторизации интеграции", status.HTTP_401_UNAUTHORIZED)
+    return authenticate_token(provided_token)
 
 
 @router.post(
@@ -96,7 +86,13 @@ async def bitrix24_telephony_webhook(
     enqueues ASR transcription & analysis, and optionally attaches results back to the CRM deal/lead timeline.
     """
     auth.require_scope("write")
+    auth.verify_namespace(namespace)
     settings = get_settings()
+
+    if callback_url:
+        validate_ssrf_url(callback_url)
+    if bitrix_rest_url:
+        validate_ssrf_url(bitrix_rest_url)
 
     # Parse incoming request body (handles JSON and form-urlencoded)
     content_type = request.headers.get("content-type", "")
@@ -129,7 +125,9 @@ async def bitrix24_telephony_webhook(
     effective_idempotency = idempotency_key or f"bitrix24:{parsed['external_id'] or safe_url}"
 
     # Check for existing duplicate job
-    stmt = select(Job).where(Job.namespace == namespace, Job.idempotency_key == effective_idempotency)
+    stmt = select(Job).where(
+        Job.namespace == namespace, Job.idempotency_key == effective_idempotency
+    )
     existing_job = (await db.execute(stmt)).scalar_one_or_none()
     if existing_job:
         response.status_code = status.HTTP_200_OK
@@ -137,7 +135,7 @@ async def bitrix24_telephony_webhook(
             status=existing_job.status,
             job_id=existing_job.id,
             call_id=existing_job.call_id or "",
-            status_url=f"/v1/jobs/{existing_job.id}",
+            status_url=f"/v1/jobs/{existing_job.id}?namespace={namespace}",
             created_at=existing_job.created_at,
         )
 
@@ -218,6 +216,6 @@ async def bitrix24_telephony_webhook(
         status="queued",
         job_id=job_id,
         call_id=call_id,
-        status_url=f"/v1/jobs/{job_id}",
+        status_url=f"/v1/jobs/{job_id}?namespace={namespace}",
         created_at=now,
     )

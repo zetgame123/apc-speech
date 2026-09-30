@@ -16,6 +16,7 @@ from fastapi import (
 )
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.rate_limit import rate_limit
@@ -78,6 +79,7 @@ async def create_job_upload(
     channel_manager: int | None = Form(None),
     vocabulary_hints: str | None = Form(None),
     language: str | None = Form("ru"),
+    call_created_at: datetime | None = Form(None),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     x_request_id: str | None = Header(None, alias="X-Request-Id"),
     auth: AuthContext = Depends(verify_auth),
@@ -85,32 +87,65 @@ async def create_job_upload(
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("write")
+    auth.verify_namespace(namespace)
     settings = get_settings()
 
-    # Read uploaded bytes
-    file_bytes = await file.read()
-    if not file_bytes:
+    if callback_url:
+        validate_ssrf_url(callback_url)
+
+    # Read uploaded bytes with chunk streaming to prevent OOM
+    chunks = []
+    total_bytes = 0
+    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    hasher = hashlib.sha256()
+
+    while True:
+        chunk = await file.read(1024 * 1024)  # 1MB chunk
+        if not chunk:
+            break
+        total_bytes += len(chunk)
+        if total_bytes > max_bytes:
+            raise AppError(
+                "payload_too_large",
+                f"Размер файла превышает лимит {settings.max_upload_size_mb} МБ",
+                413,
+            )
+        hasher.update(chunk)
+        chunks.append(chunk)
+
+    if total_bytes == 0:
         raise AppError("empty_file", "Загруженный файл пуст", 400)
 
-    # Size validation
-    max_bytes = settings.max_upload_size_mb * 1024 * 1024
-    if len(file_bytes) > max_bytes:
-        raise AppError("payload_too_large", f"Размер файла превышает лимит {settings.max_upload_size_mb} МБ", 413)
-
-    # Calculate SHA-256 for file deduplication
-    file_hash = hashlib.sha256(file_bytes).hexdigest()
-    effective_idempotency = idempotency_key or f"hash:{file_hash}"
+    file_bytes = b"".join(chunks)
+    file_hash = hasher.hexdigest()
+    param_fingerprint = f"{language or 'ru'}:{channel_manager}:{vocabulary_hints}"
+    param_hash = hashlib.sha256(param_fingerprint.encode()).hexdigest()[:8]
+    effective_idempotency = idempotency_key or f"hash:{file_hash}:{param_hash}"
 
     # Check for existing job with same idempotency key
-    stmt = select(Job).where(Job.namespace == namespace, Job.idempotency_key == effective_idempotency)
+    stmt = select(Job).where(
+        Job.namespace == namespace, Job.idempotency_key == effective_idempotency
+    )
     existing_job = (await db.execute(stmt)).scalar_one_or_none()
     if existing_job:
+        if (
+            idempotency_key
+            and existing_job.file_hash_sha256
+            and existing_job.file_hash_sha256 != file_hash
+        ):
+            raise AppError(
+                error="idempotency_conflict",
+                message="Idempotency key has already been used with different content",
+                status_code=409,
+            )
         response.status_code = status.HTTP_200_OK
         return JobAcceptedResponse(
             job_id=existing_job.id,
             status=existing_job.status,
-            status_url=f"/v1/jobs/{existing_job.id}",
-            created_at=existing_job.created_at,
+            status_url=f"/v1/jobs/{existing_job.id}?namespace={namespace}",
+            created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
+            if existing_job.created_at.tzinfo is None
+            else existing_job.created_at,
         )
 
     # Generate IDs
@@ -134,6 +169,7 @@ async def create_job_upload(
         namespace=namespace,
         external_id=external_id,
         direction=direction,
+        call_created_at=call_created_at or now,
         manager_id=manager_id,
         client_id=client_id,
         created_at=now,
@@ -168,7 +204,33 @@ async def create_job_upload(
         created_at=now,
     )
     db.add(job)
-    await db.commit()
+
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        existing_job = (await db.execute(stmt)).scalar_one_or_none()
+        if existing_job:
+            if (
+                idempotency_key
+                and existing_job.file_hash_sha256
+                and existing_job.file_hash_sha256 != file_hash
+            ):
+                raise AppError(
+                    error="idempotency_conflict",
+                    message="Idempotency key has already been used with different content",
+                    status_code=409,
+                )
+            response.status_code = status.HTTP_200_OK
+            return JobAcceptedResponse(
+                job_id=existing_job.id,
+                status=existing_job.status,
+                status_url=f"/v1/jobs/{existing_job.id}?namespace={namespace}",
+                created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
+                if existing_job.created_at.tzinfo is None
+                else existing_job.created_at,
+            )
+        raise
 
     # Enqueue task in Redis Streams
     queue = get_queue()
@@ -188,8 +250,8 @@ async def create_job_upload(
     return JobAcceptedResponse(
         job_id=job_id,
         status="queued",
-        status_url=f"/v1/jobs/{job_id}",
-        created_at=now,
+        status_url=f"/v1/jobs/{job_id}?namespace={namespace}",
+        created_at=now.replace(tzinfo=timezone.utc),
     )
 
 
@@ -209,33 +271,53 @@ async def create_job_by_url(
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("write")
+    auth.verify_namespace(req.namespace)
     settings = get_settings()
 
     # SSRF Protection
     safe_url = validate_ssrf_url(req.url)
+    if req.callback_url:
+        validate_ssrf_url(req.callback_url)
 
-    effective_idempotency = idempotency_key or f"url:{safe_url}"
-    stmt = select(Job).where(Job.namespace == req.namespace, Job.idempotency_key == effective_idempotency)
+    meta = req.metadata or {}
+    options = req.options or {}
+    param_fingerprint = f"{req.language or 'ru'}:{options.get('channel_manager') or meta.get('channel_manager')}:{options.get('vocabulary_hints') or meta.get('vocabulary_hints')}"
+    param_hash = hashlib.sha256(param_fingerprint.encode()).hexdigest()[:8]
+    effective_idempotency = idempotency_key or f"url:{safe_url}:{param_hash}"
+    stmt = select(Job).where(
+        Job.namespace == req.namespace, Job.idempotency_key == effective_idempotency
+    )
     existing_job = (await db.execute(stmt)).scalar_one_or_none()
     if existing_job:
         response.status_code = status.HTTP_200_OK
         return JobAcceptedResponse(
             job_id=existing_job.id,
             status=existing_job.status,
-            status_url=f"/v1/jobs/{existing_job.id}",
-            created_at=existing_job.created_at,
+            status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
+            created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
+            if existing_job.created_at.tzinfo is None
+            else existing_job.created_at,
         )
 
     job_id = str(uuid.uuid4())
     call_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    meta = req.metadata or {}
+
+    call_created_at_dt = None
+    if meta.get("call_created_at"):
+        try:
+            call_created_at_dt = datetime.fromisoformat(
+                str(meta["call_created_at"]).replace("Z", "+00:00")
+            ).replace(tzinfo=None)
+        except Exception:
+            call_created_at_dt = None
 
     call = Call(
         id=call_id,
         namespace=req.namespace,
         external_id=meta.get("external_id"),
         direction=meta.get("direction", "inbound"),
+        call_created_at=call_created_at_dt or now,
         manager_id=meta.get("manager_id"),
         client_id=meta.get("client_id"),
         created_at=now,
@@ -255,7 +337,23 @@ async def create_job_by_url(
         created_at=now,
     )
     db.add(job)
-    await db.commit()
+
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        existing_job = (await db.execute(stmt)).scalar_one_or_none()
+        if existing_job:
+            response.status_code = status.HTTP_200_OK
+            return JobAcceptedResponse(
+                job_id=existing_job.id,
+                status=existing_job.status,
+                status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
+                created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
+                if existing_job.created_at.tzinfo is None
+                else existing_job.created_at,
+            )
+        raise
 
     queue = get_queue()
     payload = {
@@ -266,15 +364,17 @@ async def create_job_by_url(
         "callback_url": req.callback_url,
         "language": req.language or "ru",
         "metadata": meta,
-        "options": req.options or {},
+        "options": options,
+        "channel_manager": options.get("channel_manager") or meta.get("channel_manager"),
+        "vocabulary_hints": options.get("vocabulary_hints") or meta.get("vocabulary_hints"),
     }
     await queue.enqueue_long_job(job_id, payload)
 
     return JobAcceptedResponse(
         job_id=job_id,
         status="queued",
-        status_url=f"/v1/jobs/{job_id}",
-        created_at=now,
+        status_url=f"/v1/jobs/{job_id}?namespace={req.namespace}",
+        created_at=now.replace(tzinfo=timezone.utc),
     )
 
 
@@ -291,14 +391,31 @@ async def get_job(
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("read")
+    auth.verify_namespace(namespace)
 
     stmt = select(Job).where(Job.id == job_id, Job.namespace == namespace)
     job = (await db.execute(stmt)).scalar_one_or_none()
 
     if not job:
-        raise AppError("job_not_found", f"Задание {job_id} не найдено в пространстве {namespace}", 404)
+        raise AppError(
+            "job_not_found", f"Задание {job_id} не найдено в пространстве {namespace}", 404
+        )
 
-    result_url = f"/v1/calls/{job.call_id}/analysis" if job.status == "succeeded" and job.call_id else None
+    result_url = (
+        f"/v1/calls/{job.call_id}/analysis?namespace={namespace}"
+        if job.status == "succeeded" and job.call_id
+        else None
+    )
+
+    created_at_tz = (
+        job.created_at.replace(tzinfo=timezone.utc)
+        if job.created_at.tzinfo is None
+        else job.created_at
+    )
+    updated_dt = job.updated_at or job.created_at
+    updated_at_tz = (
+        updated_dt.replace(tzinfo=timezone.utc) if updated_dt.tzinfo is None else updated_dt
+    )
 
     return JobStatusResponse(
         job_id=job.id,
@@ -308,6 +425,6 @@ async def get_job(
         step=job.step,
         result_url=result_url,
         error=job.error_details,
-        created_at=job.created_at,
-        updated_at=job.updated_at or job.created_at,
+        created_at=created_at_tz,
+        updated_at=updated_at_tz,
     )

@@ -2,6 +2,7 @@
 """
 Utility script to ensure required models are downloaded for local offline execution.
 """
+
 import os
 import sys
 import urllib.request
@@ -15,16 +16,21 @@ CAMPPLUS_PATH = os.path.join(MODELS_DIR, "campplus.onnx")
 def download_campplus():
     os.makedirs(MODELS_DIR, exist_ok=True)
     if os.path.exists(CAMPPLUS_PATH) and os.path.getsize(CAMPPLUS_PATH) > 1_000_000:
-        print(f"[OK] CAM++ model already present at {CAMPPLUS_PATH} ({os.path.getsize(CAMPPLUS_PATH)} bytes)")
+        print(
+            f"[OK] CAM++ model already present at {CAMPPLUS_PATH} ({os.path.getsize(CAMPPLUS_PATH)} bytes)"
+        )
         return
 
     print(f"Downloading CAM++ neural speaker embedding model to {CAMPPLUS_PATH}...")
     try:
+
         def reporthook(block_num, block_size, total_size):
             downloaded = block_num * block_size
             if total_size > 0:
                 percent = min(100, downloaded * 100 // total_size)
-                sys.stdout.write(f"\rProgress: {percent}% ({downloaded // (1024*1024)}MB / {total_size // (1024*1024)}MB)")
+                sys.stdout.write(
+                    f"\rProgress: {percent}% ({downloaded // (1024 * 1024)}MB / {total_size // (1024 * 1024)}MB)"
+                )
                 sys.stdout.flush()
 
         urllib.request.urlretrieve(CAMPPLUS_URL, CAMPPLUS_PATH, reporthook=reporthook)

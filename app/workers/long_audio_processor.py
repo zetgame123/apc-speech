@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import os
 import signal
 import tempfile
@@ -7,7 +8,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from app.asr.engine import get_asr_engine
 from app.asr.preprocessor import AudioPreprocessor
@@ -20,7 +21,7 @@ from app.db.session import AsyncSessionLocal
 from app.diarization.roles import RoleClassifier
 from app.integrations.bitrix24 import format_timeline_comment, post_to_crm_timeline
 from app.llm.local_adapter import LocalLlamaCppAdapter
-from app.llm.port import AnalysisContext
+from app.llm.port import AnalysisContext, validate_analysis_schema
 from app.metrics.speech_metrics import SpeechMetricsCalculator
 from app.pii.masker import PiiMasker
 from app.queue.redis_streams import (
@@ -79,11 +80,15 @@ async def process_job(job_id: str, data: dict):
             storage.download_to_file(data["s3_bucket"], data["s3_key"], input_audio_path)
         elif "source_url" in data:
             source_url = validate_ssrf_url(data["source_url"])
+            hasher = hashlib.sha256()
             async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.get(source_url)
-                resp.raise_for_status()
-                with open(input_audio_path, "wb") as f:
-                    f.write(resp.content)
+                async with client.stream("GET", source_url) as resp:
+                    resp.raise_for_status()
+                    with open(input_audio_path, "wb") as f:
+                        async for chunk in resp.aiter_bytes(chunk_size=1024 * 1024):
+                            hasher.update(chunk)
+                            f.write(chunk)
+            downloaded_hash = hasher.hexdigest()
 
             # Persist downloaded audio to S3 for replay and compliance
             s3_key = f"calls/{call_id}/audio.wav"
@@ -102,6 +107,9 @@ async def process_job(job_id: str, data: dict):
                     expires_at=now_dt + timedelta(days=settings.retention_audio_days),
                 )
                 db.add(audio_obj)
+                await db.execute(
+                    update(Job).where(Job.id == job_id).values(file_hash_sha256=downloaded_hash)
+                )
                 await db.commit()
 
         # 2. Probe audio properties
@@ -109,10 +117,21 @@ async def process_job(job_id: str, data: dict):
         total_duration = probe_info["duration"]
         is_stereo = probe_info["channels"] >= 2
 
+        call_created_at_dt = None
+        raw_call_created = data.get("metadata", {}).get("call_created_at")
+        if raw_call_created:
+            try:
+                call_created_at_dt = datetime.fromisoformat(
+                    str(raw_call_created).replace("Z", "+00:00")
+                ).replace(tzinfo=None)
+            except Exception:
+                pass
+
         async with AsyncSessionLocal() as db:
-            await db.execute(
-                update(Call).where(Call.id == call_id).values(duration_sec=total_duration)
-            )
+            call_update_vals = {"duration_sec": total_duration}
+            if call_created_at_dt:
+                call_update_vals["call_created_at"] = call_created_at_dt
+            await db.execute(update(Call).where(Call.id == call_id).values(**call_update_vals))
             await db.execute(
                 update(Job).where(Job.id == job_id).values(progress=25, step="asr_transcription")
             )
@@ -122,14 +141,26 @@ async def process_job(job_id: str, data: dict):
         final_segments = []
         is_answering_machine = False
 
+        voc_hints = data.get("vocabulary_hints") or (data.get("options") or {}).get(
+            "vocabulary_hints"
+        )
+        hints_prompt = None
+        if voc_hints:
+            if isinstance(voc_hints, list):
+                hints_prompt = " ".join(str(h) for h in voc_hints if h)
+            elif isinstance(voc_hints, str):
+                hints_prompt = voc_hints
 
         from app.workers.chunking import chunk_audio, merge_and_deduplicate
+
         if is_stereo:
             # Stereo branch: Split channels
             ch0_wav, ch1_wav = preprocessor.split_stereo_channels(input_audio_path)
             ch0_pcm = os.path.join(tmp_dir, "ch0_pcm.wav")
             ch1_pcm = os.path.join(tmp_dir, "ch1_pcm.wav")
-            target_lang = data.get("language") or (data.get("options") or {}).get("language") or "ru"
+            target_lang = (
+                data.get("language") or (data.get("options") or {}).get("language") or "ru"
+            )
             preprocessor.convert_to_pcm16(ch0_wav, ch0_pcm)
             preprocessor.convert_to_pcm16(ch1_wav, ch1_pcm)
 
@@ -138,24 +169,45 @@ async def process_job(job_id: str, data: dict):
 
             all_segs_ch0 = []
             for chunk in ch0_chunks:
-                segs, _ = asr_engine.transcribe(chunk["data"], language=target_lang)
+                segs, _ = asr_engine.transcribe(
+                    chunk["data"],
+                    language=target_lang,
+                    initial_prompt=hints_prompt,
+                    hotwords=hints_prompt,
+                )
                 all_segs_ch0.append(segs)
             segs_ch0 = merge_and_deduplicate(all_segs_ch0, ch0_chunks)
 
             all_segs_ch1 = []
             for chunk in ch1_chunks:
-                segs, _ = asr_engine.transcribe(chunk["data"], language=target_lang)
+                segs, _ = asr_engine.transcribe(
+                    chunk["data"],
+                    language=target_lang,
+                    initial_prompt=hints_prompt,
+                    hotwords=hints_prompt,
+                )
                 all_segs_ch1.append(segs)
             segs_ch1 = merge_and_deduplicate(all_segs_ch1, ch1_chunks)
 
             channel_mapping = data.get("metadata", {}).get("channel_mapping")
+            if not channel_mapping and data.get("channel_manager") is not None:
+                try:
+                    ch_mgr = int(data["channel_manager"])
+                    channel_mapping = {
+                        f"channel_{ch_mgr}": "manager",
+                        f"channel_{1 - ch_mgr}": "client",
+                    }
+                except Exception:
+                    channel_mapping = None
+
             final_segments, role_conf = role_classifier.assign_stereo_roles(
                 segs_ch0, segs_ch1, channel_mapping
             )
         else:
-
             # Mono branch
-            target_lang = data.get("language") or (data.get("options") or {}).get("language") or "ru"
+            target_lang = (
+                data.get("language") or (data.get("options") or {}).get("language") or "ru"
+            )
             mono_pcm = os.path.join(tmp_dir, "mono_pcm.wav")
             preprocessor.convert_to_pcm16(input_audio_path, mono_pcm)
 
@@ -163,13 +215,19 @@ async def process_job(job_id: str, data: dict):
             all_raw_segments = []
 
             for chunk in chunks_info:
-                segs, _ = asr_engine.transcribe(chunk["data"], language=target_lang)
+                segs, _ = asr_engine.transcribe(
+                    chunk["data"],
+                    language=target_lang,
+                    initial_prompt=hints_prompt,
+                    hotwords=hints_prompt,
+                )
                 all_raw_segments.append(segs)
 
             raw_segments = merge_and_deduplicate(all_raw_segments, chunks_info)
 
             # Use local audio-based diarization
             from app.diarization.mono_diarizer import MonoDiarizer
+
             mono_diarizer = MonoDiarizer(num_speakers=2)
             raw_segments = mono_diarizer.diarize(mono_pcm, raw_segments)
 
@@ -186,7 +244,9 @@ async def process_job(job_id: str, data: dict):
 
         async with AsyncSessionLocal() as db:
             await db.execute(
-                update(Call).where(Call.id == call_id).values(is_answering_machine=is_answering_machine)
+                update(Call)
+                .where(Call.id == call_id)
+                .values(is_answering_machine=is_answering_machine)
             )
             await db.execute(
                 update(Job).where(Job.id == job_id).values(progress=60, step="pii_masking")
@@ -233,10 +293,26 @@ async def process_job(job_id: str, data: dict):
                 "summary": "Автоответчик или голосовая почта. Разговор не состоялся.",
                 "call_result": "unclear_spam",
                 "inquiry_type": "spam_irrelevant",
-                "entities": {"cities": [], "formats": []},
+                "entities": {
+                    "cities": [],
+                    "formats": [],
+                    "quantity": None,
+                    "target_period": None,
+                    "budget_rub": None,
+                    "product_category": None,
+                },
                 "agreements": [],
-                "sentiment": {"client_overall": "neutral", "manager_tone": "neutral"},
-                "manager_checklist": {"score": 0, "greeting": False},
+                "sentiment": {"client_overall": "neutral", "manager_tone": "indifferent"},
+                "manager_checklist": {
+                    "greeting": False,
+                    "need_identification": False,
+                    "options_offered": False,
+                    "next_step_named": False,
+                    "contacts_taken": False,
+                    "forbidden_words_found": [],
+                    "score": 0,
+                },
+                "deterministic_speech_metrics": speech_metrics,
             }
         else:
             ctx = AnalysisContext(
@@ -246,9 +322,25 @@ async def process_job(job_id: str, data: dict):
             )
             structured_analysis = await llm_adapter.analyze(full_masked_text, ctx)
             analysis_result = structured_analysis.model_dump()
+            analysis_result["deterministic_speech_metrics"] = speech_metrics
+
+        # Strict JSON Schema validation
+        try:
+            validate_analysis_schema(analysis_result)
+        except Exception as schema_err:
+            logger.warning("analysis_schema_validation_warning", error=str(schema_err))
 
         # 8. Save Analysis & Complete Job
         async with AsyncSessionLocal() as db:
+            # Check if job was cancelled or call deleted
+            j_stmt = select(Job).where(Job.id == job_id)
+            current_job = (await db.execute(j_stmt)).scalar_one_or_none()
+            if not current_job or (
+                current_job.status == "failed" and current_job.step == "cancelled_by_deletion"
+            ):
+                logger.info("job_cancelled_skipping_save", job_id=job_id)
+                return
+
             analysis_record = Analysis(
                 call_id=call_id,
                 namespace=namespace,
@@ -292,10 +384,10 @@ async def process_job(job_id: str, data: dict):
         bitrix_meta = (data.get("metadata") or {}).get("bitrix24") or {}
         if bitrix_meta.get("webhook_url") and bitrix_meta.get("crm_entity_id"):
             try:
-                full_text = " ".join(s["text"] for s in final_segments)
+                # Use masked text for Bitrix24 timeline comment to prevent PII leakage
                 comment_text = format_timeline_comment(
                     analysis=analysis_result,
-                    full_text=full_text,
+                    full_text=full_masked_text,
                     duration_sec=total_duration,
                 )
                 await post_to_crm_timeline(
@@ -329,7 +421,12 @@ async def main():
                 await process_job(job_id, payload)
                 await queue.ack_job(STREAM_LONG_JOBS, GROUP_WORKERS, msg_id)
             except Exception as e:
-                logger.error("job_processing_failed", job_id=job_id, error=str(e), traceback=traceback.format_exc())
+                logger.error(
+                    "job_processing_failed",
+                    job_id=job_id,
+                    error=str(e),
+                    traceback=traceback.format_exc(),
+                )
                 async with AsyncSessionLocal() as db:
                     await db.execute(
                         update(Job)
@@ -341,6 +438,23 @@ async def main():
                         )
                     )
                     await db.commit()
+
+                # Send failure callback if callback_url configured
+                callback_url = payload.get("callback_url")
+                if callback_url:
+                    try:
+                        failure_payload = {
+                            "job_id": job_id,
+                            "call_id": payload.get("call_id"),
+                            "status": "failed",
+                            "error": {"error": "job_processing_error", "message": str(e)},
+                        }
+                        await queue.enqueue_callback(job_id, callback_url, failure_payload)
+                    except Exception as cb_err:
+                        logger.error(
+                            "failure_callback_enqueue_error", job_id=job_id, error=str(cb_err)
+                        )
+
                 await queue.ack_job(STREAM_LONG_JOBS, GROUP_WORKERS, msg_id)
 
         except Exception as loop_err:

@@ -30,7 +30,9 @@ async def lifespan(app: FastAPI):
                 "Set a random string of at least 32 characters."
             )
         if "*" in settings.cors_allowed_origins:
-            logger.warning("CORS_ALLOWED_ORIGINS is set to '*' in production — restrict to specific domains")
+            logger.warning(
+                "CORS_ALLOWED_ORIGINS is set to '*' in production — restrict to specific domains"
+            )
         if settings.dev_token:
             logger.warning("DEV_TOKEN is set in production — consider removing it")
 
@@ -57,9 +59,25 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("redis_groups_init_failed", error=str(e))
 
+    # 4. Sync revoked tokens from Redis
+    try:
+        from app.core.security import revoke_token
+
+        queue = get_queue()
+        client = await queue.get_client()
+        redis_revoked = await client.smembers("revoked_tokens")
+        if redis_revoked:
+            for r in redis_revoked:
+                token_h = r.decode() if isinstance(r, bytes) else str(r)
+                revoke_token(token_h)
+            logger.info("revoked_tokens_synced", count=len(redis_revoked))
+    except Exception as e:
+        logger.warning("revoked_tokens_sync_failed", error=str(e))
+
     # 4. Warm up Voice Search ASR engine to eliminate cold-start latency
     try:
         from app.asr.engine import get_voice_search_engine
+
         engine = get_voice_search_engine()
         engine.load_model()
         logger.info("voice_search_engine_warmed_up")

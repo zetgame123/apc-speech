@@ -3,6 +3,7 @@ from typing import Any
 import httpx
 
 from app.core.logging import get_logger
+from app.core.security import validate_ssrf_url
 
 logger = get_logger("bitrix24_integration")
 
@@ -42,7 +43,11 @@ def parse_bitrix24_webhook(raw_data: dict[str, Any]) -> dict[str, Any]:
 
     # Portal domain and credentials
     domain = auth_dict.get("domain") or raw_data.get("auth[domain]") or raw_data.get("domain")
-    token = auth_dict.get("application_token") or raw_data.get("auth[application_token]") or raw_data.get("auth_token")
+    token = (
+        auth_dict.get("application_token")
+        or raw_data.get("auth[application_token]")
+        or raw_data.get("auth_token")
+    )
 
     # Normalize call direction: 1 = outbound, 2 = inbound, 3 = inbound with redirect, etc.
     direction = "inbound"
@@ -84,16 +89,28 @@ def format_timeline_comment(
 ) -> str:
     """
     Formats structured analysis and transcription into a readable Bitrix24 timeline comment.
+    Handles schema-compliant dicts for sentiment, agreements, and entities.
     """
     summary = analysis.get("summary") or "—"
     inquiry_type = analysis.get("inquiry_type") or "—"
     call_result = analysis.get("call_result") or "—"
-    sentiment = analysis.get("sentiment") or "neutral"
-    agreements = analysis.get("agreements") or []
 
-    sentiment_emoji = {"positive": "🟢 Позитивная", "negative": "🔴 Негативная", "neutral": "⚪ Нейтральная"}.get(
-        sentiment, sentiment
-    )
+    sentiment_raw = analysis.get("sentiment")
+    if isinstance(sentiment_raw, dict):
+        client_sentiment = sentiment_raw.get("client_overall", "neutral")
+        manager_tone = sentiment_raw.get("manager_tone", "polite_constructive")
+        sentiment_label = client_sentiment
+        sentiment_text = f"{client_sentiment} (тон менеджера: {manager_tone})"
+    else:
+        sentiment_label = str(sentiment_raw or "neutral")
+        sentiment_text = sentiment_label
+
+    sentiment_emoji = {
+        "positive": "🟢 Позитивная",
+        "negative": "🔴 Негативная",
+        "conflict": "💥 Конфликтная",
+        "neutral": "⚪ Нейтральная",
+    }.get(sentiment_label, sentiment_text)
 
     lines = [
         "📞 [b]Анализ звонка (APC-Speech AI)[/b]",
@@ -104,20 +121,46 @@ def format_timeline_comment(
         f"📝 [b]Краткое резюме:[/b]\n{summary}",
     ]
 
+    agreements = analysis.get("agreements") or []
     if agreements:
-        agreements_str = "\n".join(f"  • {a}" for a in agreements)
-        lines.append(f"🤝 [b]Договоренности:[/b]\n{agreements_str}")
+        agreements_lines = []
+        for a in agreements:
+            if isinstance(a, dict):
+                who = (
+                    "Менеджер"
+                    if a.get("who") == "manager"
+                    else ("Клиент" if a.get("who") == "client" else "Обе стороны")
+                )
+                what = a.get("what", "")
+                deadline = f" (срок: {a['deadline']})" if a.get("deadline") else ""
+                agreements_lines.append(f"  • [{who}] {what}{deadline}")
+            else:
+                agreements_lines.append(f"  • {a}")
+        lines.append("🤝 [b]Договоренности:[/b]\n" + "\n".join(agreements_lines))
 
     entities = analysis.get("entities") or {}
     notable_entities = []
-    if entities.get("locations"):
-        notable_entities.append(f"Локации: {', '.join(entities['locations'])}")
-    if entities.get("surfaces"):
-        notable_entities.append(f"Поверхности: {', '.join(entities['surfaces'])}")
-    if entities.get("budget"):
-        notable_entities.append(f"Бюджет: {entities['budget']}")
+    cities = entities.get("cities") or entities.get("locations") or []
+    formats = entities.get("formats") or entities.get("surfaces") or []
+    budget = (
+        entities.get("budget_rub")
+        if entities.get("budget_rub") is not None
+        else entities.get("budget")
+    )
+
+    if cities:
+        notable_entities.append(f"Локации: {', '.join(cities)}")
+    if formats:
+        notable_entities.append(f"Форматы: {', '.join(formats)}")
+    if budget is not None:
+        notable_entities.append(
+            f"Бюджет: {budget:,.0f} ₽" if isinstance(budget, (int, float)) else f"Бюджет: {budget}"
+        )
+
     if notable_entities:
-        lines.append("🏷 [b]Сущности рекламы:[/b]\n" + "\n".join(f"  • {e}" for e in notable_entities))
+        lines.append(
+            "🏷 [b]Сущности рекламы:[/b]\n" + "\n".join(f"  • {e}" for e in notable_entities)
+        )
 
     if full_text:
         # Limit preview transcript if extremely long
@@ -140,6 +183,13 @@ async def post_to_crm_timeline(
     if not webhook_url:
         return False
 
+    # SSRF protection
+    try:
+        validate_ssrf_url(webhook_url)
+    except Exception as e:
+        logger.error("bitrix24_webhook_ssrf_rejected", url=webhook_url, error=str(e))
+        return False
+
     url = webhook_url
     if not url.endswith("/crm.timeline.comment.add") and not url.endswith("/"):
         url = url.rstrip("/") + "/crm.timeline.comment.add"
@@ -158,7 +208,9 @@ async def post_to_crm_timeline(
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(url, json=payload)
             if resp.is_success:
-                logger.info("bitrix24_timeline_comment_posted", entity_type=entity_type, entity_id=entity_id)
+                logger.info(
+                    "bitrix24_timeline_comment_posted", entity_type=entity_type, entity_id=entity_id
+                )
                 return True
             else:
                 logger.warning(

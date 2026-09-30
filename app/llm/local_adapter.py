@@ -91,23 +91,22 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         text_lower = text_norm.lower()
 
         budget_rub = None
-        budget_match = re.search(r'бюджет.*?(\d[\d\s]*000)\s*руб', text_lower)
+        budget_match = re.search(r"бюджет.*?(\d[\d\s]*000)\s*руб", text_lower)
         if not budget_match:
-            budget_match = re.search(r'до\s+(\d[\d\s]*000)\s*руб', text_lower)
+            budget_match = re.search(r"до\s+(\d[\d\s]*000)\s*руб", text_lower)
         if budget_match:
             try:
-                budget_rub = int(re.sub(r'\s+', '', budget_match.group(1)))
+                budget_rub = int(re.sub(r"\s+", "", budget_match.group(1)))
             except ValueError:
                 pass
 
         quantity = None
-        qty_match = re.search(r'(\d+)\s*(щит|сторон|поверхност|экран)', text_lower)
+        qty_match = re.search(r"(\d+)\s*(щит|сторон|поверхност|экран)", text_lower)
         if qty_match:
             try:
                 quantity = int(qty_match.group(1))
             except ValueError:
                 pass
-
 
         # 1. Determine inquiry type
         detected_type = "other"
@@ -129,29 +128,87 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
             if fmt.lower() in text_lower:
                 formats.append(fmt)
 
-        # 3. Manager checklist evaluation
+        # Extract manager lines specifically for checklist evaluation
+        manager_lines = []
+        client_lines = []
+        for line in text.split("\n"):
+            line_str = line.strip()
+            if line_str.lower().startswith("[manager]"):
+                manager_lines.append(line_str[len("[manager]") :].strip())
+            elif line_str.lower().startswith("[client]"):
+                client_lines.append(line_str[len("[client]") :].strip())
+
+        # If manager lines exist, use them; otherwise if no speaker tags, evaluate whole text
+        if manager_lines:
+            manager_text = " ".join(manager_lines)
+        else:
+            manager_text = text if not client_lines else ""
+
+        manager_norm = normalizer.normalize(manager_text).lower()
+
+        # 3. Manager checklist evaluation (strictly on manager speech)
         checklist_items = self.checklist_cfg.get("items", {})
-        score = 0
-        greeting = any(p in text_lower for p in checklist_items.get("greeting", {}).get("patterns", []))
-        need_id = any(p in text_lower for p in checklist_items.get("need_identification", {}).get("patterns", []))
-        options = any(p in text_lower for p in checklist_items.get("options_offered", {}).get("patterns", []))
-        next_step = any(p in text_lower for p in checklist_items.get("next_step_named", {}).get("patterns", []))
-        contacts = any(p in text_lower for p in checklist_items.get("contacts_taken", {}).get("patterns", []))
+        greeting = bool(
+            manager_norm
+            and any(
+                p in manager_norm for p in checklist_items.get("greeting", {}).get("patterns", [])
+            )
+        )
+        need_id = bool(
+            manager_norm
+            and any(
+                p in manager_norm
+                for p in checklist_items.get("need_identification", {}).get("patterns", [])
+            )
+        )
+        options = bool(
+            manager_norm
+            and any(
+                p in manager_norm
+                for p in checklist_items.get("options_offered", {}).get("patterns", [])
+            )
+        )
+        next_step = bool(
+            manager_norm
+            and any(
+                p in manager_norm
+                for p in checklist_items.get("next_step_named", {}).get("patterns", [])
+            )
+        )
+        contacts = bool(
+            manager_norm
+            and any(
+                p in manager_norm
+                for p in checklist_items.get("contacts_taken", {}).get("patterns", [])
+            )
+        )
 
         forbidden_found = [
-            fw for fw in self.checklist_cfg.get("forbidden_words", []) if fw in text_lower
+            fw for fw in self.checklist_cfg.get("forbidden_words", []) if fw in manager_norm
         ]
 
         score = sum([greeting, need_id, options, next_step, contacts])
 
-        # 4. Agreements
+        # 4. Agreements (only if manager made explicit commitments)
         agreements = []
-        if next_step:
-            agreements.append({
-                "who": "manager",
-                "what": "Подготовить расчет и направить коммерческое предложение",
-                "deadline": "В течение рабочего дня",
-            })
+        commitment_keywords = [
+            "пришлю",
+            "направлю",
+            "подготовлю",
+            "отправлю",
+            "перезвоню",
+            "вышлю",
+            "свяжусь",
+            "подберу",
+        ]
+        if next_step and any(kw in manager_norm for kw in commitment_keywords):
+            agreements.append(
+                {
+                    "who": "manager",
+                    "what": "Подготовить расчет и направить коммерческое предложение",
+                    "deadline": "В течение рабочего дня",
+                }
+            )
 
         summary = f"Обсуждение размещения наружной рекламы по тематике '{detected_type}'."
         if cities:

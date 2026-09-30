@@ -1,16 +1,36 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Response
-from sqlalchemy import desc, select
+from sqlalchemy import and_, desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
 from app.core.security import AuthContext, verify_auth
 from app.db.models import Analysis, AudioObject, Call, TranscriptSegment
 from app.db.session import get_db
+from app.pii.masker import PiiMasker
 from app.storage.s3 import get_storage
 
 router = APIRouter(prefix="/v1/calls", tags=["calls"])
+_pii_masker = PiiMasker()
+
+
+def _sanitize_words(words: list[dict] | None) -> list[dict] | None:
+    if not words:
+        return words
+    sanitized = []
+    for w in words:
+        w_copy = dict(w)
+        raw_word = str(w_copy.get("word", ""))
+        masked_word = _pii_masker.mask_text(raw_word)
+        if masked_word != raw_word:
+            w_copy["word"] = masked_word
+        else:
+            digits = "".join(c for c in raw_word if c.isdigit())
+            if len(digits) >= 3:
+                w_copy["word"] = "[***]"
+        sanitized.append(w_copy)
+    return sanitized
 
 
 def format_srt_timestamp(seconds: float) -> str:
@@ -37,6 +57,7 @@ async def get_transcript(
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("read")
+    auth.verify_namespace(namespace)
 
     # Verify call exists
     call_stmt = select(Call).where(Call.id == call_id, Call.namespace == namespace)
@@ -90,7 +111,7 @@ async def get_transcript(
                 "speaker_role": s.speaker_role,
                 "text": s.text_masked if masked else s.text_original,
                 "confidence": s.confidence,
-                "words": s.words_json,
+                "words": _sanitize_words(s.words_json) if masked else s.words_json,
             }
             for s in segments
         ],
@@ -105,12 +126,15 @@ async def get_analysis(
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("read")
+    auth.verify_namespace(namespace)
 
     stmt = select(Analysis).where(Analysis.call_id == call_id, Analysis.namespace == namespace)
     analysis = (await db.execute(stmt)).scalar_one_or_none()
 
     if not analysis:
-        raise AppError("analysis_not_found", f"Анализ для звонка {call_id} еще не готов или не найден", 404)
+        raise AppError(
+            "analysis_not_found", f"Анализ для звонка {call_id} еще не готов или не найден", 404
+        )
 
     return {
         "call_id": call_id,
@@ -131,14 +155,21 @@ async def get_analysis(
 async def get_call_audio(
     call_id: str,
     namespace: str = Query(...),
-    presigned: bool = Query(False, description="Возвращать временный presigned URL вместо прямого потока байт"),
-    expires_in: int = Query(3600, ge=60, le=86400, description="Срок жизни presigned URL в секундах"),
+    presigned: bool = Query(
+        False, description="Возвращать временный presigned URL вместо прямого потока байт"
+    ),
+    expires_in: int = Query(
+        3600, ge=60, le=86400, description="Срок жизни presigned URL в секундах"
+    ),
     auth: AuthContext = Depends(verify_auth),
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("read")
+    auth.verify_namespace(namespace)
 
-    stmt = select(AudioObject).where(AudioObject.call_id == call_id, AudioObject.namespace == namespace)
+    stmt = select(AudioObject).where(
+        AudioObject.call_id == call_id, AudioObject.namespace == namespace
+    )
     audio_obj = (await db.execute(stmt)).scalars().first()
     if not audio_obj:
         raise AppError("audio_not_found", f"Аудио для звонка {call_id} не найдено", 404)
@@ -181,6 +212,7 @@ async def list_calls(
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("read")
+    auth.verify_namespace(namespace)
 
     query = select(Call).where(Call.namespace == namespace)
 
@@ -202,14 +234,27 @@ async def list_calls(
 
     # Filter by inquiry type via Analysis table
     if inquiry_type:
-        calls_with_type = (
-            select(Analysis.call_id)
-            .where(Analysis.inquiry_type == inquiry_type)
-        )
+        calls_with_type = select(Analysis.call_id).where(Analysis.inquiry_type == inquiry_type)
         query = query.where(Call.id.in_(calls_with_type))
 
     if cursor:
-        query = query.where(Call.id < cursor)
+        try:
+            if "|" in cursor:
+                cur_dt_str, cur_id = cursor.split("|", 1)
+                cur_dt = datetime.fromisoformat(cur_dt_str)
+                # Strip tzinfo if comparing with naive datetime in DB
+                if cur_dt.tzinfo is not None:
+                    cur_dt = cur_dt.replace(tzinfo=None)
+                query = query.where(
+                    or_(
+                        Call.created_at < cur_dt,
+                        and_(Call.created_at == cur_dt, Call.id < cur_id),
+                    )
+                )
+            else:
+                query = query.where(Call.id < cursor)
+        except Exception:
+            query = query.where(Call.id < cursor)
 
     query = query.order_by(desc(Call.created_at), desc(Call.id)).limit(limit + 1)
     results = (await db.execute(query)).scalars().all()
@@ -219,16 +264,26 @@ async def list_calls(
     output_rows = results[:limit]
 
     for c in output_rows:
-        items.append({
-            "call_id": c.id,
-            "external_id": c.external_id,
-            "created_at": c.created_at,
-            "manager_id": c.manager_id,
-            "duration_sec": c.duration_sec,
-            "is_answering_machine": c.is_answering_machine,
-        })
+        created_str = (
+            c.created_at.replace(tzinfo=timezone.utc).isoformat() if c.created_at else None
+        )
+        items.append(
+            {
+                "call_id": c.id,
+                "external_id": c.external_id,
+                "created_at": created_str,
+                "manager_id": c.manager_id,
+                "duration_sec": c.duration_sec,
+                "is_answering_machine": c.is_answering_machine,
+            }
+        )
 
-    next_cursor = output_rows[-1].id if has_next and output_rows else None
+    if has_next and output_rows:
+        last = output_rows[-1]
+        dt_str = last.created_at.isoformat() if last.created_at else ""
+        next_cursor = f"{dt_str}|{last.id}"
+    else:
+        next_cursor = None
 
     return {
         "items": items,

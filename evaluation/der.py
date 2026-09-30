@@ -1,5 +1,3 @@
-
-
 def calculate_der(
     reference_segments: list[dict[str, any]],
     hypothesis_segments: list[dict[str, any]],

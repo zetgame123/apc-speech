@@ -7,17 +7,11 @@ PHONE_REGEX = re.compile(
     r"\b\d{10,11}\b"
 )
 
-EMAIL_REGEX = re.compile(
-    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
-)
+EMAIL_REGEX = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
 
-BANK_CARD_REGEX = re.compile(
-    r"\b(?:\d{4}[-\s]?){3}\d{4}\b"
-)
+BANK_CARD_REGEX = re.compile(r"\b(?:\d{4}[-\s]?){3}\d{4}\b")
 
-PASSPORT_RF_REGEX = re.compile(
-    r"\b\d{2}\s?\d{2}\s+\d{6}\b"
-)
+PASSPORT_RF_REGEX = re.compile(r"\b\d{2}\s?\d{2}\s+\d{6}\b")
 
 
 class PiiMasker:

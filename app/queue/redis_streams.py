@@ -52,12 +52,18 @@ class RedisQueue:
         logger.info("job_enqueued", job_id=job_id, stream=STREAM_LONG_JOBS, msg_id=msg_id)
         return msg_id
 
-    async def enqueue_callback(self, job_id: str, callback_url: str, payload: dict[str, Any]) -> str:
+    async def enqueue_callback(
+        self, job_id: str, callback_url: str, payload: dict[str, Any]
+    ) -> str:
         client = await self.get_client()
+        # Guarantee callback_url and job_id exist both at top-level and inside payload
+        payload_with_url = dict(payload)
+        payload_with_url["callback_url"] = callback_url
+        payload_with_url["job_id"] = job_id
         msg_payload = {
             "job_id": job_id,
             "callback_url": callback_url,
-            "payload": json.dumps(payload, ensure_ascii=False),
+            "payload": json.dumps(payload_with_url, ensure_ascii=False),
         }
         msg_id = await client.xadd(STREAM_CALLBACKS, msg_payload)
         logger.info("callback_enqueued", job_id=job_id, callback_url=callback_url, msg_id=msg_id)
@@ -69,9 +75,40 @@ class RedisQueue:
         group: str,
         consumer: str,
         block_ms: int = 2000,
+        claim_min_idle_ms: int = 180000,
     ) -> tuple[str, str, dict[str, Any]] | None:
         client = await self.get_client()
         try:
+            # 1. Recover pending jobs from crashed workers via XAUTOCLAIM
+            try:
+                autoclaim_res = await client.xautoclaim(
+                    name=stream,
+                    groupname=group,
+                    consumername=consumer,
+                    min_idle_time=claim_min_idle_ms,
+                    start_id="0-0",
+                    count=1,
+                )
+                if autoclaim_res and len(autoclaim_res) >= 2 and autoclaim_res[1]:
+                    reclaimed = autoclaim_res[1]
+                    msg_id, fields = reclaimed[0]
+                    job_id = fields.get("job_id", "")
+                    raw_data = fields.get("data") or fields.get("payload") or "{}"
+                    parsed_data = json.loads(raw_data)
+                    if "callback_url" in fields and "callback_url" not in parsed_data:
+                        parsed_data["callback_url"] = fields["callback_url"]
+                    logger.info(
+                        "reclaimed_stuck_job",
+                        stream=stream,
+                        group=group,
+                        msg_id=msg_id,
+                        job_id=job_id,
+                    )
+                    return msg_id, job_id, parsed_data
+            except Exception as claim_err:
+                logger.debug("xautoclaim_check_skipped", error=str(claim_err))
+
+            # 2. Read new messages
             entries = await client.xreadgroup(
                 groupname=group,
                 consumername=consumer,
@@ -90,6 +127,8 @@ class RedisQueue:
             job_id = fields.get("job_id", "")
             raw_data = fields.get("data") or fields.get("payload") or "{}"
             parsed_data = json.loads(raw_data)
+            if "callback_url" in fields and "callback_url" not in parsed_data:
+                parsed_data["callback_url"] = fields["callback_url"]
             return msg_id, job_id, parsed_data
         except Exception as e:
             logger.error("redis_read_error", error=str(e), stream=stream)

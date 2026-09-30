@@ -2,7 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import (
@@ -11,7 +11,7 @@ from app.core.security import (
     revoke_token,
     verify_auth,
 )
-from app.db.models import AudioObject, Call
+from app.db.models import AudioObject, Call, Job
 from app.db.session import get_db
 from app.storage.s3 import get_storage
 
@@ -19,6 +19,7 @@ router = APIRouter(tags=["admin"])
 
 
 # --- Token revocation (hot, without restart) ---
+
 
 class RevokeTokenRequest(BaseModel):
     token_hash: str
@@ -31,6 +32,13 @@ async def revoke_token_endpoint(
 ):
     auth.require_scope("admin")
     was_new = revoke_token(body.token_hash)
+    try:
+        from app.queue.redis_streams import get_queue
+
+        client = await get_queue().get_client()
+        await client.sadd("revoked_tokens", body.token_hash)
+    except Exception:
+        pass
     return {"token_hash": body.token_hash, "revoked": True, "was_new": was_new}
 
 
@@ -39,10 +47,24 @@ async def list_revoked_tokens_endpoint(
     auth: AuthContext = Depends(verify_auth),
 ):
     auth.require_scope("admin")
-    return {"revoked_hashes": list_revoked_tokens()}
+    revoked = set(list_revoked_tokens())
+    try:
+        from app.queue.redis_streams import get_queue
+
+        client = await get_queue().get_client()
+        redis_revoked = await client.smembers("revoked_tokens")
+        if redis_revoked:
+            for r in redis_revoked:
+                token_h = r.decode() if isinstance(r, bytes) else str(r)
+                revoked.add(token_h)
+                revoke_token(token_h)
+    except Exception:
+        pass
+    return {"revoked_hashes": list(revoked)}
 
 
 # --- Data deletion ---
+
 
 @router.delete("/v1/data/delete")
 async def delete_data(
@@ -54,6 +76,7 @@ async def delete_data(
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("admin")
+    auth.verify_namespace(namespace)
 
     # Select target calls
     query = select(Call).where(Call.namespace == namespace)
@@ -73,6 +96,24 @@ async def delete_data(
             "deleted_audio_files": 0,
             "deleted_transcripts": 0,
         }
+
+    # Cancel any active/queued jobs for these calls
+    cancel_jobs_stmt = (
+        update(Job)
+        .where(
+            Job.call_id.in_(target_call_ids),
+            Job.status.in_(["queued", "running"]),
+        )
+        .values(
+            status="failed",
+            step="cancelled_by_deletion",
+            error_details={
+                "error": "cancelled_by_deletion",
+                "message": "Call data deleted by admin",
+            },
+        )
+    )
+    await db.execute(cancel_jobs_stmt)
 
     # Delete audio objects from S3
     storage = get_storage()

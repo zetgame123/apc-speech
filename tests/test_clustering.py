@@ -29,3 +29,17 @@ def test_clustering_single_query():
 
     assert labels == [0]
     assert len(cluster_names) == 1
+
+
+def test_clustering_identical_and_edge_queries():
+    engine = TopicClusteringEngine()
+    # Identical queries (A18 check)
+    labels, cluster_names, _vectors = engine.fit_transform_texts(["щит", "щит"])
+    assert len(labels) == 2
+    assert len(cluster_names) >= 1
+    assert labels[0] == labels[1]
+
+    # Only stop words
+    labels_sw, cluster_names_sw, _ = engine.fit_transform_texts(["и в не", "что он на"])
+    assert len(labels_sw) == 2
+    assert len(cluster_names_sw) >= 1

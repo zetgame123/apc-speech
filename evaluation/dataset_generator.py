@@ -9,9 +9,10 @@ from app.core.logging import get_logger
 
 logger = get_logger("synthetic_dataset_generator")
 
+
 def generate_speech_wav(text: str, output_path: str):
     """Generates speech using gTTS and converts to 16kHz 16-bit mono WAV."""
-    tts = gTTS(text, lang='ru')
+    tts = gTTS(text, lang="ru")
     temp_mp3 = output_path.replace(".wav", ".mp3")
     tts.save(temp_mp3)
 
@@ -19,10 +20,14 @@ def generate_speech_wav(text: str, output_path: str):
         "ffmpeg",
         "-nostdin",
         "-y",
-        "-i", temp_mp3,
-        "-ar", "16000",
-        "-ac", "1",
-        "-f", "wav",
+        "-i",
+        temp_mp3,
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-f",
+        "wav",
         output_path,
     ]
     subprocess.run(cmd, capture_output=True, check=True)
@@ -49,14 +54,20 @@ def apply_telephony_degradation(
         "ffmpeg",
         "-nostdin",
         "-y",
-        "-i", input_wav,
-        "-af", filter_chain,
-        "-ar", "8000",
-        "-ac", "1",
-        "-acodec", "pcm_s16le",
+        "-i",
+        input_wav,
+        "-af",
+        filter_chain,
+        "-ar",
+        "8000",
+        "-ac",
+        "1",
+        "-acodec",
+        "pcm_s16le",
         output_wav,
     ]
     subprocess.run(cmd, capture_output=True, check=True)
+
 
 def generate_dialogue_wav(text1: str, text2: str, output_path: str) -> list[dict[str, Any]]:
     """Generates two-speaker dialogue with acoustic pitch differentiation."""
@@ -162,20 +173,25 @@ def build_synthetic_benchmark_suite(output_dir: str = "data/evaluation_suite") -
         else:
             audio_file = base_clean
 
-        manifest.append({
-            "id": item["id"],
-            "audio_file": audio_file,
-            "reference": item["reference"],
-            "type": item["type"],
-            "speaker_roles": item_roles,
-        })
+        manifest.append(
+            {
+                "id": item["id"],
+                "audio_file": audio_file,
+                "reference": item["reference"],
+                "type": item["type"],
+                "speaker_roles": item_roles,
+            }
+        )
 
     manifest_path = os.path.join(output_dir, "manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
 
-    logger.info("synthetic_suite_generated", samples_count=len(manifest), manifest_path=manifest_path)
+    logger.info(
+        "synthetic_suite_generated", samples_count=len(manifest), manifest_path=manifest_path
+    )
     return {"manifest_path": manifest_path, "samples": manifest}
+
 
 if __name__ == "__main__":
     build_synthetic_benchmark_suite()

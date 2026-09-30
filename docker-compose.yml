@@ -62,7 +62,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: python -m alembic upgrade head
+    command: alembic upgrade head
     depends_on:
       postgres: { condition: service_healthy }
     env_file:
@@ -185,6 +185,8 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - DEV_TOKEN=${DEV_TOKEN:-}
+    volumes:
+      - ./models:/app/models:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 10s

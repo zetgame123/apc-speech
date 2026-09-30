@@ -1,12 +1,12 @@
 import os
 
-os.environ.setdefault('DATABASE_URL', 'sqlite+aiosqlite:///:memory:')
-os.environ.setdefault('DEBUG', 'true')
-os.environ.setdefault('DEV_TOKEN', 'dev-token')
-os.environ.setdefault('APP_ENV', 'test')
-os.environ.setdefault('REDIS_URL', 'redis://localhost:6379/0')
-os.environ.setdefault('S3_ENDPOINT_URL', 'http://localhost:9000')
-os.environ.setdefault('CALLBACK_SIGNING_SECRET', 'test-secret-key-32-characters!!!')
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("DEBUG", "true")
+os.environ.setdefault("DEV_TOKEN", "dev-token")
+os.environ.setdefault("APP_ENV", "test")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("S3_ENDPOINT_URL", "http://localhost:9000")
+os.environ.setdefault("CALLBACK_SIGNING_SECRET", "test-secret-key-32-characters!!!")
 
 import struct
 from unittest.mock import AsyncMock, MagicMock
@@ -19,10 +19,23 @@ from app.main import app
 
 def make_wav_bytes(duration_sec=1, sample_rate=16000):
     num_samples = sample_rate * duration_sec
-    data = struct.pack(f'<{num_samples}h', *([0] * num_samples))
-    header = struct.pack('<4sI4s4sIHHIIHH4sI',
-        b'RIFF', 36 + len(data), b'WAVE', b'fmt ', 16, 1, 1,
-        sample_rate, sample_rate * 2, 2, 16, b'data', len(data))
+    data = struct.pack(f"<{num_samples}h", *([0] * num_samples))
+    header = struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF",
+        36 + len(data),
+        b"WAVE",
+        b"fmt ",
+        16,
+        1,
+        1,
+        sample_rate,
+        sample_rate * 2,
+        2,
+        16,
+        b"data",
+        len(data),
+    )
     return header + data
 
 
@@ -32,8 +45,15 @@ def mock_voice_deps(monkeypatch):
     # Mock ASR engine
     mock_engine = MagicMock()
     mock_engine.transcribe.return_value = (
-        [{"text": "щиты три на шесть в Балашихе", "start": 0.0, "end": 3.0,
-          "confidence": 0.95, "words": []}],
+        [
+            {
+                "text": "щиты три на шесть в Балашихе",
+                "start": 0.0,
+                "end": 3.0,
+                "confidence": 0.95,
+                "words": [],
+            }
+        ],
         {"language": "ru", "language_probability": 0.98, "duration": 3.0},
     )
     mock_engine.load_model.return_value = None

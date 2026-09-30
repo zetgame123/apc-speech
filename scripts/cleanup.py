@@ -46,5 +46,6 @@ async def run_cleanup():
         await db.commit()
         print(f"Deleted {result.rowcount} expired calls from database.")
 
+
 if __name__ == "__main__":
     asyncio.run(run_cleanup())

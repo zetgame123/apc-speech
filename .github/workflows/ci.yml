@@ -4,7 +4,6 @@ on:
   push:
     branches: [ master, main ]
   pull_request:
-    branches: [ master, main ]
 
 jobs:
   test-and-evaluate:
@@ -13,6 +12,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install System Audio Packages
         run: |
@@ -22,7 +23,7 @@ jobs:
       - name: Install uv package manager
         uses: astral-sh/setup-uv@v3
         with:
-          version: "latest"
+          version: "0.4.29"
 
       - name: Setup Python
         run: uv python install 3.12
@@ -30,8 +31,17 @@ jobs:
       - name: Install Dependencies
         run: uv sync --extra dev
 
+      - name: Format Check with Ruff
+        run: uv run ruff format --check .
+
       - name: Lint with Ruff
         run: uv run ruff check .
+
+      - name: Validate OpenAPI Specification
+        run: uv run python -c "import openapi_spec_validator, yaml; openapi_spec_validator.validate(yaml.safe_load(open('openapi.yaml'))); print('OpenAPI spec is valid!')"
+
+      - name: Validate JSON Schema
+        run: uv run python -c "import jsonschema, json; jsonschema.Draft202012Validator.check_schema(json.load(open('schemas/analysis_schema_v1.json'))); print('JSON schema is valid!')"
 
       - name: Run Test Suite
         run: uv run --with pytest --with pytest-asyncio pytest tests/ -v

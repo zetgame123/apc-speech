@@ -12,12 +12,15 @@ DEV_TOKEN = os.getenv("DEV_TOKEN", "dev-token")
 
 
 async def benchmark_voice_search(concurrency: int = 10, total_requests: int = 50):
-    print(f"\n[1/3] Запуск нагрузочного теста Voice Search (Потоков: {concurrency}, Всего: {total_requests})...")
+    print(
+        f"\n[1/3] Запуск нагрузочного теста Voice Search (Потоков: {concurrency}, Всего: {total_requests})..."
+    )
 
     # Generate a lightweight dummy WAV payload (4 seconds)
     audio_path = "data/evaluation_suite/sample_clean_01_clean.wav"
     if not os.path.exists(audio_path):
         from evaluation.dataset_generator import build_synthetic_benchmark_suite
+
         build_synthetic_benchmark_suite()
 
     with open(audio_path, "rb") as f:
@@ -126,8 +129,12 @@ async def main():
     if vs_results:
         print(f"| Voice Search P50 Latency        | {vs_results['p50_ms']:>6} мс   | <= 2500 мс  |")
         print(f"| Voice Search P95 Latency        | {vs_results['p95_ms']:>6} мс   | <= 2500 мс  |")
-        print(f"| Voice Search Успешность         | {vs_results['success_rate']:>7}       | >= 99%      |")
-    print(f"| RAM RSS (Process Peak)          | {mem_results['max_rss_mb']:>6} МБ   | <= 3500 МБ  |")
+        print(
+            f"| Voice Search Успешность         | {vs_results['success_rate']:>7}       | >= 99%      |"
+        )
+    print(
+        f"| RAM RSS (Process Peak)          | {mem_results['max_rss_mb']:>6} МБ   | <= 3500 МБ  |"
+    )
     print("-----------------------------------------------------------------")
     print("  БЕНЧМАРК ЗАВЕРШЕН УСПЕШНО")
     print("=================================================================")

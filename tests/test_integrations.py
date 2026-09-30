@@ -93,7 +93,9 @@ def test_bitrix24_format_timeline_comment():
 def test_s3_presigned_url_generation():
     with patch("boto3.client") as mock_boto:
         mock_client = MagicMock()
-        mock_client.generate_presigned_url.return_value = "https://s3.example.com/raw-audio/calls/123.wav?X-Amz-Signature=abc"
+        mock_client.generate_presigned_url.return_value = (
+            "https://s3.example.com/raw-audio/calls/123.wav?X-Amz-Signature=abc"
+        )
         mock_boto.return_value = mock_client
 
         storage = S3Storage()
@@ -108,9 +110,10 @@ def test_s3_presigned_url_generation():
 
 @pytest.mark.asyncio
 async def test_bitrix24_webhook_endpoint():
-    with patch("app.api.integrations.get_queue") as mock_get_queue, \
-         patch("app.api.integrations.get_db") as mock_get_db:
-
+    with (
+        patch("app.api.integrations.get_queue") as mock_get_queue,
+        patch("app.api.integrations.get_db") as mock_get_db,
+    ):
         mock_queue = AsyncMock()
         mock_get_queue.return_value = mock_queue
 

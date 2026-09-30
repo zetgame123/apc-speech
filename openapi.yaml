@@ -654,6 +654,7 @@ paths:
           content:
             text/plain:
               schema:
+                type: string
   /v1/analytics/export_csv:
     get:
       summary: Экспорт аналитики в CSV
@@ -1080,6 +1081,12 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     Unauthorized:
       description: Не передан или невалиден Bearer-токен
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Недостаточно прав для выполнения операции
       content:
         application/json:
           schema:

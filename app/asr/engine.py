@@ -86,7 +86,9 @@ class AsrEngine:
 
             model_target = self.model_name
             if not os.path.exists(model_target):
-                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                base_dir = os.path.dirname(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                )
                 candidate = os.path.join(base_dir, model_target.lstrip("./"))
                 if os.path.exists(candidate):
                     model_target = candidate
@@ -123,7 +125,9 @@ class AsrEngine:
         Returns (segments, info).
         """
         resolved_lang = None if language == "auto" else (language or "ru")
-        prompt = (initial_prompt or "") + (" " + self.vocabulary_prompt if resolved_lang == "ru" else "")
+        prompt = (initial_prompt or "") + (
+            " " + self.vocabulary_prompt if resolved_lang == "ru" else ""
+        )
         applied_hotwords = hotwords or (DEFAULT_HOTWORDS if resolved_lang == "ru" else None)
 
         segments_iter, info = self.model.transcribe(
@@ -153,24 +157,30 @@ class AsrEngine:
             words = []
             if s.words:
                 for w in s.words:
-                    words.append({
-                        "word": w.word,
-                        "start": round(w.start, 2),
-                        "end": round(w.end, 2),
-                        "confidence": round(w.probability, 3),
-                    })
+                    words.append(
+                        {
+                            "word": w.word,
+                            "start": round(w.start, 2),
+                            "end": round(w.end, 2),
+                            "confidence": round(w.probability, 3),
+                        }
+                    )
 
             # Normalized text
             clean_text = self.normalizer.normalize(s.text.strip())
 
-            segments.append({
-                "start": round(s.start, 2),
-                "end": round(s.end, 2),
-                "text": clean_text,
-                "confidence": round(min(1.0, max(0.0, math.exp(s.avg_logprob))), 3) if s.avg_logprob is not None else 0.95,
-                "no_speech_prob": round(s.no_speech_prob, 3),
-                "words": words,
-            })
+            segments.append(
+                {
+                    "start": round(s.start, 2),
+                    "end": round(s.end, 2),
+                    "text": clean_text,
+                    "confidence": round(min(1.0, max(0.0, math.exp(s.avg_logprob))), 3)
+                    if s.avg_logprob is not None
+                    else 0.95,
+                    "no_speech_prob": round(s.no_speech_prob, 3),
+                    "words": words,
+                }
+            )
 
         meta_info = {
             "language": info.language,

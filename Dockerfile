@@ -41,6 +41,7 @@ RUN groupadd -g 10001 apcgroup && \
 COPY --from=builder /opt/venv /opt/venv
 ENV VIRTUAL_ENV="/opt/venv"
 ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONPATH="/app:$PYTHONPATH"
 
 # Copy application source and configs
 COPY --chown=apcuser:apcgroup app/ /app/app/

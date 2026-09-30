@@ -1,3 +1,4 @@
+import hashlib
 import time
 
 from fastapi import Request
@@ -10,10 +11,15 @@ async def rate_limit(request: Request):
     """
     Simple Redis-based rate limiting dependency.
     Limits to 5 requests per 10 seconds per IP or token.
+    Token is hashed to avoid leaking credentials into Redis keys.
     """
     token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
     client_ip = request.client.host if request.client else "unknown"
-    key = f"rate_limit:{token or client_ip}"
+    if token:
+        token_hash = hashlib.sha256(token.encode()).hexdigest()[:16]
+        key = f"rate_limit:tok:{token_hash}"
+    else:
+        key = f"rate_limit:ip:{client_ip}"
 
     current = int(time.time())
     window = current - (current % 10)
@@ -28,7 +34,12 @@ async def rate_limit(request: Request):
             await client.expire(redis_key, 20)
 
         if count > 5:
-            raise AppError(error="rate_limit_exceeded", message="Rate limit exceeded", status_code=429, headers={"Retry-After": "10"})
+            raise AppError(
+                error="rate_limit_exceeded",
+                message="Rate limit exceeded",
+                status_code=429,
+                headers={"Retry-After": "10"},
+            )
     except AppError:
         raise
     except Exception:

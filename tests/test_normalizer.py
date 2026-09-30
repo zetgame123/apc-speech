@@ -4,7 +4,10 @@ from app.asr.normalizer import RussianTextNormalizer
 def test_billboard_dimensions_normalization():
     normalizer = RussianTextNormalizer()
 
-    assert normalizer.normalize("нам нужен щит три на шесть в Балашихе") == "нам нужен щит 3×6 в Балашихе"
+    assert (
+        normalizer.normalize("нам нужен щит три на шесть в Балашихе")
+        == "нам нужен щит 3×6 в Балашихе"
+    )
     assert normalizer.normalize("суперсайт шесть на три свободен") == "суперсайт 6×3 свободен"
     assert normalizer.normalize("конструкция 3х6 или 3*6") == "конструкция 3×6 или 3×6"
     assert normalizer.normalize("суперсайт пять на двенадцать") == "суперсайт 5×12"
@@ -24,7 +27,9 @@ def test_currency_normalization():
 
     assert normalizer.normalize("бюджет сто тысяч рублей") == "бюджет 100 000 руб."
     assert normalizer.normalize("стоимость 50000 рублей") == "стоимость 50 000 руб."
-    assert normalizer.normalize("до 50 000 руб на автозаводской") == "до 50 000 руб. на Автозаводской"
+    assert (
+        normalizer.normalize("до 50 000 руб на автозаводской") == "до 50 000 руб. на Автозаводской"
+    )
     assert normalizer.normalize("до пятидесяти тысяч рублей") == "до 50 000 руб."
     assert normalizer.normalize("от 30 до 80 тысяч рублей") == "от 30 000 до 80 000 руб."
     assert normalizer.normalize("до 50 тыс") == "до 50 000 руб."
@@ -36,7 +41,9 @@ def test_metro_stations_capitalization():
 
     assert normalizer.normalize("щиты на автозаводской") == "щиты на Автозаводской"
     assert normalizer.normalize("около таганской и на соколе") == "около Таганской и на Соколе"
-    assert normalizer.normalize("метро бауманская и китай-город") == "метро Бауманская и Китай-город"
+    assert (
+        normalizer.normalize("метро бауманская и китай-город") == "метро Бауманская и Китай-город"
+    )
     assert normalizer.normalize("экраны на вднх") == "экраны на ВДНХ"
     assert normalizer.normalize("щиты у парка культуры") == "щиты у Парка культуры"
 
@@ -46,7 +53,9 @@ def test_highways_and_rings():
 
     assert normalizer.normalize("щит на ленинградке") == "щит на Ленинградке"
     assert normalizer.normalize("экраны на мкад и ттк") == "экраны на МКАД и ТТК"
-    assert normalizer.normalize("размещение на шоссе энтузиастов") == "размещение на Шоссе Энтузиастов"
+    assert (
+        normalizer.normalize("размещение на шоссе энтузиастов") == "размещение на Шоссе Энтузиастов"
+    )
     assert normalizer.normalize("суперсайт на новой риге") == "суперсайт на Новой Риге"
     assert normalizer.normalize("баннер на варшавке") == "баннер на Варшавке"
 

@@ -100,12 +100,14 @@ class S3Storage:
             items = []
             for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
                 for obj in page.get("Contents", []):
-                    items.append({
-                        "key": obj["Key"],
-                        "size": obj["Size"],
-                        "last_modified": obj["LastModified"],
-                        "etag": obj.get("ETag", "").strip('"'),
-                    })
+                    items.append(
+                        {
+                            "key": obj["Key"],
+                            "size": obj["Size"],
+                            "last_modified": obj["LastModified"],
+                            "etag": obj.get("ETag", "").strip('"'),
+                        }
+                    )
             return items
         except Exception as e:
             logger.error("s3_list_objects_error", bucket=bucket, prefix=prefix, error=str(e))

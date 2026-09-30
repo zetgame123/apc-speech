@@ -1,3 +1,4 @@
+import asyncio
 import io
 import os
 import time
@@ -41,6 +42,7 @@ async def voice_search(
 ):
     start_time = time.time()
     auth.require_scope("write")
+    auth.verify_namespace(namespace)
 
     # Read audio bytes either from multipart file or direct raw body
     if file:
@@ -53,24 +55,27 @@ async def voice_search(
 
     # Size check (max 10MB for 60s audio)
     if len(audio_bytes) > 10 * 1024 * 1024:
-        raise AppError("payload_too_large", "Размер аудио для голосового поиска превышает 10 МБ", 413)
+        raise AppError(
+            "payload_too_large", "Размер аудио для голосового поиска превышает 10 МБ", 413
+        )
 
-    # Preprocess in-memory (DC offset removal via 80Hz HPF, volume normalization -16 LUFS, 16kHz mono)
-    preprocessor = AudioPreprocessor()
-    clean_audio_bytes = preprocessor.preprocess_memory(audio_bytes)
-
-    # In-memory transcription via faster-whisper
-    engine = get_voice_search_engine()
-    audio_stream = io.BytesIO(clean_audio_bytes)
-
-    settings = get_settings()
-    try:
-        segments, meta = engine.transcribe(
-            audio_stream,
-            language=language,
-            beam_size=settings.voice_search_beam_size,
+    # Preprocess and transcribe in background worker thread to prevent event loop blocking
+    def _sync_process(raw_bytes: bytes, lang: str):
+        preproc = AudioPreprocessor()
+        clean_bytes = preproc.preprocess_memory(raw_bytes)
+        eng = get_voice_search_engine()
+        stream = io.BytesIO(clean_bytes)
+        cfg = get_settings()
+        segs, metadata = eng.transcribe(
+            stream,
+            language=lang,
+            beam_size=cfg.voice_search_beam_size,
             vad_filter=True,
         )
+        return segs, metadata
+
+    try:
+        segments, meta = await asyncio.to_thread(_sync_process, audio_bytes, language)
     except Exception as e:
         logger.error("voice_search_transcribe_error", error=str(e))
         raise AppError("transcription_failed", "Ошибка распознавания голосового запроса", 500)
@@ -85,13 +90,12 @@ async def voice_search(
         )
 
     full_text = " ".join(s["text"] for s in segments).strip()
-    avg_conf = (
-        sum(s.get("confidence", 0.0) for s in segments) / len(segments)
-        if segments else 0.0
-    )
+    avg_conf = sum(s.get("confidence", 0.0) for s in segments) / len(segments) if segments else 0.0
 
     elapsed_ms = int((time.time() - start_time) * 1000)
-    logger.info("voice_search_completed", duration=duration, latency_ms=elapsed_ms, text=full_text)
+    logger.info(
+        "voice_search_completed", duration=duration, latency_ms=elapsed_ms, text_len=len(full_text)
+    )
 
     return VoiceSearchResponse(
         text=full_text,
