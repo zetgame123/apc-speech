@@ -52,7 +52,12 @@ async def test_llm_refine_speaker_roles_mocked(monkeypatch):
     adapter = LocalLlamaCppAdapter()
 
     segments = [
-        {"start": 0.0, "end": 2.0, "speaker_label": "SPEAKER_1", "text": "Здравствуйте, компания APC."},
+        {
+            "start": 0.0,
+            "end": 2.0,
+            "speaker_label": "SPEAKER_1",
+            "text": "Здравствуйте, компания APC.",
+        },
         {"start": 2.5, "end": 4.5, "speaker_label": "SPEAKER_0", "text": "Сколько стоит щит?"},
     ]
 
@@ -61,15 +66,7 @@ async def test_llm_refine_speaker_roles_mocked(monkeypatch):
             pass
 
         def json(self):
-            return {
-                "choices": [
-                    {
-                        "message": {
-                            "content": '{"roles": ["manager", "client"]}'
-                        }
-                    }
-                ]
-            }
+            return {"choices": [{"message": {"content": '{"roles": ["manager", "client"]}'}}]}
 
     class FakeAsyncClient:
         def __init__(self, *args, **kwargs):
@@ -121,4 +118,3 @@ async def test_llm_refine_speaker_roles_fallback_on_error(monkeypatch):
     result = await adapter.refine_speaker_roles(segments)
     assert len(result) == 1
     assert result[0]["text"] == "Здравствуйте"
-
