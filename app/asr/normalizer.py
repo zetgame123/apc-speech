@@ -324,6 +324,13 @@ class RussianTextNormalizer:
                 re.compile(r"\b(свободные|рекламные|диджитал|цифровые)\s+счета\b", re.IGNORECASE),
                 r"\1 щиты",
             ),
+            (
+                re.compile(
+                    r"\b(свободны\s+ли|свободные)\s+(?:ли\s+)?(лещиты|лищиты)\b", re.IGNORECASE
+                ),
+                r"\1 щиты",
+            ),
+            (re.compile(r"\b(лещиты|лищиты)\b", re.IGNORECASE), "щиты"),
             (re.compile(r"\bсчетов\s+в\s+([А-Яа-яA-Za-z]+)", re.IGNORECASE), r"щитов в \1"),
             (re.compile(r"\bсчета\s+на\s+([А-Яа-яA-Za-z]+)", re.IGNORECASE), r"щиты на \1"),
             (re.compile(r"\bсчет\s+на\s+([А-Яа-яA-Za-z]+)", re.IGNORECASE), r"щит на \1"),

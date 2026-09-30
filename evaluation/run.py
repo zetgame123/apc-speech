@@ -44,10 +44,24 @@ def run_benchmark():
     results = {}
 
     if latency_sample and os.path.exists(latency_sample["audio_file"]):
+        from app.api.voice import VOICE_SEARCH_INITIAL_PROMPT
+        from app.core.config import get_settings
+
+        cfg = get_settings()
         # Warmup voice search engine
-        vs_engine.transcribe(latency_sample["audio_file"], beam_size=1, word_timestamps=False)
+        vs_engine.transcribe(
+            latency_sample["audio_file"],
+            beam_size=cfg.voice_search_beam_size,
+            initial_prompt=VOICE_SEARCH_INITIAL_PROMPT,
+            word_timestamps=False,
+        )
         start_t = time.perf_counter()
-        vs_engine.transcribe(latency_sample["audio_file"], beam_size=1, word_timestamps=False)
+        vs_engine.transcribe(
+            latency_sample["audio_file"],
+            beam_size=cfg.voice_search_beam_size,
+            initial_prompt=VOICE_SEARCH_INITIAL_PROMPT,
+            word_timestamps=False,
+        )
         end_t = time.perf_counter()
         voice_search_latency_ms = int((end_t - start_t) * 1000)
         results["voice_search_latency"] = {

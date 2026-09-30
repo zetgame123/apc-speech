@@ -17,6 +17,11 @@ from app.core.security import AuthContext, verify_auth
 router = APIRouter(prefix="/v1/voice", tags=["voice"])
 logger = get_logger("voice_search_api")
 
+VOICE_SEARCH_INITIAL_PROMPT = (
+    "Поиск наружной рекламы: щиты 3×6, билборды, суперсайты 5×12, сити-формат, "
+    "ситиборды, медиафасады, digital-экраны, аренда, Балашиха, Химки, МКАД, шоссе, метро."
+)
+
 
 class VoiceSearchResponse(BaseModel):
     text: str
@@ -70,6 +75,7 @@ async def voice_search(
             stream,
             language=lang,
             beam_size=cfg.voice_search_beam_size,
+            initial_prompt=VOICE_SEARCH_INITIAL_PROMPT,
             vad_filter=True,
             word_timestamps=False,
         )

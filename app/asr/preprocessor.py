@@ -89,7 +89,7 @@ class AudioPreprocessor:
             "pipe:0",
             "-vn",
             "-af",
-            "highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11",
+            "highpass=f=80,lowpass=f=7600,loudnorm=I=-16:TP=-1.5:LRA=11",
             "-ar",
             "16000",
             "-ac",
