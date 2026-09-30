@@ -38,7 +38,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Validate OpenAPI Specification
-        run: uv run python -c "import openapi_spec_validator, yaml; openapi_spec_validator.validate(yaml.safe_load(open('openapi.yaml'))); print('OpenAPI spec is valid!')"
+        run: uv run --with openapi-spec-validator python -c "import openapi_spec_validator, yaml; openapi_spec_validator.validate(yaml.safe_load(open('openapi.yaml'))); print('OpenAPI spec is valid!')"
 
       - name: Validate JSON Schema
         run: uv run python -c "import jsonschema, json; jsonschema.Draft202012Validator.check_schema(json.load(open('schemas/analysis_schema_v1.json'))); print('JSON schema is valid!')"
