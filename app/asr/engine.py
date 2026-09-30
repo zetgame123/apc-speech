@@ -115,28 +115,24 @@ class AsrEngine:
         self,
         audio: Any,
         language: str = "ru",
-        beam_size: int = 1,
+        beam_size: int = 2,
         initial_prompt: str | None = None,
         vad_filter: bool = True,
         hotwords: str | None = None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """
-        Transcribes audio with faster-whisper with strict anti-hallucination flags.
+        Transcribes audio with faster-whisper.
         Returns (segments, info).
         """
         resolved_lang = None if language == "auto" else (language or "ru")
-        prompt = (initial_prompt or "") + (
-            " " + self.vocabulary_prompt if resolved_lang == "ru" else ""
-        )
-        applied_hotwords = hotwords or (DEFAULT_HOTWORDS if resolved_lang == "ru" else None)
+        prompt = initial_prompt.strip() if (initial_prompt and initial_prompt.strip()) else None
+        applied_hotwords = hotwords.strip() if (hotwords and hotwords.strip()) else None
 
         segments_iter, info = self.model.transcribe(
             audio,
             language=resolved_lang,
             beam_size=beam_size,
-            repetition_penalty=1.1,
-            no_repeat_ngram_size=3,
-            initial_prompt=prompt if prompt.strip() else None,
+            initial_prompt=prompt,
             hotwords=applied_hotwords,
             vad_filter=vad_filter,
             vad_parameters=dict(
