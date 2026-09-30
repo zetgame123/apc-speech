@@ -130,14 +130,18 @@ async def bitrix24_telephony_webhook(
     )
     existing_job = (await db.execute(stmt)).scalar_one_or_none()
     if existing_job:
-        response.status_code = status.HTTP_200_OK
-        return BitrixWebhookResponse(
-            status=existing_job.status,
-            job_id=existing_job.id,
-            call_id=existing_job.call_id or "",
-            status_url=f"/v1/jobs/{existing_job.id}?namespace={namespace}",
-            created_at=existing_job.created_at,
-        )
+        if existing_job.status == "failed":
+            existing_job.idempotency_key = f"{effective_idempotency[:100]}:f:{existing_job.id[:8]}"
+            await db.flush()
+        else:
+            response.status_code = status.HTTP_200_OK
+            return BitrixWebhookResponse(
+                status=existing_job.status,
+                job_id=existing_job.id,
+                call_id=existing_job.call_id or "",
+                status_url=f"/v1/jobs/{existing_job.id}?namespace={namespace}",
+                created_at=existing_job.created_at,
+            )
 
     job_id = str(uuid.uuid4())
     call_id = str(uuid.uuid4())

@@ -1,5 +1,6 @@
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from app.core.config import get_settings
 from app.db.models import Base
@@ -8,8 +9,10 @@ from app.main import app
 
 # Create in-memory SQLite for testing
 engine = create_async_engine(
-    "sqlite+aiosqlite:///:memory:",
+    "sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared&uri=true",
     echo=False,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
 )
 TestingSessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
