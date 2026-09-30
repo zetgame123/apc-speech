@@ -188,13 +188,189 @@ class MonoDiarizer:
             ]
         )
 
+    def _find_anchor_centroids(
+        self,
+        X: np.ndarray,
+        durations: np.ndarray,
+    ) -> np.ndarray | None:
+        """
+        Identifies high-confidence acoustic anchor turns (duration >= 2.0s or top percentile)
+        and computes robust initial centroids for distinct speakers based on maximum cosine separation.
+        Returns None if even the most separated anchors do not exceed min_speaker_distance (monologue).
+        """
+        n_samples = len(X)
+        if n_samples < 2:
+            return None
+
+        # Filter candidate anchor turns with long duration
+        long_mask = durations >= 2.0
+        num_long = np.sum(long_mask)
+        if num_long >= 2:
+            candidate_idxs = np.where(long_mask)[0]
+        else:
+            # Fallback to top 35% longest turns, minimum 2
+            k = max(2, int(np.ceil(n_samples * 0.35)))
+            candidate_idxs = np.argsort(durations)[-k:]
+
+        cand_X = X[candidate_idxs]
+        # Cosine distance between normalized candidate embeddings
+        sim_matrix = np.dot(cand_X, cand_X.T)
+        dist_matrix = 1.0 - sim_matrix
+
+        # Avoid self-distance on diagonal
+        np.fill_diagonal(dist_matrix, -1.0)
+        max_idx_flat = int(np.argmax(dist_matrix))
+        row_idx, col_idx = divmod(max_idx_flat, len(candidate_idxs))
+        max_dist = float(dist_matrix[row_idx, col_idx])
+
+        # Monologue check on maximum anchor distance
+        if max_dist < self.min_speaker_distance:
+            logger.debug(
+                "anchor_separation_below_threshold",
+                max_dist=max_dist,
+                threshold=self.min_speaker_distance,
+            )
+            return None
+
+        anchor_a = cand_X[row_idx]
+        anchor_b = cand_X[col_idx]
+
+        # Group all candidate anchors around the two poles
+        sim_a = np.dot(cand_X, anchor_a)
+        sim_b = np.dot(cand_X, anchor_b)
+
+        group_a = cand_X[sim_a >= sim_b]
+        group_b = cand_X[sim_b > sim_a]
+
+        if len(group_a) == 0 or len(group_b) == 0:
+            c0 = anchor_a
+            c1 = anchor_b
+        else:
+            c0 = np.mean(group_a, axis=0)
+            c1 = np.mean(group_b, axis=0)
+
+        norm0 = np.linalg.norm(c0)
+        norm1 = np.linalg.norm(c1)
+        c0 = c0 / max(norm0, 1e-6)
+        c1 = c1 / max(norm1, 1e-6)
+
+        final_sep = 1.0 - float(np.dot(c0, c1))
+        if final_sep < self.min_speaker_distance:
+            return None
+
+        return np.array([c0, c1])
+
+    def _viterbi_smoothing(
+        self,
+        turns: list[dict[str, Any]],
+        valid_indices: list[int],
+        embeddings: np.ndarray,
+        centroids: np.ndarray,
+        beta: float = 3.5,
+    ) -> np.ndarray:
+        """
+        Applies Hidden Markov Model (HMM) Viterbi decoding to smooth turn assignments.
+        Uses normalized relative margin between centroids so even similar voices produce
+        sharp, confident emission probabilities.
+        Penalizes unnatural rapid flip-flops across negligible pauses (<0.25s),
+        while allowing genuine dialogue turn-taking across natural pauses (>=0.35s).
+        """
+        n = len(valid_indices)
+        if n <= 1:
+            return np.zeros(n, dtype=int)
+
+        c0, c1 = centroids[0], centroids[1]
+        norm0 = np.linalg.norm(c0)
+        norm1 = np.linalg.norm(c1)
+        c0 = c0 / max(norm0, 1e-6)
+        c1 = c1 / max(norm1, 1e-6)
+
+        norms_e = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        e_norm = embeddings / np.maximum(norms_e, 1e-6)
+
+        # Centroid separation
+        sep = max(1e-4, 1.0 - float(np.dot(c0, c1)))
+
+        # Cosine similarities to c0 and c1: shape (n, 2)
+        sim_c0 = np.dot(e_norm, c0)
+        sim_c1 = np.dot(e_norm, c1)
+
+        # Normalized margins: in range roughly [-1.0, 1.0]
+        margin_0 = (sim_c0 - sim_c1) / sep
+        margin_1 = -margin_0
+
+        # Pre-compute durations and pauses
+        durs = np.zeros(n, dtype=np.float32)
+        gaps = np.zeros(n, dtype=np.float32)
+        for i in range(n):
+            idx = valid_indices[i]
+            durs[i] = max(0.01, turns[idx].get("end", 0.0) - turns[idx].get("start", 0.0))
+            if i > 0:
+                prev_idx = valid_indices[i - 1]
+                gaps[i] = max(0.0, turns[idx].get("start", 0.0) - turns[prev_idx].get("end", 0.0))
+
+        V = np.zeros((n, 2), dtype=np.float64)
+        bp = np.zeros((n, 2), dtype=int)
+
+        w0 = float(np.clip(durs[0] / 1.5, 0.35, 1.0))
+        V[0, 0] = np.log(0.5) + beta * w0 * margin_0[0]
+        V[0, 1] = np.log(0.5) + beta * w0 * margin_1[0]
+
+        for i in range(1, n):
+            dur_i = durs[i]
+            gap_i = gaps[i]
+
+            if gap_i < 0.25:
+                # Immediate speech continuation (likely same speaker)
+                p_switch = 0.15
+            elif gap_i < 0.50:
+                # Slight pause, small turn transition penalty
+                p_switch = 0.35
+            else:
+                # Distinct conversational pause (>= 0.5s), natural turn-taking
+                p_switch = 0.50
+
+            p_stay = 1.0 - p_switch
+            log_stay = np.log(p_stay)
+            log_switch = np.log(p_switch)
+
+            w_i = float(np.clip(dur_i / 1.5, 0.35, 1.0))
+            emit_0 = beta * w_i * margin_0[i]
+            emit_1 = beta * w_i * margin_1[i]
+
+            val_00 = V[i - 1, 0] + log_stay
+            val_10 = V[i - 1, 1] + log_switch
+            if val_00 >= val_10:
+                V[i, 0] = val_00 + emit_0
+                bp[i, 0] = 0
+            else:
+                V[i, 0] = val_10 + emit_0
+                bp[i, 0] = 1
+
+            val_01 = V[i - 1, 0] + log_switch
+            val_11 = V[i - 1, 1] + log_stay
+            if val_01 >= val_11:
+                V[i, 1] = val_01 + emit_1
+                bp[i, 1] = 0
+            else:
+                V[i, 1] = val_11 + emit_1
+                bp[i, 1] = 1
+
+        best = np.zeros(n, dtype=int)
+        best[-1] = int(np.argmax(V[-1]))
+        for i in range(n - 2, -1, -1):
+            best[i] = bp[i + 1, best[i + 1]]
+
+        return best
+
     def diarize(self, audio_path: str, segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Diarizes mono audio:
         1. Splits merged Whisper segments into dialogue turns using word pause gaps.
         2. Extracts neural CAM++ embeddings (or acoustic features fallback).
-        3. Clusters turns with Agglomerative Clustering.
-        4. Smooths isolated short turns and assigns 'speaker_label' (SPEAKER_0, SPEAKER_1).
+        3. Identifies anchor centroids from longest turns.
+        4. Smooths turn assignments via Markov / HMM Viterbi decoding.
+        5. Assigns 'speaker_label' (SPEAKER_0, SPEAKER_1).
         """
         if not segments:
             return segments
@@ -255,6 +431,12 @@ class MonoDiarizer:
 
         if use_cam:
             X_cam = np.array([cam_embs[pos] for pos in valid_cam_positions])
+            durs_cam = np.array(
+                [
+                    turns[valid_indices[pos]]["end"] - turns[valid_indices[pos]]["start"]
+                    for pos in valid_cam_positions
+                ]
+            )
             n_clus = min(self.num_speakers, len(X_cam))
 
             if n_clus < 2:
@@ -265,20 +447,30 @@ class MonoDiarizer:
                     np.array([0, 1]) if dist >= self.min_speaker_distance else np.array([0, 0])
                 )
             else:
-                km = KMeans(n_clusters=n_clus, n_init=10, random_state=42)
-                cam_labels = km.fit_predict(X_cam)
+                # 1. Anchor-based centroid discovery
+                anchor_centroids = self._find_anchor_centroids(X_cam, durs_cam)
 
-                # Monologue validation on centroid separation
-                c0 = km.cluster_centers_[0]
-                c1 = km.cluster_centers_[1]
-                norm0, norm1 = np.linalg.norm(c0), np.linalg.norm(c1)
-                sep = (
-                    1.0 - float(np.dot(c0, c1) / (norm0 * norm1))
-                    if norm0 > 0 and norm1 > 0
-                    else 0.0
-                )
-                if sep < self.min_speaker_distance:
+                if anchor_centroids is None:
+                    # Monologue detected based on anchor turn separation
                     cam_labels = np.zeros(len(X_cam), dtype=int)
+                else:
+                    # Initialize KMeans with robust anchor centroids
+                    km = KMeans(
+                        n_clusters=n_clus,
+                        init=anchor_centroids,
+                        n_init=1,
+                        random_state=42,
+                    )
+                    km.fit(X_cam)
+                    final_centroids = km.cluster_centers_
+
+                    # 2. Markov / Viterbi sequence smoothing across turns
+                    cam_labels = self._viterbi_smoothing(
+                        turns=[turns[valid_indices[pos]] for pos in valid_cam_positions],
+                        valid_indices=list(range(len(valid_cam_positions))),
+                        embeddings=X_cam,
+                        centroids=final_centroids,
+                    )
 
             # Map cluster labels to all valid turns
             labels = np.zeros(len(valid_indices), dtype=int)
@@ -324,20 +516,24 @@ class MonoDiarizer:
                     if sep < 1.4:
                         labels = np.zeros(len(X), dtype=int)
 
-        # Temporal continuity smoothing (fix momentary flip-flops)
-        for i in range(1, len(valid_indices) - 1):
-            prev_idx = valid_indices[i - 1]
-            curr_idx = valid_indices[i]
-            dur = turns[curr_idx].get("end", 0.0) - turns[curr_idx].get("start", 0.0)
-            gap_prev = turns[curr_idx].get("start", 0.0) - turns[prev_idx].get("end", 0.0)
+            # Temporal continuity smoothing for acoustic fallback
+            for i in range(1, len(valid_indices) - 1):
+                prev_idx = valid_indices[i - 1]
+                curr_idx = valid_indices[i]
+                dur = turns[curr_idx].get("end", 0.0) - turns[curr_idx].get("start", 0.0)
+                gap_prev = turns[curr_idx].get("start", 0.0) - turns[prev_idx].get("end", 0.0)
 
-            if (
-                dur < 0.8
-                and gap_prev < 0.5
-                and labels[i - 1] == labels[i + 1]
-                and labels[i] != labels[i - 1]
-            ):
-                labels[i] = labels[i - 1]
+                if (
+                    dur < 0.8
+                    and gap_prev < 0.5
+                    and labels[i - 1] == labels[i + 1]
+                    and labels[i] != labels[i - 1]
+                ):
+                    labels[i] = labels[i - 1]
+
+        # Standardize speaker numbering: the first speaker to talk is always SPEAKER_0
+        if len(labels) > 0 and labels[0] == 1 and np.any(labels == 0):
+            labels = 1 - labels
 
         for valid_idx, label in zip(valid_indices, labels):
             turns[valid_idx]["speaker_label"] = f"SPEAKER_{label}"

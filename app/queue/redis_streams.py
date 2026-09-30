@@ -131,7 +131,13 @@ class RedisQueue:
                 parsed_data["callback_url"] = fields["callback_url"]
             return msg_id, job_id, parsed_data
         except Exception as e:
-            logger.error("redis_read_error", error=str(e), stream=stream)
+            err_str = str(e)
+            logger.error("redis_read_error", error=err_str, stream=stream)
+            if "NOGROUP" in err_str:
+                try:
+                    await self.ensure_groups()
+                except Exception:
+                    pass
             return None
 
     async def ack_job(self, stream: str, group: str, msg_id: str):
