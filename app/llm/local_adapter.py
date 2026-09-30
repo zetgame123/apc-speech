@@ -95,6 +95,100 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
             parsed = json.loads(content)
             return StructuredAnalysis(**parsed)
 
+    async def refine_speaker_roles(
+        self,
+        segments: list[dict[str, Any]],
+        timeout_sec: float = 60.0,
+    ) -> list[dict[str, Any]]:
+        """
+        Uses Qwen 2.5 7B to semantically classify/refine speaker roles ('manager' vs 'client')
+        for each turn based on conversational pragmatics.
+        Falls back to original segments on any error or timeout.
+        """
+        if not segments:
+            return segments
+
+        n = len(segments)
+        lines = []
+        for i, s in enumerate(segments):
+            txt = s.get("text", "").strip()
+            if len(txt) > 200:
+                txt = txt[:197] + "..."
+            current_role = s.get("speaker_role", s.get("speaker_label", "speaker"))
+            lines.append(f"{i}: [{current_role}] {txt}")
+
+        prompt = (
+            f"Для каждой из {n} реплик диалога определи реальную роль говорящего: 'manager' (представитель/оператор компании) или 'client' (клиент/заказчик). "
+            f"Верни JSON со списком roles из ровно {n} элементов ('manager' или 'client') в строгом порядке реплик от 0 до {n - 1}:\n"
+            + "\n".join(lines)
+        )
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "roles": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["manager", "client"],
+                    },
+                }
+            },
+            "required": ["roles"],
+            "additionalProperties": False,
+        }
+
+        # Each role token in the array is ~3-4 tokens
+        max_tokens = max(60, n * 5 + 30)
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout_sec) as client:
+                resp = await client.post(
+                    f"{self.endpoint_url}/chat/completions",
+                    json={
+                        "model": self.model_name,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "Ты эксперт по анализу диалогов. Отвечай строго валидным JSON со списком ролей по заданной схеме.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        "response_format": {
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": "RoleArray",
+                                "schema": schema,
+                            },
+                        },
+                        "max_tokens": max_tokens,
+                        "temperature": 0.0,
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                content = data["choices"][0]["message"]["content"]
+                parsed = json.loads(content)
+                roles = parsed.get("roles", [])
+
+                if isinstance(roles, list) and len(roles) > 0:
+                    updated = []
+                    for i, s in enumerate(segments):
+                        s_copy = dict(s)
+                        if i < len(roles) and roles[i] in ("manager", "client"):
+                            s_copy["speaker_role"] = roles[i]
+                            # Maintain consistent speaker_label with assigned role
+                            s_copy["speaker_label"] = (
+                                "SPEAKER_0" if roles[i] == "manager" else "SPEAKER_1"
+                            )
+                        updated.append(s_copy)
+                    logger.info("llm_role_refinement_success", count=len(updated))
+                    return updated
+        except Exception as e:
+            logger.warning("llm_role_refinement_failed_fallback", error=str(e))
+
+        return segments
+
     def _analyze_via_rules(
         self,
         text: str,

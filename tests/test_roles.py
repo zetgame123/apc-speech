@@ -44,3 +44,81 @@ def test_mono_heuristic_role_classification():
     assert conf == "high"
     assert classified[0]["speaker_role"] == "manager"
     assert classified[1]["speaker_role"] == "client"
+
+
+async def test_llm_refine_speaker_roles_mocked(monkeypatch):
+    from app.llm.local_adapter import LocalLlamaCppAdapter
+
+    adapter = LocalLlamaCppAdapter()
+
+    segments = [
+        {"start": 0.0, "end": 2.0, "speaker_label": "SPEAKER_1", "text": "Здравствуйте, компания APC."},
+        {"start": 2.5, "end": 4.5, "speaker_label": "SPEAKER_0", "text": "Сколько стоит щит?"},
+    ]
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"roles": ["manager", "client"]}'
+                        }
+                    }
+                ]
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    refined = await adapter.refine_speaker_roles(segments)
+    assert len(refined) == 2
+    assert refined[0]["speaker_role"] == "manager"
+    assert refined[0]["speaker_label"] == "SPEAKER_0"
+    assert refined[1]["speaker_role"] == "client"
+    assert refined[1]["speaker_label"] == "SPEAKER_1"
+
+
+async def test_llm_refine_speaker_roles_fallback_on_error(monkeypatch):
+    from app.llm.local_adapter import LocalLlamaCppAdapter
+
+    adapter = LocalLlamaCppAdapter()
+    segments = [
+        {"start": 0.0, "end": 2.0, "speaker_label": "SPEAKER_0", "text": "Здравствуйте"},
+    ]
+
+    class BrokenAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            raise RuntimeError("Connection refused")
+
+    monkeypatch.setattr("httpx.AsyncClient", BrokenAsyncClient)
+
+    # Should gracefully return original segments without exception
+    result = await adapter.refine_speaker_roles(segments)
+    assert len(result) == 1
+    assert result[0]["text"] == "Здравствуйте"
+

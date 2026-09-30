@@ -294,6 +294,20 @@ async def process_job(job_id: str, data: dict):
 
             final_segments, role_conf = role_classifier.classify_mono_speakers(raw_segments)
 
+            # In local-full profile, semantically refine speaker roles with Qwen 2.5 7B
+            if settings.app_profile == "local-full" and final_segments:
+                try:
+                    async with AsyncSessionLocal() as db:
+                        await db.execute(
+                            update(Job)
+                            .where(Job.id == job_id)
+                            .values(progress=58, step="llm_speaker_refinement")
+                        )
+                        await db.commit()
+                    final_segments = await llm_adapter.refine_speaker_roles(final_segments)
+                except Exception as e:
+                    logger.warning("llm_speaker_refinement_failed_fallback", error=str(e))
+
         # 4. Check for Answering Machine in initial segments
         initial_text = " ".join(s["text"] for s in final_segments[:3])
         if vad_detector.detect_answering_machine(initial_text, total_duration):
