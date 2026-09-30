@@ -168,11 +168,13 @@ class AudioPreprocessor:
             "1",
             "-i",
             input_path,
-            "-map_channel",
-            "0.0.0",
+            "-filter_complex",
+            "[0:a]channelsplit=channel_layout=stereo[left][right]",
+            "-map",
+            "[left]",
             ch0_path,
-            "-map_channel",
-            "0.0.1",
+            "-map",
+            "[right]",
             ch1_path,
         ]
 
@@ -186,5 +188,15 @@ class AudioPreprocessor:
             )
             return ch0_path, ch1_path
         except Exception as e:
-            logger.error("stereo_split_error", error=str(e))
+            logger.warning("ffmpeg_stereo_split_failed_trying_fallback", error=str(e))
+            try:
+                import soundfile as sf
+
+                data, sr = sf.read(input_path)
+                if data.ndim >= 2:
+                    sf.write(ch0_path, data[:, 0], sr)
+                    sf.write(ch1_path, data[:, 1], sr)
+                    return ch0_path, ch1_path
+            except Exception as fe:
+                logger.error("stereo_split_fallback_error", error=str(fe))
             raise AppError("stereo_split_failed", "Ошибка разделения стереоканалов", 500)
