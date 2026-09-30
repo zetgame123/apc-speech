@@ -488,11 +488,13 @@ class MonoDiarizer:
                             labels[pos] = labels[pos + offset]
                             break
         else:
-            # Fallback to acoustic features (MFCC, pitch, spectral)
             X_raw = np.array(acoustics)
             std = np.std(X_raw, axis=0)
             std[std == 0] = 1.0
             X = (X_raw - np.mean(X_raw, axis=0)) / std
+            # Fundamental frequency (pitch) is the primary acoustic invariant distinguishing speakers
+            X[:, 0] *= 3.5
+            X[:, 1] *= 1.5
 
             if len(X) < 2 or self.num_speakers < 2:
                 labels = np.zeros(len(X), dtype=int)

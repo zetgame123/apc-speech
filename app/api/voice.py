@@ -71,6 +71,7 @@ async def voice_search(
             language=lang,
             beam_size=cfg.voice_search_beam_size,
             vad_filter=True,
+            word_timestamps=False,
         )
         return segs, metadata
 

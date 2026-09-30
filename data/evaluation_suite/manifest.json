@@ -1,0 +1,46 @@
+[
+  {
+    "id": "sample_clean_01",
+    "audio_file": "data/evaluation_suite/sample_clean_01_clean.wav",
+    "reference": "Здравствуйте агентство наружной рекламы слушаю вас",
+    "type": "clean",
+    "speaker_roles": [
+      {
+        "start": 0.0,
+        "end": 3.5,
+        "speaker_role": "manager"
+      }
+    ]
+  },
+  {
+    "id": "sample_telephony_01",
+    "audio_file": "data/evaluation_suite/sample_telephony_01_telephony_8k.wav",
+    "reference": "Подскажите свободны ли щиты три на шесть в Балашихе на октябрь",
+    "type": "telephony",
+    "speaker_roles": [
+      {
+        "start": 0.0,
+        "end": 4.5,
+        "speaker_role": "client"
+      }
+    ]
+  },
+  {
+    "id": "sample_dialogue_01",
+    "audio_file": "data/evaluation_suite/sample_dialogue_01_telephony_8k.wav",
+    "reference": "Здравствуйте! Подскажите стоимость суперсайта на Ленинградке. Добрый день, стоимость двести тысяч рублей в месяц.",
+    "type": "dialogue",
+    "speaker_roles": [
+      {
+        "start": 0.0,
+        "end": 5.06,
+        "speaker_role": "client"
+      },
+      {
+        "start": 5.56,
+        "end": 11.2,
+        "speaker_role": "manager"
+      }
+    ]
+  }
+]

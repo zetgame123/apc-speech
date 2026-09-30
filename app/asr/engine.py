@@ -119,6 +119,7 @@ class AsrEngine:
         initial_prompt: str | None = None,
         vad_filter: bool = True,
         hotwords: str | None = None,
+        word_timestamps: bool = True,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """
         Transcribes audio with faster-whisper.
@@ -140,7 +141,7 @@ class AsrEngine:
                 min_silence_duration_ms=150,
                 speech_pad_ms=250,
             ),
-            word_timestamps=True,
+            word_timestamps=word_timestamps,
             condition_on_previous_text=False,  # CRITICAL: prevents repeating loops
             no_speech_threshold=0.6,
             compression_ratio_threshold=2.4,

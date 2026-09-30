@@ -46,12 +46,16 @@ htmlcov/
 *.pem
 *.key
 models/
-data/
+data/*
+!data/evaluation_suite/
+!data/evaluation_suite/**
 raw_audio/
 tmp/
 *.raw
 *.wav
+!data/evaluation_suite/*.wav
 *.mp3
+!data/evaluation_suite/*.mp3
 *.ogg
 *.flac
 *.m4a

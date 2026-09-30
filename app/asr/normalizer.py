@@ -68,6 +68,13 @@ class RussianTextNormalizer:
         # Outdoor terms & formats
         self.term_patterns = [
             (
+                re.compile(
+                    r"\b(агентств[оаеу]|рекламн\w+\s+агентств\w+)?\s*наружные\s+рекламы\b",
+                    re.IGNORECASE,
+                ),
+                lambda m: f"{m.group(1)} наружной рекламы" if m.group(1) else "наружной рекламы",
+            ),
+            (
                 re.compile(r"\bсити\s*[-]?\s*формат(а|у|ом|е)?\b", re.IGNORECASE),
                 lambda m: "сити-формат" + (m.group(1) or ""),
             ),

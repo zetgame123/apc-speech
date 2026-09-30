@@ -60,7 +60,7 @@ class Settings(BaseSettings):
 
     # Voice Search
     voice_search_max_duration_sec: int = Field(default=60, alias="VOICE_SEARCH_MAX_DURATION_SEC")
-    voice_search_model_name: str = Field(default="small", alias="VOICE_SEARCH_MODEL_NAME")
+    voice_search_model_name: str = Field(default="base", alias="VOICE_SEARCH_MODEL_NAME")
     voice_search_beam_size: int = Field(default=1, alias="VOICE_SEARCH_BEAM_SIZE")
 
     # LLM

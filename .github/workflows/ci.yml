@@ -49,11 +49,15 @@ jobs:
           APP_ENV: development
           DEV_TOKEN: dev-token
 
+      - name: Download CAM++ Neural Model for Diarization
+        run: uv run python scripts/download_models.py
+
       - name: Run Quality & Performance Evaluation Harness
         run: uv run python -m evaluation.run
         env:
           APP_ENV: development
           DEV_TOKEN: dev-token
+          VOICE_SEARCH_MODEL_NAME: base
 
       - name: Detect Hardcoded Secrets (Gitleaks)
         uses: gitleaks/gitleaks-action@v2
