@@ -59,18 +59,33 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         context: AnalysisContext,
     ) -> StructuredAnalysis:
         prompt = (
-            "Ты — аналитик звонков агентства наружной рекламы. "
-            "Проанализируй диалог менеджера и клиента и заполни JSON строго по схеме.\n\n"
+            "Ты — русскоязычный аналитик звонков агентства наружной рекламы. "
+            "Проанализируй диалог и заполни JSON по схеме. "
+            "Все ключи и строковые значения в JSON должны быть строго на русском языке или латинице. "
+            "Ключи в entities: city, format, quantity, period, budget.\n\n"
             f"Транскрипт:\n{masked_transcript}"
         )
+        schema = StructuredAnalysis.model_json_schema()
 
-        async with httpx.AsyncClient(timeout=35.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
                 f"{self.endpoint_url}/chat/completions",
                 json={
                     "model": self.model_name,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "response_format": {"type": "json_object"},
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "Ты — аналитик звонков агентства наружной рекламы. Отвечай только валидным JSON согласно схеме на русском языке.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "StructuredAnalysis",
+                            "schema": schema,
+                        },
+                    },
                     "temperature": 0.1,
                 },
             )
