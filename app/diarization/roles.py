@@ -128,7 +128,7 @@ class RoleClassifier:
         elif spk1_score > spk0_score:
             role_map = {"SPEAKER_1": "manager", "SPEAKER_0": "client"}
         else:
-            role_map = {"SPEAKER_0": "participant_1", "SPEAKER_1": "participant_2"}
+            role_map = {"SPEAKER_0": "manager", "SPEAKER_1": "client"}
 
         updated_segments = []
         for s in segments:

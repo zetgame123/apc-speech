@@ -65,14 +65,18 @@ class SpeechMetricsCalculator:
             if dur > 0:
                 all_speech_intervals.append((start, end))
 
-            if role == "manager":
+            if role in ("manager", "participant_1") or (
+                role == "participant" and seg.get("speaker_label") == "SPEAKER_0"
+            ):
                 mgr_duration += dur
                 mgr_words += word_count
-            elif role == "client":
+            elif role in ("client", "participant_2") or (
+                role == "participant" and seg.get("speaker_label") == "SPEAKER_1"
+            ):
                 client_duration += dur
                 client_words += word_count
             else:
-                # Neutral participant split evenly
+                # Neutral participant fallback split evenly
                 mgr_duration += dur / 2.0
                 client_duration += dur / 2.0
                 mgr_words += word_count // 2
@@ -80,11 +84,16 @@ class SpeechMetricsCalculator:
 
             # Check interruptions across all active concurrent segments
             # A segment j interrupts an ongoing segment i if i started earlier,
-            # belongs to a different speaker role, and overlaps by > 0.3s
+            # belongs to a different speaker role or label, and overlaps by > 0.3s
             for prev_idx in range(i):
                 prev_seg = sorted_segs[prev_idx]
                 prev_role = prev_seg.get("speaker_role", "participant")
-                if role != prev_role:
+                prev_label = prev_seg.get("speaker_label", "")
+                curr_label = seg.get("speaker_label", "")
+                is_different = (role != prev_role) or (
+                    curr_label and prev_label and curr_label != prev_label
+                )
+                if is_different:
                     overlap = min(prev_seg["end"], end) - max(prev_seg["start"], start)
                     if overlap > 0.3 and prev_seg["start"] < start:
                         interruptions += 1

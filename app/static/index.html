@@ -903,17 +903,31 @@
     let clientTime = 0;
 
     segments.forEach(seg => {
-      const isManager = seg.speaker_role === 'manager';
+      const isFirstSpeaker =
+        seg.speaker_role === 'manager' ||
+        seg.speaker_role === 'participant_1' ||
+        seg.speaker_label === 'SPEAKER_0';
       const dur = seg.end - seg.start;
-      if (isManager) managerTime += dur; else clientTime += dur;
+      if (isFirstSpeaker) managerTime += dur; else clientTime += dur;
 
       const bubble = document.createElement('div');
-      bubble.className = `msg-bubble ${isManager ? 'msg-manager' : 'msg-client'}`;
+      bubble.className = `msg-bubble ${isFirstSpeaker ? 'msg-manager' : 'msg-client'}`;
+
+      let roleLabel = 'Менеджер';
+      if (seg.speaker_role === 'client') {
+        roleLabel = 'Клиент';
+      } else if (seg.speaker_role === 'participant_1') {
+        roleLabel = 'Участник 1';
+      } else if (seg.speaker_role === 'participant_2') {
+        roleLabel = 'Участник 2';
+      } else if (!isFirstSpeaker) {
+        roleLabel = 'Клиент';
+      }
 
       const badge = document.createElement('div');
-      badge.className = `speaker-badge ${isManager ? 'text-primary' : 'text-success'}`;
+      badge.className = `speaker-badge ${isFirstSpeaker ? 'text-primary' : 'text-success'}`;
       badge.innerHTML = `
-        <span><i class="bi bi-person-${isManager ? 'badge' : 'fill'} me-1"></i>${isManager ? 'Менеджер' : 'Клиент'} (${escapeHtml(seg.speaker_label)})</span>
+        <span><i class="bi bi-person-${isFirstSpeaker ? 'badge' : 'fill'} me-1"></i>${roleLabel} (${escapeHtml(seg.speaker_label || (isFirstSpeaker ? 'SPEAKER_0' : 'SPEAKER_1'))})</span>
         <span class="text-muted fw-normal">${seg.start.toFixed(1)}s - ${seg.end.toFixed(1)}s</span>
       `;
       bubble.appendChild(badge);
