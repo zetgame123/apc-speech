@@ -117,6 +117,26 @@ async def process_job(job_id: str, data: dict):
         total_duration = probe_info["duration"]
         is_stereo = probe_info["channels"] >= 2
 
+        # Check explicit channel mapping or stereo mode in request
+        explicit_stereo = bool(
+            data.get("diarization_mode") == "stereo"
+            or data.get("channel_mapping")
+            or data.get("channel_manager") is not None
+            or (data.get("metadata") or {}).get("channel_mapping")
+            or (data.get("options") or {}).get("diarization_mode") == "stereo"
+        )
+
+        if is_stereo and not explicit_stereo:
+            # Check whether channels are acoustically isolated (telephony) or shared (dual-mono / mic bleed)
+            is_isolated = preprocessor.check_channel_isolation(input_audio_path)
+            if not is_isolated:
+                logger.info(
+                    "stereo_channels_not_isolated_using_mono_diarization",
+                    call_id=call_id,
+                    channels=probe_info["channels"],
+                )
+                is_stereo = False
+
         call_created_at_dt = None
         raw_call_created = data.get("metadata", {}).get("call_created_at")
         if raw_call_created:
@@ -166,9 +186,10 @@ async def process_job(job_id: str, data: dict):
 
             ch0_chunks = chunk_audio(ch0_pcm, chunk_length_sec=600, overlap_sec=15)
             ch1_chunks = chunk_audio(ch1_pcm, chunk_length_sec=600, overlap_sec=15)
+            total_chunks = len(ch0_chunks) + len(ch1_chunks)
 
             all_segs_ch0 = []
-            for chunk in ch0_chunks:
+            for idx, chunk in enumerate(ch0_chunks):
                 segs, _ = asr_engine.transcribe(
                     chunk["data"],
                     language=target_lang,
@@ -176,10 +197,21 @@ async def process_job(job_id: str, data: dict):
                     hotwords=hints_prompt,
                 )
                 all_segs_ch0.append(segs)
+                chunk_progress = 25 + int(30 * (idx + 1) / max(1, total_chunks))
+                async with AsyncSessionLocal() as db:
+                    await db.execute(
+                        update(Job)
+                        .where(Job.id == job_id)
+                        .values(
+                            progress=chunk_progress,
+                            step=f"asr_transcription_ch0_chunk_{idx + 1}_of_{len(ch0_chunks)}",
+                        )
+                    )
+                    await db.commit()
             segs_ch0 = merge_and_deduplicate(all_segs_ch0, ch0_chunks)
 
             all_segs_ch1 = []
-            for chunk in ch1_chunks:
+            for idx, chunk in enumerate(ch1_chunks):
                 segs, _ = asr_engine.transcribe(
                     chunk["data"],
                     language=target_lang,
@@ -187,6 +219,17 @@ async def process_job(job_id: str, data: dict):
                     hotwords=hints_prompt,
                 )
                 all_segs_ch1.append(segs)
+                chunk_progress = 25 + int(30 * (len(ch0_chunks) + idx + 1) / max(1, total_chunks))
+                async with AsyncSessionLocal() as db:
+                    await db.execute(
+                        update(Job)
+                        .where(Job.id == job_id)
+                        .values(
+                            progress=chunk_progress,
+                            step=f"asr_transcription_ch1_chunk_{idx + 1}_of_{len(ch1_chunks)}",
+                        )
+                    )
+                    await db.commit()
             segs_ch1 = merge_and_deduplicate(all_segs_ch1, ch1_chunks)
 
             channel_mapping = data.get("metadata", {}).get("channel_mapping")
@@ -213,8 +256,9 @@ async def process_job(job_id: str, data: dict):
 
             chunks_info = chunk_audio(mono_pcm, chunk_length_sec=600, overlap_sec=15)
             all_raw_segments = []
+            total_chunks = len(chunks_info)
 
-            for chunk in chunks_info:
+            for idx, chunk in enumerate(chunks_info):
                 segs, _ = asr_engine.transcribe(
                     chunk["data"],
                     language=target_lang,
@@ -222,8 +266,25 @@ async def process_job(job_id: str, data: dict):
                     hotwords=hints_prompt,
                 )
                 all_raw_segments.append(segs)
+                chunk_progress = 25 + int(30 * (idx + 1) / max(1, total_chunks))
+                async with AsyncSessionLocal() as db:
+                    await db.execute(
+                        update(Job)
+                        .where(Job.id == job_id)
+                        .values(
+                            progress=chunk_progress,
+                            step=f"asr_transcription_chunk_{idx + 1}_of_{total_chunks}",
+                        )
+                    )
+                    await db.commit()
 
             raw_segments = merge_and_deduplicate(all_raw_segments, chunks_info)
+
+            async with AsyncSessionLocal() as db:
+                await db.execute(
+                    update(Job).where(Job.id == job_id).values(progress=55, step="mono_diarization")
+                )
+                await db.commit()
 
             # Use local audio-based diarization
             from app.diarization.mono_diarizer import MonoDiarizer

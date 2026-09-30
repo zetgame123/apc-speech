@@ -3,6 +3,8 @@ import os
 import resource
 import subprocess
 
+import numpy as np
+
 from app.core.errors import AppError
 from app.core.logging import get_logger
 
@@ -200,3 +202,75 @@ class AudioPreprocessor:
             except Exception as fe:
                 logger.error("stereo_split_fallback_error", error=str(fe))
             raise AppError("stereo_split_failed", "Ошибка разделения стереоканалов", 500)
+
+    def check_channel_isolation(self, input_path: str, max_check_sec: float = 60.0) -> bool:
+        """
+        Determines whether a multi-channel audio file represents true isolated stereo
+        (e.g., dedicated telephony channels where channel 0 is manager and channel 1 is client),
+        or shared/dual-mono/acoustic bleed where both channels capture the same speech.
+
+        Returns True if channels are acoustically isolated (<30% energy overlap and <0.35 correlation),
+        False if channels share common audio (dual-mono, stereo microphone bleed, podcast).
+        """
+        try:
+            import soundfile as sf
+
+            with sf.SoundFile(input_path) as sfile:
+                if sfile.channels < 2:
+                    return False
+                sr = sfile.samplerate
+                frames_to_read = min(len(sfile), int(sr * max_check_sec))
+                data = sfile.read(frames_to_read, dtype="float32")
+
+            ch0 = data[:, 0]
+            ch1 = data[:, 1]
+
+            # Compute short-term energy envelopes (50ms window, 25ms hop)
+            frame_sz = max(1, int(sr * 0.05))
+            hop = max(1, int(sr * 0.025))
+
+            if len(ch0) <= frame_sz:
+                return False
+
+            e0 = np.array(
+                [
+                    float(np.sqrt(np.mean(ch0[i : i + frame_sz] ** 2)))
+                    for i in range(0, len(ch0) - frame_sz, hop)
+                ],
+                dtype=np.float32,
+            )
+            e1 = np.array(
+                [
+                    float(np.sqrt(np.mean(ch1[i : i + frame_sz] ** 2)))
+                    for i in range(0, len(ch1) - frame_sz, hop)
+                ],
+                dtype=np.float32,
+            )
+
+            th0 = float(np.percentile(e0, 30)) + 1e-5
+            th1 = float(np.percentile(e1, 30)) + 1e-5
+
+            act0 = e0 > th0
+            act1 = e1 > th1
+
+            active_union = np.sum(act0 | act1)
+            if active_union == 0:
+                return False
+
+            overlap = float(np.sum(act0 & act1) / active_union)
+            corr_mat = np.corrcoef(e0, e1)
+            corr = float(corr_mat[0, 1]) if not np.isnan(corr_mat[0, 1]) else 0.0
+
+            logger.info(
+                "channel_isolation_metrics",
+                overlap=round(overlap, 3),
+                correlation=round(corr, 3),
+                file_path=input_path,
+            )
+
+            # In true telephony stereo, speakers alternate turns (low correlation < 0.35)
+            # and simultaneous speech is minimal (< 0.30 overlap).
+            return bool(overlap < 0.30 and corr < 0.35)
+        except Exception as e:
+            logger.warning("channel_isolation_check_error", error=str(e), file_path=input_path)
+            return False

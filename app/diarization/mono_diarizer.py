@@ -4,7 +4,7 @@ from typing import Any
 import librosa
 import numpy as np
 import soundfile as sf
-from sklearn.cluster import AgglomerativeClustering
+from sklearn.cluster import AgglomerativeClustering, KMeans
 
 try:
     import onnxruntime as ort
@@ -214,6 +214,7 @@ class MonoDiarizer:
         cam_embs = []
         acoustics = []
         valid_indices = []
+        min_dur_samples = int(sr * 0.8)
 
         for i, t in enumerate(turns):
             start_sample = max(0, min(int(t["start"] * sr), len(y) - 1))
@@ -222,7 +223,18 @@ class MonoDiarizer:
             if end_sample <= start_sample:
                 continue
 
-            chunk = y[start_sample:end_sample]
+            # Context padding for short utterances to ensure robust CAM++ embedding
+            dur_samples = end_sample - start_sample
+            if dur_samples < min_dur_samples:
+                pad_needed = min_dur_samples - dur_samples
+                pad_left = pad_needed // 2
+                pad_right = pad_needed - pad_left
+                chunk_start = max(0, start_sample - pad_left)
+                chunk_end = min(len(y), end_sample + pad_right)
+                chunk = y[chunk_start:chunk_end]
+            else:
+                chunk = y[start_sample:end_sample]
+
             c_emb = self._extract_campplus(chunk, sr)
             a_feat = self._extract_segment_features(chunk, sr)
 
@@ -235,73 +247,97 @@ class MonoDiarizer:
                 t.setdefault("speaker_label", "SPEAKER_0")
             return turns
 
-        # Determine representation: CAM++ if available for all turns, else standardized acoustic features
-        has_all_cam = all(e is not None for e in cam_embs)
-        if has_all_cam and len(cam_embs) >= 2:
-            X = np.array(cam_embs)
-            use_cosine = True
+        # Determine representation: use CAM++ if at least 50% of turns extracted embeddings
+        valid_cam_positions = [pos for pos, e in enumerate(cam_embs) if e is not None]
+        use_cam = len(valid_cam_positions) >= 2 and (
+            len(valid_cam_positions) / len(cam_embs) >= 0.5
+        )
+
+        if use_cam:
+            X_cam = np.array([cam_embs[pos] for pos in valid_cam_positions])
+            n_clus = min(self.num_speakers, len(X_cam))
+
+            if n_clus < 2:
+                cam_labels = np.zeros(len(X_cam), dtype=int)
+            elif len(X_cam) == 2:
+                dist = 1.0 - float(np.dot(X_cam[0], X_cam[1]))
+                cam_labels = (
+                    np.array([0, 1]) if dist >= self.min_speaker_distance else np.array([0, 0])
+                )
+            else:
+                km = KMeans(n_clusters=n_clus, n_init=10, random_state=42)
+                cam_labels = km.fit_predict(X_cam)
+
+                # Monologue validation on centroid separation
+                c0 = km.cluster_centers_[0]
+                c1 = km.cluster_centers_[1]
+                norm0, norm1 = np.linalg.norm(c0), np.linalg.norm(c1)
+                sep = (
+                    1.0 - float(np.dot(c0, c1) / (norm0 * norm1))
+                    if norm0 > 0 and norm1 > 0
+                    else 0.0
+                )
+                if sep < self.min_speaker_distance:
+                    cam_labels = np.zeros(len(X_cam), dtype=int)
+
+            # Map cluster labels to all valid turns
+            labels = np.zeros(len(valid_indices), dtype=int)
+            for pos_in_valid_cam, orig_pos in enumerate(valid_cam_positions):
+                labels[orig_pos] = cam_labels[pos_in_valid_cam]
+
+            # Assign any turns with missing CAM++ embeddings to nearest neighbor
+            for pos in range(len(valid_indices)):
+                if cam_embs[pos] is None:
+                    for offset in range(1, len(valid_indices)):
+                        if pos - offset >= 0 and cam_embs[pos - offset] is not None:
+                            labels[pos] = labels[pos - offset]
+                            break
+                        if pos + offset < len(valid_indices) and cam_embs[pos + offset] is not None:
+                            labels[pos] = labels[pos + offset]
+                            break
         else:
+            # Fallback to acoustic features (MFCC, pitch, spectral)
             X_raw = np.array(acoustics)
             std = np.std(X_raw, axis=0)
             std[std == 0] = 1.0
             X = (X_raw - np.mean(X_raw, axis=0)) / std
-            use_cosine = False
 
-        if len(X) < 2 or self.num_speakers < 2:
-            labels = np.zeros(len(X), dtype=int)
-        elif len(X) == 2:
-            # For 2-turn conversations, check distance
-            if use_cosine:
-                dist = 1.0 - float(np.dot(X[0], X[1]))
-                thresh = 0.12
-            else:
+            if len(X) < 2 or self.num_speakers < 2:
+                labels = np.zeros(len(X), dtype=int)
+            elif len(X) == 2:
                 dist = float(np.linalg.norm(X[0] - X[1]))
-                thresh = 1.2
-            labels = np.array([0, 1]) if dist >= thresh else np.array([0, 0])
-        else:
-            metric = "cosine" if use_cosine else "euclidean"
-            linkage = "average" if use_cosine else "ward"
-            clus = AgglomerativeClustering(
-                n_clusters=min(self.num_speakers, len(X)),
-                metric=metric,
-                linkage=linkage,
-            )
-            labels = clus.fit_predict(X)
+                labels = np.array([0, 1]) if dist >= 1.2 else np.array([0, 0])
+            else:
+                clus = AgglomerativeClustering(
+                    n_clusters=min(self.num_speakers, len(X)),
+                    metric="euclidean",
+                    linkage="ward",
+                )
+                labels = clus.fit_predict(X)
 
-            # Monologue validation on standardized cluster centroids
-            mask0 = labels == 0
-            mask1 = labels == 1
-            if np.any(mask0) and np.any(mask1):
-                c0 = np.mean(X[mask0], axis=0)
-                c1 = np.mean(X[mask1], axis=0)
-                if use_cosine:
-                    norm0, norm1 = np.linalg.norm(c0), np.linalg.norm(c1)
-                    sep = (
-                        1.0 - float(np.dot(c0, c1) / (norm0 * norm1))
-                        if norm0 > 0 and norm1 > 0
-                        else 0.0
-                    )
-                    thresh = self.min_speaker_distance
-                else:
+                mask0 = labels == 0
+                mask1 = labels == 1
+                if np.any(mask0) and np.any(mask1):
+                    c0 = np.mean(X[mask0], axis=0)
+                    c1 = np.mean(X[mask1], axis=0)
                     sep = float(np.linalg.norm(c0 - c1))
-                    thresh = 1.4
-                if sep < thresh:
-                    labels = np.zeros(len(X), dtype=int)
+                    if sep < 1.4:
+                        labels = np.zeros(len(X), dtype=int)
 
-            # Temporal continuity smoothing
-            for i in range(1, len(valid_indices) - 1):
-                prev_idx = valid_indices[i - 1]
-                curr_idx = valid_indices[i]
-                dur = turns[curr_idx].get("end", 0.0) - turns[curr_idx].get("start", 0.0)
-                gap_prev = turns[curr_idx].get("start", 0.0) - turns[prev_idx].get("end", 0.0)
+        # Temporal continuity smoothing (fix momentary flip-flops)
+        for i in range(1, len(valid_indices) - 1):
+            prev_idx = valid_indices[i - 1]
+            curr_idx = valid_indices[i]
+            dur = turns[curr_idx].get("end", 0.0) - turns[curr_idx].get("start", 0.0)
+            gap_prev = turns[curr_idx].get("start", 0.0) - turns[prev_idx].get("end", 0.0)
 
-                if (
-                    dur < 0.8
-                    and gap_prev < 0.5
-                    and labels[i - 1] == labels[i + 1]
-                    and labels[i] != labels[i - 1]
-                ):
-                    labels[i] = labels[i - 1]
+            if (
+                dur < 0.8
+                and gap_prev < 0.5
+                and labels[i - 1] == labels[i + 1]
+                and labels[i] != labels[i - 1]
+            ):
+                labels[i] = labels[i - 1]
 
         for valid_idx, label in zip(valid_indices, labels):
             turns[valid_idx]["speaker_label"] = f"SPEAKER_{label}"
