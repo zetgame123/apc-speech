@@ -29,9 +29,23 @@ async def setup_db():
 
     app.dependency_overrides[get_db] = override_get_db
 
+    settings = get_settings()
+    orig_env = settings.app_env
+    orig_dev_token = settings.dev_token
+    orig_debug = settings.debug
+
+    # Default to development mode with dev-token for test suite
+    settings.app_env = "development"
+    settings.dev_token = "dev-token"
+    settings.debug = True
+
     yield
 
-    # Teardown
+    # Teardown & restore
+    settings.app_env = orig_env
+    settings.dev_token = orig_dev_token
+    settings.debug = orig_debug
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     app.dependency_overrides.clear()
@@ -39,11 +53,13 @@ async def setup_db():
 
 def override_get_settings():
     settings = get_settings()
+    settings.app_env = "development"
     settings.dev_token = "dev-token"
     settings.debug = True
     return settings
 
 
 app.dependency_overrides[get_settings] = override_get_settings
+get_settings().app_env = "development"
 get_settings().dev_token = "dev-token"
 get_settings().debug = True

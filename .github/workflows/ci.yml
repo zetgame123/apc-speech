@@ -45,9 +45,15 @@ jobs:
 
       - name: Run Test Suite
         run: uv run --with pytest --with pytest-asyncio pytest tests/ -v
+        env:
+          APP_ENV: development
+          DEV_TOKEN: dev-token
 
       - name: Run Quality & Performance Evaluation Harness
         run: uv run python -m evaluation.run
+        env:
+          APP_ENV: development
+          DEV_TOKEN: dev-token
 
       - name: Detect Hardcoded Secrets (Gitleaks)
         uses: gitleaks/gitleaks-action@v2
