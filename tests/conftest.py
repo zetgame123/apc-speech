@@ -1,0 +1,65 @@
+import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+
+from app.core.config import get_settings
+from app.db.models import Base
+from app.db.session import get_db
+from app.main import app
+
+# Create in-memory SQLite for testing
+engine = create_async_engine(
+    "sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared&uri=true",
+    echo=False,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+TestingSessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+async def override_get_db():
+    async with TestingSessionLocal() as session:
+        yield session
+
+
+@pytest.fixture(autouse=True)
+async def setup_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    settings = get_settings()
+    orig_env = settings.app_env
+    orig_dev_token = settings.dev_token
+    orig_debug = settings.debug
+
+    # Default to development mode with dev-token for test suite
+    settings.app_env = "development"
+    settings.dev_token = "dev-token"
+    settings.debug = True
+
+    yield
+
+    # Teardown & restore
+    settings.app_env = orig_env
+    settings.dev_token = orig_dev_token
+    settings.debug = orig_debug
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    app.dependency_overrides.clear()
+
+
+def override_get_settings():
+    settings = get_settings()
+    settings.app_env = "development"
+    settings.dev_token = "dev-token"
+    settings.debug = True
+    return settings
+
+
+app.dependency_overrides[get_settings] = override_get_settings
+get_settings().app_env = "development"
+get_settings().dev_token = "dev-token"
+get_settings().debug = True

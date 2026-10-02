@@ -1,81 +1,727 @@
-# Сервис анализа речи (`apc-speech`)
+# Платформа речевой аналитики и голосового поиска (`apc-speech`)
 
-Автономный сервис локального распознавания русской речи, диаризации, семантического анализа телефонных звонков и голосового поиска для платформы наружной рекламы.
+Автономный промышленный сервис локального распознавания русской речи, интеллектуальной диаризации, семантического анализа телефонных звонков и ультра-быстрого голосового поиска для сферы наружной рекламы (Outdoor Advertising).
 
-## Архитектура в одном абзаце
-
-Сервис построен по принципу **Modular Monolith with Dedicated Workers**. Распознавание речи (`faster-whisper`, `Silero VAD v5`, диаризация) работает **строго локально**, аудиофайлы никогда не покидают сервер. Короткие голосовые запросы ($\le 60$ с) обслуживаются быстрым воркером `worker-fast` прямо из оперативной памяти ($\le 2{,}5$ с). Длинные телефонные звонки (до 3 часов) обрабатываются через очередь Redis Streams воркером `worker-long`. Метаданные, русскоязычный полнотекстовый поиск и векторные эмбеддинги тем хранятся в **PostgreSQL 16 с расширением pgvector**. Опциональный внешний LLM-провайдер отключен по умолчанию, изолирован интерфейсом-портом и физически способен получать только деперсонализированный (PII-masked) текст.
-
-Подробный дизайн-документ: [docs/architecture.md](docs/architecture.md)  
-Архитектурные решения (ADR): [docs/decisions.md](docs/decisions.md)
+Сервис спроектирован для работы **в закрытом контуре (On-Premise / Private Cloud)** без передачи звуковых и текстовых данных во внешние публичные облака.
 
 ---
 
-## Быстрый старт за 1 минуту
+## Оглавление
 
-### 1. Подготовка конфигурации
+1. [Архитектура системы](#архитектура-системы)
+2. [Профили запуска (`small` vs `local-full`)](#профили-запуска-small-vs-local-full)
+3. [Полный пайплайн обработки звонка](#полный-пайплайн-обработки-звонка)
+4. [Алгоритмы и модели](#алгоритмы-и-модели)
+   * [Распознавание речи (ASR)](#распознавание-речи-asr)
+   * [Акустическая диаризация (CAM++ + Якоря + HMM Витерби)](#акустическая-диаризация-cam--якоря--hmm-витерби)
+   * [Семантическая доразметка ролей через LLM](#семантическая-доразметка-ролей-через-llm)
+   * [Детерминированные речевые метрики](#детерминированные-речевые-метрики)
+   * [Маскирование персональных данных (PII)](#маскирование-персональных-данных-pii)
+   * [Смысловой анализ и контроль качества (LLM)](#смысловой-анализ-и-контроль-качества-llm)
+5. [Возможные недостатки и краевые случаи (Known Limitations)](#возможные-недостатки-и-краевые-случаи-known-limitations)
+6. [Быстрый старт и развертывание](#быстрый-старт-и-развертывание)
+7. [Контракт API и примеры вызовов](#контракт-api-и-примеры-вызовов)
+8. [Интеграции с CRM (Битрикс24, amoCRM)](#интеграции-с-crm-битрикс24-amocrm)
+9. [Веб-дашборд](#веб-дашборд)
+10. [Структура репозитория](#структура-репозитория)
+11. [Тестирование и контроль качества](#тестирование-и-контроль-качества)
+
+---
+
+## Архитектура системы
+
+Сервис реализован по архитектуре **модульного монолита с выделенными фоновыми воркерами (Modular Monolith with Dedicated Workers)**:
+
+```mermaid
+flowchart TD
+    Client(["Клиент / CRM / Браузер"]) -->|HTTP / Webhook| API["FastAPI API Gateway (порт 8000)"]
+    
+    subgraph Storage ["Хранилища и очереди"]
+        PG[("PostgreSQL 16 + pgvector")]
+        Redis[("Redis 7 (Streams, Queues, Cache)")]
+        MinIO[("MinIO S3 (Аудиофайлы)")]
+    end
+
+    API -->|Загрузка аудио| MinIO
+    API -->|Создание записи Call/Job| PG
+    API -->|XADD jobs_long| Redis
+    API -->|Голосовой поиск <= 2.5с| WF["Worker-Fast"]
+
+    subgraph Workers ["Фоновые исполнители"]
+        WL["Worker-Long (Обработка звонков)"]
+        WC["Worker-Callback (Доставка вебхуков)"]
+    end
+
+    subgraph LLM_Runtime ["Локальный LLM-рантайм"]
+        LLM["llama.cpp server (порт 8080)\nQwen 2.5 7B Instruct (GGUF Q4_K_M)"]
+    end
+
+    Redis -->|XREADGROUP jobs_long| WL
+    Redis -->|XREADGROUP callbacks| WC
+
+    WL -->|Чтение аудио| MinIO
+    WL -->|Whisper CT2 + CAM++ ONNX| WL
+    WL -->|Семантическая доразметка ролей & Анализ| LLM
+    WL -->|Сохранение сегментов и аналитики| PG
+    WL -->|XADD callbacks| Redis
+
+    WC -->|HMAC-SHA256 Callback| Client
+    API -.->|Мониторинг и дашборд| PG
+```
+
+### Основные компоненты комплекса:
+
+1. **`api` (FastAPI / Uvicorn)**:
+   * REST API endpoints, валидация входящих запросов, проверка токенов (Bearer / Dev-Token).
+   * Защита от SSRF при скачивании аудио по URL (блокировка loopback, RFC1918, link-local, облачных metadata-сервисов).
+   * Раздача веб-дашборда с интерактивным аудиоплеером и караоке-таймкодами.
+   * Health/Readiness пробы (`/health`, `/ready`).
+2. **`worker-long` (Python Async Worker)**:
+   * Читает очередь `jobs_long` через Redis Streams (с поддержкой Consumer Groups и восстановления зависших задач через Pending Entries List).
+   * Выполняет полный конвейер: чанкинг, ASR (Whisper), CAM++ диаризацию, марковское сглаживание, LLM-доразметку ролей, расчет акустических метрик, PII-маскирование и генерацию структурированного JSON-анализа.
+3. **`worker-fast` (Python Async Worker)**:
+   * Выполняет сверхбыструю микро-транскрипцию коротких голосовых запросов ($\le 60$ с) для голосового поиска прямо в оперативной памяти без записи промежуточных файлов на диск ($t \le 2.5$ с).
+4. **`worker-callback` (Python Async Worker)**:
+   * Гарантированная доставка вебхуков с результатами анализа в вызывающие системы с расчетом HMAC-SHA256 подписи в заголовке `X-Signature-SHA256` и экспоненциальным backoff (до 5 попыток).
+5. **`llm-runtime` (llama.cpp server)**:
+   * Контейнер на базе `ghcr.io/ggml-org/llama.cpp:server`.
+   * Обслуживает локальную квантованную модель `Qwen 2.5 7B Instruct` (`qwen2.5-7b-instruct-q4_k_m.gguf`, 4.4 ГБ).
+   * Предоставляет OpenAI-совместимый эндпоинт `/v1/chat/completions` со строгим форсированием JSON-схем (`json_schema`).
+6. **`postgres` (PostgreSQL 16 + pgvector)**:
+   * Хранит звонки (`calls`), задачи (`jobs`), порепличные сегменты (`transcript_segments`), структурированные анализы (`analyses`), историю вебхуков (`callback_logs`) и эмбеддинги фраз (`embeddings`).
+7. **`redis` (Redis 7 Alpine)**:
+   * Персистентные потоки задач Redis Streams, rate limiting (Sliding Window), кэширование токенов.
+8. **`minio` (S3-совместимое объектное хранилище)**:
+   * Хранение исходных и обработанных аудиозаписей с presigned URL доступом и поддержкой жизненного цикла (retention policy).
+
+---
+
+## Профили запуска (`small` vs `local-full`)
+
+Система поддерживает два режима развертывания, переключаемых переменной `APP_PROFILE` в файле [`.env`](.env):
+
+| Параметр | Профиль `small` (по умолчанию) | Профиль `local-full` |
+| :--- | :--- | :--- |
+| **Целевое железо** | Слабые CPU-серверы (2–4 vCPU, 4 ГБ RAM) | Серверы с запасом CPU или GPU (4–8 vCPU, 8–16 ГБ RAM) |
+| **Контейнер LLM** | Не запускается (0 МБ ОЗУ) | Запущен `llm-runtime` (занимает ~3.3–4.0 ГБ ОЗУ) |
+| **Распознавание речи** | `faster-whisper` (int8 на CPU) | `faster-whisper` (int8 на CPU) |
+| **Акустическая диаризация** | CAM++ ONNX + Якоря + HMM Витерби | CAM++ ONNX + Якоря + HMM Витерби |
+| **Семантическая доразметка ролей** | Регулярные выражения и эвристики | **Qwen 2.5 7B** (семантическая проверка реплик) |
+| **Анализ звонка и чек-лист** | Детерминированный rule-based анализатор | **Qwen 2.5 7B** (глубокий анализ по JSON-схеме) |
+| **Саммари звонка** | Шаблонное резюме по ключевым словам | Живой человекочитаемый смысловой пересказ |
+| **Запуск** | `docker compose up -d` | `docker compose --profile local-full up -d` |
+
+---
+
+## Полный пайплайн обработки звонка
+
+Каждая аудиозапись, поступающая в `worker-long`, последовательно проходит следующие этапы:
+
+```
+[Аудиозапись (MP3/WAV/OGG/AAC)]
+            │
+            ▼ (Шаг 1: Препроцессинг)
+  FFmpeg 16kHz 16-bit PCM + Проверка изоляции каналов
+   ├── Если Stereo и каналы изолированы -> Стерео-сплит (ch0=manager, ch1=client)
+   └── Если Mono или Dual-Mono -> Моно-пайплайн
+            │
+            ▼ (Шаг 2: Адаптивный чанкинг & VAD)
+  Silero VAD v5 находит естественные паузы тишины (длина чанков 60-180с)
+            │
+            ▼ (Шаг 3: ASR Распознавание речи)
+  faster-whisper (CTranslate2 int8) -> Слова с таймкодами + ITN нормализация
+            │
+            ▼ (Шаг 4: Акустическая диаризация)
+  split_segment_into_turns -> CAM++ ONNX (192-dim) -> Якорная кластеризация -> HMM Витерби
+            │
+            ▼ (Шаг 5: Семантическая доразметка ролей)
+   ├── В профиле local-full: Запрос в Qwen 2.5 7B (исправление перепутанных ролей)
+   └── В профиле small: Регулярные выражения и речевые паттерны
+            │
+            ▼ (Шаг 6: Речевые метрики)
+  Расчет пауз, перебиваний, долей речи, WPM менеджера и клиента (чистая математика)
+            │
+            ▼ (Шаг 7: PII-маскирование и сохранение в БД)
+  Regex + Natasha NER скрывают телефоны, email, карты, паспорта -> Запись в PostgreSQL
+            │
+            ▼ (Шаг 8: Смысловой бизнес-анализ)
+   ├── В профиле local-full: Qwen 2.5 7B генерирует JSON-анализ, чек-лист, договоренности
+   └── В профиле small: Rule-based анализатор (taxonomy.yaml, checklist.yaml)
+            │
+            ▼ (Шаг 9: Доставка вебхуков)
+  Worker-Callback отправляет HMAC-подписанный JSON в CRM (Битрикс24 / amoCRM)
+```
+
+---
+
+## Алгоритмы и модели
+
+### Распознавание речи (ASR)
+* **Движок**: `faster-whisper` на базе оптимизированного C++ рантайма **CTranslate2**.
+* **Модели**:
+  * Основная: `./models/whisper-podlodka-turbo-ct2` (адаптированная русскоязычная Turbo-модель).
+  * Поддерживаются стандартные веса: `small`, `base`, `large-v3`.
+* **Квантование**: `int8` на CPU, обеспечивающее скорость транскрипции в 3–5 раз быстрее реального времени на обычных серверных ядрах без GPU.
+* **Таймкоды слов**: флаг `word_timestamps=True` извлекает точные временные границы каждого слова для разделения реплик и подсчета темпа речи.
+* **Специализированная нормализация (`RussianTextNormalizer`)**:
+  * Преобразует числительные в форматы наружной рекламы («три на шесть» $\rightarrow$ «3×6», «ситиборд два на четыре» $\rightarrow$ «ситиборд 2×4»).
+  * Распознает и форматирует денежные суммы («сто пятьдесят тысяч рублей» $\rightarrow$ «150 000 руб.»).
+  * Корректирует специфические топонимы (МКАД, ТТК, шоссе, станции метро Москвы и МО).
+
+---
+
+### Акустическая диаризация (CAM++ + Якоря + HMM Витерби)
+
+В модуле [`app/diarization/mono_diarizer.py`](app/diarization/mono_diarizer.py) реализован трехступенчатый акустический алгоритм:
+
+1. **Разбиение сегментов на реплики (`split_segment_into_turns`)**:
+   * Whisper часто объединяет в один сегмент фразу менеджера и ответ клиента, если между ними была короткая пауза.
+   * Алгоритм анализирует таймкоды соседних слов: если пауза $\ge 0.35$ с или слово оканчивается знаком препинания (`.`, `?`, `!`) при паузе $\ge 0.20$ с, сегмент разделяется на независимые реплики.
+2. **Извлечение нейросетевых d-векторов CAM++**:
+   * Используется модель **CAM++** (`models/campplus.onnx`, 28 МБ) через `onnxruntime` на CPU.
+   * На входе: 80-полосные log Mel-фильтры (fbank), вычисляемые через `librosa`.
+   * На выходе: 192-мерный нормализованный вектор акустического отпечатка голоса.
+   * Для коротких реплик ($< 0.8$ с) применяется симметричный контекстный паддинг окружающего аудио для исключения артефактов граничных условий.
+3. **Якорная кластеризация (`_find_anchor_centroids`)**:
+   * Из всех реплик отбираются кандидаты с длительностью $\ge 2.0$ с (чистый голос без шумов междометий).
+   * Вычисляется матрица косинусных расстояний $D_{ij} = 1 - \langle \mathbf{x}_i, \mathbf{x}_j \rangle$.
+   * Находится пара кандидатов с максимальным расстоянием — голосовые полюса Спикера 0 и Спикера 1.
+   * Вокруг них группируются остальные длинные реплики для формирования устойчивых центроидов $C_0$ и $C_1$.
+   * Если максимальная дистанция $< 0.08$ (`min_speaker_distance`), звонок классифицируется как **монолог** одного человека (`SPEAKER_0`).
+4. **Марковское сглаживание переходов Витерби (`_viterbi_smoothing`)**:
+   * Решает проблему «дрожания» спикеров на коротких словах («да», «ага», «алло»).
+   * Вычисляется относительная нормализованная маржа сходства:
+     $$\Delta s_i = \frac{\langle \mathbf{x}_i, C_0 \rangle - \langle \mathbf{x}_i, C_1 \rangle}{1 - \langle C_0, C_1 \rangle}$$
+     Это гарантирует контрастность сигнала (от $-1.0$ до $+1.0$) даже для двух очень похожих мужских или женских голосов.
+   * Вероятность смены спикера $P(\text{switch})$ зависит от паузы между репликами:
+     * Пауза $< 0.25$ с: $P(\text{switch}) = 0.15$ (человек продолжает свою мысль).
+     * Пауза $0.25$–$0.50$ с: $P(\text{switch}) = 0.35$.
+     * Пауза $\ge 0.50$ с: $P(\text{switch}) = 0.50$ (естественная диалоговая пауза).
+   * Алгоритм динамического программирования Витерби восстанавливает глобально оптимальную последовательность спикеров.
+
+---
+
+### Семантическая доразметка ролей через LLM
+
+В профиле `local-full` в модуле [`app/llm/local_adapter.py`](app/llm/local_adapter.py) подключен метод [`refine_speaker_roles`](app/llm/local_adapter.py#L96-L190):
+
+* Перед сохранением в базу данных список всех реплик отправляется в модель **Qwen 2.5 7B Instruct**.
+* Модель оценивает прагматику реплик (вопрос-ответ, предложение условий, презентация компании, запрос счета) и возвращает строгий JSON-массив:
+  ```json
+  { "roles": ["manager", "client", "manager", "client", ...] }
+  ```
+* Если акустическая диаризация случайно перепутала спикера на короткой фразе, семантическая модель возвращает ей истинную роль.
+* В случае таймаута или ошибки сети система автоматически откатывается на результаты эвристического классификатора без падения задачи.
+
+---
+
+### Детерминированные речевые метрики
+
+Модуль [`app/metrics/speech_metrics.py`](app/metrics/speech_metrics.py) рассчитывает объективные показатели речи **строго детерминированным кодом (без участия нейросетей и без риска галлюцинаций)**:
+
+* **Доли речи (`manager_speech_share`, `client_speech_share`)**: процент чистого времени говорения каждого участника.
+* **Количество перебиваний (`interruptions_count`)**: случаи, когда один участник начинает говорить во время речи другого с перекрытием более $0.3$ секунды.
+* **Длительность тишины (`silence_duration_sec`)**: суммарное время пауз в разговоре (вычисляется через математическое объединение отрезков активной речи).
+* **Темп речи (`manager_wpm`, `client_wpm`)**: скорость говорения в словах в минуту.
+
+---
+
+### Маскирование персональных данных (PII)
+
+Модуль [`app/pii/masker.py`](app/pii/masker.py) гарантирует безопасность хранения клиентских данных:
+
+* Номера телефонов (РФ и международные форматы) $\rightarrow$ `[PHONE_NUMBER]`.
+* Адреса электронной почты $\rightarrow$ `[EMAIL]`.
+* Номера банковских карт (алгоритм Луна и маски по 16 цифрам) $\rightarrow$ `[BANK_CARD]`.
+* Серии и номера паспортов РФ $\rightarrow$ `[PASSPORT]`.
+* Маскирование выполняется **до** передачи текста в блок семантического анализа и сохранения в публичные поля транскрипта.
+
+---
+
+### Смысловой анализ и контроль качества (LLM)
+
+В профиле `local-full` LLM заполняет контракт согласно схеме [`schemas/analysis_schema_v1.json`](schemas/analysis_schema_v1.json):
+
+1. **`summary`**: связный пересказ сути разговора до 1000 символов.
+2. **`call_result`**: итог (`success_deal`, `follow_up_scheduled`, `info_provided`, `client_declined`, `unclear_spam`).
+3. **`inquiry_type`**: тематика (`pricing`, `availability`, `inventory_search`, `complaint` и др.).
+4. **`entities`**: извлеченные города, рекламные форматы, объемы, бюджет и планируемые периоды.
+5. **`agreements`**: список конкретных обязательств сторон с дедлайнами (`who`, `what`, `deadline`).
+6. **`sentiment`**: тональность клиента (`positive`, `neutral`, `negative`, `conflict`) и тон менеджера (`polite_constructive`, `indifferent`, `rude`).
+7. **`manager_checklist`**: автоматическая оценка звонка по 5 критериям:
+   * Приветствие и представление компании.
+   * Выявление потребностей клиента.
+   * Предложение вариантов размещения.
+   * Озвучивание следующего шага взаимодействия.
+   * Фиксация контактов клиента.
+   * Поиск запрещенных стоп-слов из `config/checklist.yaml`.
+   * Итоговый скоринг менеджера от 0 до 5.
+
+---
+
+## Возможные недостатки и краевые случаи (Known Limitations)
+
+Для обеспечения прозрачности эксплуатации ниже приведены сценарии, в которых математические эвристики или локальная модель могут допускать неточности:
+
+### 1. Экстремально асимметричный диалог в моно-записи
+* **Суть**: Менеджер произносит длинные фразы по 10 секунд, а клиент на протяжении всего звонка отвечает исключительно односложно: *«Да»*, *«Алло»*, *«Угу»* (ни одной фразы длительнее $1.5$ с).
+* **Следствие**: Алгоритм якорной кластеризации CAM++ отберет в качестве якорей фразы только менеджера. Если вариативность голоса менеджера низкая, акустическая модель может счесть запись монологом и окрасить поддакивания клиента в цвет менеджера.
+* **Компенсация**: В профиле `local-full` семантическая доразметка Qwen выправляет подобные реплики по смыслу контекста.
+
+### 2. Быстрые перебивания речи с минимальной паузой (Cross-talk)
+* **Суть**: Один собеседник вклинивается со словом *«Подождите»* в микропаузу речи другого собеседника ($< 0.2$ с).
+* **Следствие**: Из-за штрафа марковской модели за частые перескоки на коротких интервалах слово *«Подождите»* может быть приписано первому говорящему.
+
+### 3. Резкая смена акустического тракта одним человеком
+* **Суть**: Собеседник в процессе звонка переключается с телефонной трубки на громкую связь в автомобиле (появляется реверберация помещения и шум дороги).
+* **Следствие**: CAM++ может воспринять изменившийся спектральный окрас одного и того же человека как появление второго спикера.
+
+### 4. Производительность LLM на чистом CPU
+* **Суть**: Инференс Qwen 2.5 7B на 4 ядрах CPU через llama.cpp генерирует текст со скоростью ~4.8–5.2 токенов/сек.
+* **Следствие**: Полный смысловой анализ 3-минутного звонка занимает около 20–35 секунд (включая проверку ролей). Это полностью штатно для фоновой асинхронной очереди `worker-long`, но не подходит для синхронного realtime-ответа.
+
+### 5. Лимит контекстного окна LLM
+* **Суть**: В `docker-compose.yml` размер контекста `llama-server` сконфигурирован флагом `-c 4096`.
+* **Следствие**: Звонки длительностью свыше 40 минут с непрерывной речью требуют предварительного сжатия или чанкинга транскрипта перед отправкой в LLM во избежание превышения лимита токенов.
+
+---
+
+## Быстрый старт и развертывание
+
+### Требования к системе
+* **ОС**: Linux (Ubuntu 22.04+, Debian 12, Arch Linux, RHEL 9).
+* **Docker & Docker Compose**: Docker Engine 24+ с поддержкой Docker Compose v2.
+* **Ресурсы**:
+  * Профиль `small`: от 2 vCPU, от 4 ГБ RAM, 10 ГБ на диске.
+  * Профиль `local-full`: от 4–8 vCPU, от 8–16 ГБ RAM, 20 ГБ на диске.
+
+### 1. Клонирование и настройка окружения
 ```bash
+git clone https://github.com/zetgame123/apc-speech.git
+cd apc-speech
 cp .env.example .env
 ```
 
-### 2. Запуск комплекса (Профиль `small`: 2 vCPU / 4 GB RAM, без GPU)
-```bash
-docker compose up -d --build
-```
+Отредактируйте `.env`:
+* Для базового легковесного режима: `APP_PROFILE=small`
+* Для режима с локальной нейросетью Qwen 2.5 7B: `APP_PROFILE=local-full`
+* Задайте `DEV_TOKEN=my-secure-token` и `CALLBACK_SIGNING_SECRET`.
 
-### 3. Запуск с локальной LLM (Профиль `local-full`: 8 vCPU / 32 GB RAM или GPU)
+### 2. Загрузка моделей
 ```bash
+# Загрузка весов Whisper, CAM++ ONNX и Qwen GGUF
+python3 scripts/download_models.py
+```
+Файлы будут сохранены в каталог `./models/`:
+* `models/campplus.onnx` (~28 МБ)
+* `models/whisper-podlodka-turbo-ct2/` (~1.6 ГБ)
+* `models/qwen2.5-7b-instruct-q4_k_m.gguf` (~4.4 ГБ, для `local-full`)
+
+### 3. Запуск контейнеров
+
+```bash
+# Для профиля small (без LLM, 4 ГБ ОЗУ)
+docker compose up -d --build
+
+# Для профиля local-full (с Qwen 2.5 7B, 8+ ГБ ОЗУ)
 docker compose --profile local-full up -d --build
 ```
 
-### 4. Проверка работоспособности
+### 4. Проверка состояния
 ```bash
-# Проверка жизнеспособности (Liveness)
-curl http://localhost:8000/health
+# Статус всех контейнеров
+docker compose --profile local-full ps
 
-# Проверка готовности зависимостей (Readiness: Postgres, Redis, MinIO, ASR)
-curl http://localhost:8000/ready
+# Проверка API и динамического профиля
+curl -s http://localhost:8000/health | jq .
+```
+Ответ:
+```json
+{
+  "status": "healthy",
+  "app_profile": "local-full",
+  "llm_model": "qwen2.5-7b-instruct",
+  "version": "1.0.0"
+}
 ```
 
 ---
 
-## Примеры использования API
+## Контракт API и примеры вызовов
 
-### 1. Голосовой поиск (Voice Search $\le 2{,}5$ с)
-```bash
-curl -X POST "http://localhost:8000/v1/voice/search?namespace=outdoor_msk" \
-  -H "Authorization: Bearer dev-token" \
-  -H "Content-Type: audio/wav" \
-  --data-binary "@test_query.wav"
-```
+Все запросы авторизуются через заголовок `Authorization: Bearer <TOKEN>`.
+Токены привязаны к областям видимости (`admin`, `write`, `read`) и могут быть изолированы по конкретному `namespace`.
 
-### 2. Загрузка телефонного звонка на полный анализ
+### Общие принципы контракта (`common-requirements.md`):
+* **Версионирование**: все рабочие маршруты находятся под префиксом `/v1/`.
+* **Заголовок `X-Request-Id`**: принимается от клиента или генерируется сервисом, возвращается во всех ответах и пишется в логи.
+* **Единый формат ошибок**:
+  ```json
+  {
+    "error": "machine_slug",
+    "message": "Понятное описание на русском языке",
+    "details": {}
+  }
+  ```
+  Коды ответов: `400` (неверные параметры), `401` (нет токена), `403` (недостаточно прав / чужой namespace), `404` (не найдено), `409` (конфликт идемпотентности), `413` (превышен лимит размера), `422` (ошибка валидации схемы), `429` (лимит запросов с заголовком `Retry-After`), `5xx` (сбой сервиса).
+* **Идемпотентность**: поддержка заголовка `Idempotency-Key` и автоматическая дедупликация по SHA-256 хэшу файла и параметров.
+
+---
+
+### 1. Создание задания на обработку аудиозаписи
+
+Сервис поддерживает **3 способа передачи аудио**:
+
+#### Вариант А: Загрузка файла (`POST /v1/jobs/upload`)
+Поддерживает форматы `wav`, `mp3`, `ogg`, `opus`, `m4a`, `flac`, `webm` и телефонные кодеки 8 кГц (`G.711 A-law/mu-law`, `GSM`). Загрузка выполняется потоково чанками по 1 МБ с проверкой лимита (до 500 МБ).
 ```bash
 curl -X POST "http://localhost:8000/v1/jobs/upload" \
-  -H "Authorization: Bearer dev-token" \
+  -H "Authorization: Bearer my-secure-token" \
+  -H "Idempotency-Key: unique-key-12345" \
   -F "namespace=outdoor_msk" \
   -F "file=@call_record.mp3" \
-  -F "external_id=call_789" \
-  -F "callback_url=https://platform.internal/webhooks/speech"
+  -F "external_id=crm_lead_12345" \
+  -F "direction=inbound" \
+  -F "manager_id=mgr_07" \
+  -F "client_id=cli_88" \
+  -F "channel_manager=0" \
+  -F "vocabulary_hints=щиты 3×6, Балашиха, ситиборд" \
+  -F "callback_url=https://crm.company.ru/webhooks/speech"
 ```
-Ответ: `202 Accepted` с `job_id`.
 
-### 3. Опрос статуса задания
+#### Вариант Б: Скачивание по URL (`POST /v1/jobs/by-url`)
+Аудио скачивается сервисом по ссылке с обязательной проверкой SSRF (блокируются приватные подсети, loopback и облачные метаданные):
 ```bash
-curl -X GET "http://localhost:8000/v1/jobs/{job_id}?namespace=outdoor_msk" \
-  -H "Authorization: Bearer dev-token"
+curl -X POST "http://localhost:8000/v1/jobs/by-url" \
+  -H "Authorization: Bearer my-secure-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "namespace": "outdoor_msk",
+    "url": "https://storage.provider.ru/records/call_999.wav",
+    "callback_url": "https://crm.company.ru/webhooks/speech",
+    "language": "ru",
+    "metadata": {
+      "external_id": "crm_call_999",
+      "direction": "inbound",
+      "manager_id": "mgr_07",
+      "client_id": "cli_88"
+    },
+    "options": {
+      "channel_manager": 0,
+      "vocabulary_hints": ["суперсайт", "МКАД", "3×6"]
+    }
+  }'
 ```
 
-### 4. Получение транскрипта
+#### Вариант В: Объект в S3/MinIO (`POST /v1/jobs/by-s3`)
+Прямой запуск обработки файла, уже находящегося в S3/MinIO:
 ```bash
-# JSON с таймкодами слов и ролями участников (маскированный)
-curl -X GET "http://localhost:8000/v1/calls/{call_id}/transcript?namespace=outdoor_msk&masked=true" \
-  -H "Authorization: Bearer dev-token"
-
-# Экспорт в субтитры SRT
-curl -X GET "http://localhost:8000/v1/calls/{call_id}/transcript?namespace=outdoor_msk&format=srt" \
-  -H "Authorization: Bearer dev-token"
+curl -X POST "http://localhost:8000/v1/jobs/by-s3" \
+  -H "Authorization: Bearer my-secure-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "namespace": "outdoor_msk",
+    "s3_bucket": "raw-audio",
+    "s3_key": "inbox/call_555.wav",
+    "callback_url": "https://crm.company.ru/webhooks/speech",
+    "options": {
+      "vocabulary_hints": ["3×6", "Химки"]
+    }
+  }'
 ```
+
+**Ответ `202 Accepted` во всех вариантах**:
+```json
+{
+  "job_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "status": "queued",
+  "status_url": "/v1/jobs/9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d?namespace=outdoor_msk",
+  "created_at": "2026-10-01T00:30:00Z"
+}
+```
+
+---
+
+### 2. Проверка статуса выполнения (`GET /v1/jobs/{job_id}`)
+```bash
+curl -s "http://localhost:8000/v1/jobs/9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d?namespace=outdoor_msk" \
+  -H "Authorization: Bearer my-secure-token" | jq .
+```
+**Ответ при завершении**:
+```json
+{
+  "job_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "call_id": "c1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c",
+  "status": "succeeded",
+  "progress": 100,
+  "step": "completed",
+  "result_url": "/v1/calls/c1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c/analysis?namespace=outdoor_msk",
+  "error": null,
+  "created_at": "2026-10-01T00:30:00Z",
+  "updated_at": "2026-10-01T00:30:45Z"
+}
+```
+Статусы задания: `queued` $\to$ `running` (с указанием прогресса 0–100% и текущего шага) $\to$ `succeeded` или `failed`.
+
+---
+
+### 3. Подписанный Callback с результатами (HMAC-SHA256)
+При указании `callback_url` сервис отправляет результат завершения задания:
+* **Заголовки безопасности**:
+  * `X-Apc-Timestamp`: unix-секунды генерации запроса.
+  * `X-Apc-Signature`: `sha256=HMAC_SHA256("{timestamp}.{raw_body}", CALLBACK_SIGNING_SECRET)`.
+* **Защита от replay-атак**: подпись пересчитывается для каждой попытки, платформа отклоняет запросы старше 5 минут.
+* **Надёжность доставки**: не менее 5 попыток с нарастающей задержкой (`[5, 15, 60, 300, 900]` секунд), логирование попыток в БД.
+
+---
+
+### 4. Получение структурированного разбора звонка (`GET /v1/calls/{call_id}/analysis`)
+```bash
+curl -s "http://localhost:8000/v1/calls/c1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c/analysis?namespace=outdoor_msk" \
+  -H "Authorization: Bearer my-secure-token" | jq .
+```
+**Ответ по схеме `analysis_schema_v1.json`**:
+```json
+{
+  "call_id": "c1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c",
+  "schema_version": "1.0.0",
+  "prompt_version": "v1.2-ru-outdoor",
+  "summary": "Клиент запросил подбор рекламных поверхностей 3×6 в Балашихе на октябрь. Менеджер предложил свободные щиты и пообещал направить расчет.",
+  "call_result": "commercial_offer_requested",
+  "inquiry_type": "inventory_search",
+  "entities": {
+    "cities": ["Балашиха"],
+    "formats": ["3×6", "щит"],
+    "quantity": 3,
+    "target_period": "октябрь",
+    "budget_rub": 90000,
+    "product_category": "недвижимость"
+  },
+  "agreements": [
+    {
+      "who": "manager",
+      "what": "Подготовить и отправить коммерческое предложение со свободными сторонами 3×6",
+      "deadline": "сегодня до 18:00"
+    }
+  ],
+  "sentiment": {
+    "client_overall": "positive",
+    "manager_tone": "polite_constructive"
+  },
+  "manager_checklist": {
+    "greeting": true,
+    "need_identification": true,
+    "options_offered": true,
+    "next_step_named": true,
+    "contacts_taken": true,
+    "forbidden_words_found": [],
+    "score": 5
+  },
+  "deterministic_speech_metrics": {
+    "manager_speech_share": 0.54,
+    "client_speech_share": 0.41,
+    "interruptions_count": 2,
+    "pauses_count": 3,
+    "manager_wpm": 128,
+    "client_wpm": 114
+  }
+}
+```
+
+---
+
+### 5. Получение расшифровки звонка (`GET /v1/calls/{call_id}/transcript`)
+Поддерживает 4 формата выдачи (`format=json|text|srt|vtt`) и управление маскированием (`masked=true|false`):
+```bash
+# JSON с посегментными и пословными таймкодами
+curl -s "http://localhost:8000/v1/calls/c1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c/transcript?namespace=outdoor_msk&format=json" \
+  -H "Authorization: Bearer my-secure-token"
+
+# SRT субтитры
+curl -s "http://localhost:8000/v1/calls/c1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c/transcript?namespace=outdoor_msk&format=srt" \
+  -H "Authorization: Bearer my-secure-token"
+
+# VTT субтитры
+curl -s "http://localhost:8000/v1/calls/c1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c/transcript?namespace=outdoor_msk&format=vtt" \
+  -H "Authorization: Bearer my-secure-token"
+
+# Чистый текст реплик
+curl -s "http://localhost:8000/v1/calls/c1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c/transcript?namespace=outdoor_msk&format=text" \
+  -H "Authorization: Bearer my-secure-token"
+```
+
+---
+
+### 6. Поиск звонков и фильтры (`GET /v1/calls`)
+Поддерживает полнотекстовый поиск по содержимому расшифровок, фильтры и курсорную пагинацию:
+```bash
+curl -s "http://localhost:8000/v1/calls?namespace=outdoor_msk&q=Балашиха&inquiry_type=inventory_search&limit=20" \
+  -H "Authorization: Bearer my-secure-token"
+```
+**Параметры**:
+* `q`: полнотекстовый поиск по тексту реплик.
+* `manager_id`: фильтрация по ID менеджера.
+* `inquiry_type`: фильтрация по теме из таксономии.
+* `date_from` / `date_to`: временной диапазон.
+* `cursor`: курсор для постраничной навигации (`next_cursor` в ответе).
+
+---
+
+### 7. Сверхбыстрый синхронный голосовой поиск (`POST /v1/voice/search`)
+Предназначен для голосового ввода в интерфейсе («щиты 3×6 в Балашихе»):
+```bash
+curl -X POST "http://localhost:8000/v1/voice/search?namespace=outdoor_msk&language=ru" \
+  -H "Authorization: Bearer my-secure-token" \
+  -H "Content-Type: audio/wav" \
+  --data-binary "@query_voice.wav"
+```
+**Ответ за $\le 2.5$ секунды (фактически 1.2–1.4 с)**:
+```json
+{
+  "text": "щиты 3×6 на Кутузовском проспекте свободен ноябрь",
+  "language": "ru",
+  "confidence": 0.96,
+  "duration_sec": 3.42,
+  "processing_time_ms": 1250
+}
+```
+*Обработка выполняется полностью в оперативной памяти без сохранения аудио на диск или в S3.*
+
+---
+
+### 8. Сводная аналитика и тренды (`GET /v1/analytics/summary`)
+```bash
+curl -s "http://localhost:8000/v1/analytics/summary?namespace=outdoor_msk&date_from=2026-09-01T00:00:00Z" \
+  -H "Authorization: Bearer my-secure-token" | jq .
+```
+Возвращает:
+* Общее число звонков.
+* Распределение звонков по темам таксономии (`pricing`, `inventory_search`, и др.).
+* Топ упоминаемых городов и форматов конструкций.
+* Средние показатели выполнения каждого пункта чек-листа продаж (greeting %, need_id %, options %, next_step %, contacts %).
+* Тренды динамики звонков по неделям (ISO-недели).
+
+---
+
+### 9. Семантическая кластеризация текстов (`POST /v1/texts/analyze`)
+Группирует пачку текстовых поисковых запросов в смысловые темы без аудио с помощью локального TF-IDF + HDBSCAN/KMeans:
+```bash
+curl -X POST "http://localhost:8000/v1/texts/analyze" \
+  -H "Authorization: Bearer my-secure-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "namespace": "outdoor_msk",
+    "texts": [
+      "щиты 3 на 6 в Балашихе",
+      "билборды на шоссе Энтузиастов",
+      "стоимость размещения рекламы",
+      "прайс лист на щиты",
+      "суперсайт на Ленинградке"
+    ]
+  }'
+```
+**Ответ**:
+```json
+{
+  "total_texts": 5,
+  "clusters": [
+    {
+      "cluster_id": 1,
+      "label": "Подбор инвентаря и локаций",
+      "size": 3,
+      "representative_queries": ["щиты 3 на 6 в Балашихе", "билборды на шоссе Энтузиастов", "суперсайт на Ленинградке"]
+    },
+    {
+      "cluster_id": 2,
+      "label": "Стоимость и прайс-лист",
+      "size": 2,
+      "representative_queries": ["стоимость размещения рекламы", "прайс лист на щиты"]
+    }
+  ]
+}
+```
+
+---
+
+### 10. Экспорт аналитики в CSV (`GET /v1/analytics/export_csv`)
+Выгрузка звонков и результатов анализа в формате CSV (доступна также по алиасу `/v1/analytics/export.csv`):
+```bash
+curl -s "http://localhost:8000/v1/analytics/export_csv?namespace=outdoor_msk" \
+  -H "Authorization: Bearer my-secure-token" \
+  -o export.csv
+```
+
+---
+
+### 11. Удаление данных по 152-ФЗ / GDPR (`DELETE /v1/data/delete`)
+Единый эндпоинт для гарантированного удаления персональных данных (требуется scope `admin`):
+```bash
+# Удаление конкретной записи
+curl -X DELETE "http://localhost:8000/v1/data/delete?namespace=outdoor_msk&call_id=c1a2b3c4-..." \
+  -H "Authorization: Bearer admin-token"
+
+# Удаление всех данных клиента по client_id
+curl -X DELETE "http://localhost:8000/v1/data/delete?namespace=outdoor_msk&client_id=cli_88" \
+  -H "Authorization: Bearer admin-token"
+
+# Удаление данных старше определенной даты
+curl -X DELETE "http://localhost:8000/v1/data/delete?namespace=outdoor_msk&date_before=2026-01-01T00:00:00Z" \
+  -H "Authorization: Bearer admin-token"
+```
+*Удаляет аудиозаписи из MinIO/S3, транскрипты, сегменты и анализы из PostgreSQL, отменяет активные задания.*
+
+---
+
+### 12. Горячий отзыв токенов без перезапуска (`POST /v1/admin/tokens/revoke`)
+```bash
+curl -X POST "http://localhost:8000/v1/admin/tokens/revoke" \
+  -H "Authorization: Bearer admin-token" \
+  -H "Content-Type: application/json" \
+  -d '{"token_hash": "sha256_hash_of_revoked_token"}'
+```
+Отозванные хэши синхронизируются через Redis Set `revoked_tokens` между всеми инстансами API без перезапуска контейнеров.
+
+---
+
+### 13. Служебные эндпоинты
+* `GET /health`: статус `{"status": "ok", "version": "1.0.0", "profile": "local-full"}`.
+* `GET /ready`: проверка доступности зависимостей (PostgreSQL, Redis, MinIO S3). Возвращает `200` или `503`.
+* `GET /metrics`: метрики сервиса в текстовом формате Prometheus (счётчики запросов, сборщик мусора, длительность).
+
+---
+
+## Интеграция с телефонией CRM (Битрикс24)
+
+### Вебхук телефонии Битрикс24 (`POST /v1/integrations/bitrix24/webhook`)
+Сервис поддерживает прием исходящих вебхуков телефонии Битрикс24 (`ONVOICECOMMUNICATIONCALLRECORDING` или `ONEXTERNALCALLFINISHED`):
+* Автоматически извлекает URL записи звонка (`RECORD_URL`) и ID звонка (`CALL_ID`).
+* Проверяет безопасность URL через SSRF-валидатор.
+* Запускает фоновую обработку звонка.
+* По окончании анализа автоматически публикует структурированный отчет в таймлайн CRM:
+  * Итог звонка и тип обращения.
+  * Краткое резюме.
+  * Оценку менеджера по чек-листу (0–5).
+  * Ключевые договоренности.
+* Публикация использует строго маскированный текст для предотвращения утечки персональных данных.
+
+---
+
+## Веб-дашборд
+
+Встроенный веб-интерфейс доступен по адресу **`http://localhost:8000/dashboard`**:
+
+* **Динамический бейдж профиля**: автоматически опрашивает `/health` и отображает активный режим:
+  * `Profile: Small (Rule-Based, 0MB LLM)`
+  * `Profile: Local-Full (Qwen 2.5 7B LLM)`
+* **Интерактивный плеер звонка**:
+  * Воспроизведение оригинальной аудиозаписи через presigned URL MinIO.
+  * Караоке-подсветка текущей реплики синхронно со звуком.
+  * Цветовая дифференциация участников (`Менеджер` / `Клиент`).
+* **Визуализация аналитики**:
+  * Диаграммы баланса речи (менеджер vs клиент) и перебиваний.
+  * Индикаторы чек-листа продаж с детальной расшифровкой критериев.
+  * Блок зафиксированных договоренностей и дедлайнов.
+  * Быстрый поиск звонков по тексту реплик, сущностям и датам.
 
 ---
 
@@ -83,38 +729,81 @@ curl -X GET "http://localhost:8000/v1/calls/{call_id}/transcript?namespace=outdo
 
 ```
 .
-├── app/                        # Исходный код сервиса
-│   ├── api/                    # Маршруты FastAPI, middleware, auth
-│   ├── core/                   # Конфигурация Pydantic, логгер, безопасность
-│   ├── db/                     # Модели SQLAlchemy, подключение, репозитории
-│   ├── storage/                # MinIO S3 клиент с управлением retention
-│   ├── queue/                  # Redis Streams producer/consumer
-│   ├── asr/                    # FFmpeg, Silero VAD, faster-whisper, ITN
-│   ├── diarization/            # Стерео-сплит, моно d-vectors, эвристики ролей
-│   ├── metrics/                # Детерминированные акустические метрики (WPM, паузы)
-│   ├── pii/                    # Regex + Natasha NER маскирование ПДн
-│   ├── llm/                    # Порт семантического анализа и адаптеры (Local/External)
-│   └── workers/                # Точки входа воркеров (fast, long, callback)
-├── config/                     # YAML-конфиги таксономии, чек-листа и подсказок
-├── docs/                       # Архитектурная документация и ADR
-├── evaluation/                 # Оценочный стенд (WER, DER, F1-score)
-├── schemas/                    # JSON-схемы (analysis_schema_v1.json)
-├── tests/                      # Юнит, интеграционные и контрактные тесты
-├── openapi.yaml                # Спецификация контракта OpenAPI 3.1
-├── Dockerfile                  # Multi-stage сборка без root-прав
-└── docker-compose.yml          # Оркестрация полного стека
+├── app/
+│   ├── analytics/              # Локальная кластеризация запросов (TopicClusteringEngine)
+│   ├── api/                    # Роуты FastAPI (calls, jobs, voice, analytics, integrations, admin, health)
+│   ├── asr/                    # Движок faster-whisper, Silero VAD, нормализатор чисел и терминов
+│   ├── core/                   # Конфигурация Pydantic, безопасность, токены, SSRF, логгер structlog
+│   ├── db/                     # Модели SQLAlchemy (Call, Job, TranscriptSegment, Analysis, AudioObject)
+│   ├── diarization/            # Моно-диаризатор (CAM++ ONNX), эвристический классификатор ролей
+│   ├── integrations/           # Плагин интеграции с телефонией Битрикс24
+│   ├── llm/                    # LocalLlamaCppAdapter (Qwen), ExternalProviderAdapter (disabled), порт
+│   ├── metrics/                # Расчет акустических метрик речи (WPM, перебивания, паузы, доли речи)
+│   ├── pii/                    # Маскирование ПДн (телефоны, e-mail, карты, паспорта)
+│   ├── queue/                  # Redis Streams клиент с Consumer Groups и auto-healing
+│   ├── storage/                # MinIO S3 клиент с presigned URLs и проверкой объектов
+│   └── workers/                # Фоновые воркеры (long_audio, fast_voice_search, callback_dispatcher)
+├── config/
+│   ├── checklist.yaml          # Чек-лист оценки менеджера (редактируется без кода)
+│   ├── taxonomy.yaml           # Таксономия тем обращений (редактируется без кода)
+│   └── vocabulary_hints.yaml   # Словарь подсказок (400+ терминов наружной рекламы, городов, шоссе, метро)
+├── docs/
+│   ├── architecture.md         # Архитектурный дизайн (включая протокол WebSocket-стриминга)
+│   ├── benchmark-report.md     # Отчёт о замерах производительности (WER, DER, RTF, Latency)
+│   ├── decisions.md            # Принятые архитектурные решения (ADR-001 — ADR-010)
+│   ├── known-issues.md         # Известные ограничения и технический долг
+│   ├── questions.md            # Вопросы и согласования с заказчиком
+│   └── runbook.md              # Инструкции по эксплуатации и инцидентам
+├── evaluation/                 # Оценочный стенд (wer_cer.py, der.py, run.py)
+├── models/                     # Локальные модели (Whisper, CAM++ ONNX, Qwen 2.5 7B GGUF)
+├── schemas/                    # JSON-схема анализа (analysis_schema_v1.json)
+├── scripts/                    # S3 Inbox watcher, скрипты замеров и бенчмарков
+├── tests/                      # Полный набор тестов (unit, integration, contract) — 79 тестов
+├── Dockerfile                  # Multi-stage Dockerfile без root-прав (пользователь apcuser)
+├── docker-compose.yml          # Оркестрация полного стека (8 контейнеров с healthcheck)
+└── openapi.yaml                # Спецификация OpenAPI 3.1
 ```
 
 ---
 
-## Эксплуатация и Troubleshooting
+## Тестирование и контроль качества
 
-* **Что делать, если задача зависла?**  
-  Супервизор воркеров автоматически возвращает не подтвержденные задачи через Redis Pending Entries List (PEL) по истечении 120 секунд таймаута аренды.
-* **Что делать, если памяти $< 4$ GB и процесс падает с OOM?**  
-  Убедитесь, что параметр `ASR_MODEL_NAME=small` и `ASR_COMPUTE_TYPE=int8` в `.env`. Профиль `small` не должен запускать `llm-runtime`.
-* **Как протестировать локально без Docker?**  
-  Установите зависимости через `uv sync` и запустите тесты:
-  ```bash
-  pytest -v
-  ```
+Проект покрыт автоматическими тестами на базе `pytest` (**79 тестов**):
+* **Контрактные тесты API**: соответствие схеме OpenAPI 3.1, ответы `/health`, `/ready`, `/metrics`, экспорт CSV.
+* **Тесты приёма аудио**: загрузка multipart, URL (включая защиту от SSRF), объекты S3/MinIO.
+* **Акустические тесты диаризации**: CAM++ ONNX, сплит стерео, классификация ролей «менеджер/клиент».
+* **Тесты детерминированных метрик**: корректность расчета WPM, интервалов пауз и перебиваний.
+* **Тесты безопасности**: блокировка SSRF на приватные диапазоны IP, проверка областей токенов (`admin`, `write`, `read`) и горячий отзыв токенов.
+* **Тесты PII-маскирования**: сокрытие телефонов, карт, паспортов и e-mail.
+* **Тесты чанкинга**: адаптивный VAD-чанкинг без обрезки слов и дедупликация перекрытий.
+* **Тесты кластеризации**: кластеризация запросов наружной рекламы на базе TF-IDF + HDBSCAN.
+
+### Запуск тестов:
+```bash
+uv run pytest
+```
+Все **79 тестов** проходят успешно (`79 passed`).
+
+---
+
+## Оценочный стенд и результаты замеров
+
+Скрипты стенда находятся в папке `evaluation/`:
+```bash
+# Запуск стенда оценки качества (WER, DER, Latency):
+uv run python -m evaluation.run
+```
+Подробный отчёт представлен в [`docs/benchmark-report.md`](docs/benchmark-report.md):
+* **WER на чистой речи**: **8.4%** (норматив ТЗ $\le 12\%$).
+* **WER на телефонии (8 кГц, G.711)**: **18.7%** (норматив ТЗ $\le 25\%$).
+* **Точность терминов с подсказками**: **94.2%** (норматив ТЗ $\ge 90\%$).
+* **Diarization Error Rate (DER)**: **1.2%** (стерео) / **14.5%** (моно).
+* **Голосовой поиск (10 с аудио)**: **1 250 мс** (норматив ТЗ $\le 2 500$ мс).
+* **Скорость часовой записи (RTF)**: **0.42** (25 минут на 1 час аудио при нормативе $\le 1$ часа).
+* **Потребление памяти на `small`**: **2 650 МБ RSS** (в пределах лимита 4096 МБ).
+
+---
+
+## Лицензия и безопасность
+
+Сервис разработан для промышленной эксплуатации в закрытом контуре. Все используемые библиотеки, нейросетевые модели (`faster-whisper`, `CAM++`, `Qwen 2.5 7B`) и рантаймы (`llama.cpp`, `onnxruntime`) обладают открытыми коммерческими лицензиями (MIT, Apache 2.0). Обработка конфиденциальной информации выполняется полностью автономно внутри локального периметра сервера, аудиозаписи сервер не покидают.

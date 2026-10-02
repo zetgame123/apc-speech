@@ -1,16 +1,11 @@
-import os
 from functools import lru_cache
-from typing import List, Optional
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Application Profile
     app_profile: str = Field(default="small", alias="APP_PROFILE")
@@ -26,13 +21,18 @@ class Settings(BaseSettings):
     # Auth & Security
     # Format: token:scope:namespace (comma-separated), or plain tokens in dev mode
     api_tokens_hashed: str = Field(default="", alias="API_TOKENS_HASHED")
-    dev_token: str = Field(default="dev-token", alias="DEV_TOKEN")
-    callback_signing_secret: str = Field(default="dev-secret-key-32-chars-minimum!!", alias="CALLBACK_SIGNING_SECRET")
+    dev_token: str | None = Field(default=None, alias="DEV_TOKEN")
+    callback_signing_secret: str = Field(default="", alias="CALLBACK_SIGNING_SECRET")
+
+    # CORS — comma-separated list of allowed origins, "*" allows all (dev only)
+    cors_allowed_origins: str = Field(
+        default="http://localhost:3000,http://localhost:8000", alias="CORS_ALLOWED_ORIGINS"
+    )
 
     # Database
     database_url: str = Field(
         default="postgresql+asyncpg://apc_user:secure_pass@localhost:5432/apc_speech",
-        alias="DATABASE_URL"
+        alias="DATABASE_URL",
     )
     db_pool_size: int = Field(default=10, alias="DB_POOL_SIZE")
     db_max_overflow: int = Field(default=5, alias="DB_MAX_OVERFLOW")
@@ -60,15 +60,17 @@ class Settings(BaseSettings):
 
     # Voice Search
     voice_search_max_duration_sec: int = Field(default=60, alias="VOICE_SEARCH_MAX_DURATION_SEC")
-    voice_search_model_name: str = Field(default="small", alias="VOICE_SEARCH_MODEL_NAME")
-    voice_search_beam_size: int = Field(default=1, alias="VOICE_SEARCH_BEAM_SIZE")
+    voice_search_model_name: str = Field(default="base", alias="VOICE_SEARCH_MODEL_NAME")
+    voice_search_beam_size: int = Field(default=2, alias="VOICE_SEARCH_BEAM_SIZE")
 
     # LLM
     local_llm_url: str = Field(default="http://localhost:8080/v1", alias="LOCAL_LLM_URL")
     local_llm_model: str = Field(default="qwen2.5-7b-instruct", alias="LOCAL_LLM_MODEL")
 
     # External LLM (Disabled by default)
-    llm_external_provider_enabled: bool = Field(default=False, alias="LLM_EXTERNAL_PROVIDER_ENABLED")
+    llm_external_provider_enabled: bool = Field(
+        default=False, alias="LLM_EXTERNAL_PROVIDER_ENABLED"
+    )
     llm_external_provider_url: str = Field(default="", alias="LLM_EXTERNAL_PROVIDER_URL")
     llm_external_provider_api_key: str = Field(default="", alias="LLM_EXTERNAL_PROVIDER_API_KEY")
 
@@ -77,6 +79,6 @@ class Settings(BaseSettings):
     retention_text_days: int = Field(default=365, alias="RETENTION_TEXT_DAYS")
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     return Settings()

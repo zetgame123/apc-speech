@@ -11,16 +11,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv package manager
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+RUN curl -LsSf https://astral.sh/uv/0.7.12/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
-COPY pyproject.toml .
+COPY pyproject.toml uv.lock README.md ./
 # Compile and install wheel dependencies into virtual environment
-RUN uv venv /opt/venv
-ENV VIRTUAL_ENV="/opt/venv"
-ENV PATH="/opt/venv/bin:$PATH"
-
-RUN uv pip install -r pyproject.toml
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_PROJECT_ENVIRONMENT="/opt/venv"
+RUN uv sync --frozen --no-dev
 
 
 # Runtime Stage
@@ -43,11 +41,15 @@ RUN groupadd -g 10001 apcgroup && \
 COPY --from=builder /opt/venv /opt/venv
 ENV VIRTUAL_ENV="/opt/venv"
 ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONPATH="/app:$PYTHONPATH"
 
 # Copy application source and configs
 COPY --chown=apcuser:apcgroup app/ /app/app/
 COPY --chown=apcuser:apcgroup config/ /app/config/
 COPY --chown=apcuser:apcgroup schemas/ /app/schemas/
+COPY --chown=apcuser:apcgroup scripts/ /app/scripts/
+COPY --chown=apcuser:apcgroup alembic/ /app/alembic/
+COPY --chown=apcuser:apcgroup alembic.ini /app/
 COPY --chown=apcuser:apcgroup openapi.yaml /app/
 COPY --chown=apcuser:apcgroup pyproject.toml /app/
 

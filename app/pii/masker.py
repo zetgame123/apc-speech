@@ -1,5 +1,4 @@
 import re
-from typing import Dict, List, Tuple
 
 # Regex patterns for sensitive PII
 PHONE_REGEX = re.compile(
@@ -8,23 +7,17 @@ PHONE_REGEX = re.compile(
     r"\b\d{10,11}\b"
 )
 
-EMAIL_REGEX = re.compile(
-    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
-)
+EMAIL_REGEX = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
 
-BANK_CARD_REGEX = re.compile(
-    r"\b(?:\d{4}[-\s]?){3}\d{4}\b"
-)
+BANK_CARD_REGEX = re.compile(r"\b(?:\d{4}[-\s]?){3}\d{4}\b")
 
-PASSPORT_RF_REGEX = re.compile(
-    r"\b\d{2}\s?\d{2}\s+\d{6}\b"
-)
+PASSPORT_RF_REGEX = re.compile(r"\b\d{2}\s?\d{2}\s+\d{6}\b")
 
 
 class PiiMasker:
     def __init__(self):
         self.phone_counter = 0
-        self.phone_cache: Dict[str, str] = {}
+        self.phone_cache: dict[str, str] = {}
 
     def mask_text(self, text: str) -> str:
         """
@@ -68,4 +61,8 @@ class PiiMasker:
             raise ValueError("PII Leak detected: Unmasked bank card found in text!")
         if EMAIL_REGEX.search(text):
             raise ValueError("PII Leak detected: Unmasked email found in text!")
+        if PASSPORT_RF_REGEX.search(text):
+            raise ValueError("PII Leak detected: Unmasked passport found in text!")
+        if PHONE_REGEX.search(text):
+            raise ValueError("PII Leak detected: Unmasked phone found in text!")
         return True

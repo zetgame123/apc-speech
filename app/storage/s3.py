@@ -1,5 +1,3 @@
-import io
-from typing import Optional
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
@@ -81,6 +79,57 @@ class S3Storage:
             logger.error("s3_delete_error", bucket=bucket, key=key, error=str(e))
             return False
 
+    def head_object(self, bucket: str, key: str) -> dict | None:
+        """Retrieves metadata of an S3 object or None if not found."""
+        try:
+            return self.s3_client.head_object(Bucket=bucket, Key=key)
+        except ClientError:
+            return None
+
+    def generate_presigned_url(
+        self,
+        bucket: str,
+        key: str,
+        expires_in_sec: int = 3600,
+        client_method: str = "get_object",
+    ) -> str:
+        """Generates a presigned S3 URL for secure direct client download/upload."""
+        return self.s3_client.generate_presigned_url(
+            ClientMethod=client_method,
+            Params={"Bucket": bucket, "Key": key},
+            ExpiresIn=expires_in_sec,
+        )
+
+    def list_objects(self, bucket: str, prefix: str = "") -> list[dict]:
+        """Lists objects under a specific bucket and prefix."""
+        try:
+            paginator = self.s3_client.get_paginator("list_objects_v2")
+            items = []
+            for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+                for obj in page.get("Contents", []):
+                    items.append(
+                        {
+                            "key": obj["Key"],
+                            "size": obj["Size"],
+                            "last_modified": obj["LastModified"],
+                            "etag": obj.get("ETag", "").strip('"'),
+                        }
+                    )
+            return items
+        except Exception as e:
+            logger.error("s3_list_objects_error", bucket=bucket, prefix=prefix, error=str(e))
+            return []
+
+    def copy_object(self, src_bucket: str, src_key: str, dst_bucket: str, dst_key: str) -> bool:
+        """Copies an object between S3 keys/buckets."""
+        try:
+            copy_source = {"Bucket": src_bucket, "Key": src_key}
+            self.s3_client.copy(copy_source, dst_bucket, dst_key)
+            return True
+        except Exception as e:
+            logger.error("s3_copy_error", src_key=src_key, dst_key=dst_key, error=str(e))
+            return False
+
     def check_health(self) -> bool:
         try:
             self.s3_client.list_buckets()
@@ -89,7 +138,7 @@ class S3Storage:
             return False
 
 
-_storage_instance: Optional[S3Storage] = None
+_storage_instance: S3Storage | None = None
 
 
 def get_storage() -> S3Storage:

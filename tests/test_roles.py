@@ -1,4 +1,3 @@
-import pytest
 from app.diarization.roles import RoleClassifier
 
 
@@ -26,8 +25,18 @@ def test_mono_heuristic_role_classification():
     classifier = RoleClassifier()
 
     segments = [
-        {"start": 0.0, "end": 4.0, "speaker_label": "SPEAKER_0", "text": "Здравствуйте! Компания Наружка, меня зовут Алексей."},
-        {"start": 4.5, "end": 8.0, "speaker_label": "SPEAKER_1", "text": "Добрый день, подскажите пожалуйста по ценам на щиты в Химках."},
+        {
+            "start": 0.0,
+            "end": 4.0,
+            "speaker_label": "SPEAKER_0",
+            "text": "Здравствуйте! Компания Наружка, меня зовут Алексей.",
+        },
+        {
+            "start": 4.5,
+            "end": 8.0,
+            "speaker_label": "SPEAKER_1",
+            "text": "Добрый день, подскажите пожалуйста по ценам на щиты в Химках.",
+        },
     ]
 
     classified, conf = classifier.classify_mono_speakers(segments)
@@ -35,3 +44,166 @@ def test_mono_heuristic_role_classification():
     assert conf == "high"
     assert classified[0]["speaker_role"] == "manager"
     assert classified[1]["speaker_role"] == "client"
+
+
+async def test_llm_refine_speaker_roles_mocked(monkeypatch):
+    from app.llm.local_adapter import LocalLlamaCppAdapter
+
+    adapter = LocalLlamaCppAdapter()
+
+    segments = [
+        {
+            "start": 0.0,
+            "end": 2.0,
+            "speaker_label": "SPEAKER_1",
+            "text": "Здравствуйте, компания APC.",
+        },
+        {"start": 2.5, "end": 4.5, "speaker_label": "SPEAKER_0", "text": "Сколько стоит щит?"},
+    ]
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": '{"roles": ["manager", "client"]}'}}]}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    refined = await adapter.refine_speaker_roles(segments)
+    assert len(refined) == 2
+    assert refined[0]["speaker_role"] == "manager"
+    assert refined[0]["speaker_label"] == "SPEAKER_0"
+    assert refined[1]["speaker_role"] == "client"
+    assert refined[1]["speaker_label"] == "SPEAKER_1"
+
+
+async def test_llm_refine_speaker_roles_fallback_on_error(monkeypatch):
+    from app.llm.local_adapter import LocalLlamaCppAdapter
+
+    adapter = LocalLlamaCppAdapter()
+    segments = [
+        {"start": 0.0, "end": 2.0, "speaker_label": "SPEAKER_0", "text": "Здравствуйте"},
+    ]
+
+    class BrokenAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            raise RuntimeError("Connection refused")
+
+    monkeypatch.setattr("httpx.AsyncClient", BrokenAsyncClient)
+
+    # Should gracefully return original segments without exception
+    result = await adapter.refine_speaker_roles(segments)
+    assert len(result) == 1
+    assert result[0]["text"] == "Здравствуйте"
+
+
+def test_mono_cold_call_role_classification():
+    """Verify that in cold calls, where the client answers first and greets, roles are not inverted."""
+    classifier = RoleClassifier()
+
+    segments = [
+        {"start": 0.5, "end": 1.5, "speaker_label": "SPEAKER_0", "text": "Добрый день!"},
+        {"start": 2.0, "end": 3.0, "speaker_label": "SPEAKER_0", "text": "Какая компания?"},
+        {
+            "start": 30.0,
+            "end": 34.0,
+            "speaker_label": "SPEAKER_1",
+            "text": "Я являюсь представителем оргкомитета конференции.",
+        },
+        {
+            "start": 35.0,
+            "end": 38.0,
+            "speaker_label": "SPEAKER_1",
+            "text": "Хотел бы уточнить, планируете ли вы посетить мероприятие?",
+        },
+        {
+            "start": 39.0,
+            "end": 42.0,
+            "speaker_label": "SPEAKER_0",
+            "text": "Да, в принципе можно. Буду ждать подтверждение.",
+        },
+        {
+            "start": 43.0,
+            "end": 46.0,
+            "speaker_label": "SPEAKER_1",
+            "text": "Подскажите пожалуйста вашу фамилию. Вы успешно зарегистрированы.",
+        },
+    ]
+
+    classified, conf = classifier.classify_mono_speakers(segments)
+    assert conf == "high"
+    assert classified[0]["speaker_role"] == "client"
+    assert classified[2]["speaker_role"] == "manager"
+
+
+async def test_llm_refine_speaker_roles_by_speaker_mapping(monkeypatch):
+    from app.llm.local_adapter import LocalLlamaCppAdapter
+
+    adapter = LocalLlamaCppAdapter()
+    segments = [
+        {"start": 0.5, "end": 1.5, "speaker_label": "SPEAKER_0", "text": "Алло, слушаю"},
+        {
+            "start": 2.0,
+            "end": 5.0,
+            "speaker_label": "SPEAKER_1",
+            "text": "Здравствуйте, меня зовут Юрий, я представитель форума",
+        },
+    ]
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"manager": "SPEAKER_1", "client": "SPEAKER_0", "reason": "SPEAKER_1 pitch"}'
+                        }
+                    }
+                ]
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    refined = await adapter.refine_speaker_roles(segments)
+    assert len(refined) == 2
+    assert refined[0]["speaker_role"] == "client"
+    assert refined[1]["speaker_role"] == "manager"

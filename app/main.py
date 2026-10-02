@@ -1,11 +1,11 @@
 import uuid
 from contextlib import asynccontextmanager
+
+import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-import structlog
 
-from app.api import admin, analytics, calls, health, jobs, voice
+from app.api import admin, analytics, calls, dashboard, health, integrations, jobs, voice
 from app.core.config import get_settings
 from app.core.errors import AppError, error_response
 from app.core.logging import get_logger, setup_logging
@@ -21,6 +21,21 @@ logger = get_logger("main")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("service_startup_beginning", profile=settings.app_profile)
+
+    # Security validations at startup
+    if settings.app_env == "production":
+        if not settings.callback_signing_secret or len(settings.callback_signing_secret) < 32:
+            logger.error(
+                "CRITICAL: CALLBACK_SIGNING_SECRET is missing or too short for production! "
+                "Set a random string of at least 32 characters."
+            )
+        if "*" in settings.cors_allowed_origins:
+            logger.warning(
+                "CORS_ALLOWED_ORIGINS is set to '*' in production — restrict to specific domains"
+            )
+        if settings.dev_token:
+            logger.warning("DEV_TOKEN is set in production — consider removing it")
+
     # 1. Initialize DB tables
     try:
         await init_db()
@@ -44,6 +59,31 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("redis_groups_init_failed", error=str(e))
 
+    # 4. Sync revoked tokens from Redis
+    try:
+        from app.core.security import revoke_token
+
+        queue = get_queue()
+        client = await queue.get_client()
+        redis_revoked = await client.smembers("revoked_tokens")
+        if redis_revoked:
+            for r in redis_revoked:
+                token_h = r.decode() if isinstance(r, bytes) else str(r)
+                revoke_token(token_h)
+            logger.info("revoked_tokens_synced", count=len(redis_revoked))
+    except Exception as e:
+        logger.warning("revoked_tokens_sync_failed", error=str(e))
+
+    # 4. Warm up Voice Search ASR engine to eliminate cold-start latency
+    try:
+        from app.asr.engine import get_voice_search_engine
+
+        engine = get_voice_search_engine()
+        engine.load_model()
+        logger.info("voice_search_engine_warmed_up")
+    except Exception as e:
+        logger.warning("voice_search_warmup_failed", error=str(e))
+
     yield
 
     logger.info("service_shutdown_completed")
@@ -58,10 +98,11 @@ app = FastAPI(
     redoc_url=None,
 )
 
-# CORS
+# CORS - configurable via CORS_ALLOWED_ORIGINS env var
+_origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -85,6 +126,7 @@ async def app_error_handler(request: Request, exc: AppError):
         message=exc.message,
         status_code=exc.status_code,
         details=exc.details,
+        headers=exc.headers,
     )
 
 
@@ -106,3 +148,5 @@ app.include_router(jobs.router)
 app.include_router(calls.router)
 app.include_router(analytics.router)
 app.include_router(admin.router)
+app.include_router(dashboard.router)
+app.include_router(integrations.router)

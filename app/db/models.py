@@ -1,6 +1,6 @@
 import uuid
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+
 from sqlalchemy import (
     Boolean,
     Column,
@@ -12,7 +12,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
@@ -20,6 +20,10 @@ from app.db.session import Base
 
 def generate_uuid() -> str:
     return str(uuid.uuid4())
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class Call(Base):
@@ -34,12 +38,20 @@ class Call(Base):
     client_id = Column(String(100), nullable=True, index=True)
     duration_sec = Column(Float, nullable=True)
     is_answering_machine = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=utc_now, index=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
 
     # Relationships
     audio_objects = relationship("AudioObject", back_populates="call", cascade="all, delete-orphan")
-    segments = relationship("TranscriptSegment", back_populates="call", cascade="all, delete-orphan", order_by="TranscriptSegment.segment_order")
-    analysis = relationship("Analysis", back_populates="call", uselist=False, cascade="all, delete-orphan")
+    segments = relationship(
+        "TranscriptSegment",
+        back_populates="call",
+        cascade="all, delete-orphan",
+        order_by="TranscriptSegment.segment_order",
+    )
+    analysis = relationship(
+        "Analysis", back_populates="call", uselist=False, cascade="all, delete-orphan"
+    )
     jobs = relationship("Job", back_populates="call")
 
     __table_args__ = (
@@ -52,7 +64,9 @@ class AudioObject(Base):
     __tablename__ = "audio_objects"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    call_id = Column(String(36), ForeignKey("calls.id", ondelete="CASCADE"), nullable=False, index=True)
+    call_id = Column(
+        String(36), ForeignKey("calls.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     namespace = Column(String(100), nullable=False, index=True)
     s3_bucket = Column(String(100), nullable=False)
     s3_key = Column(String(255), nullable=False)
@@ -60,7 +74,7 @@ class AudioObject(Base):
     file_size_bytes = Column(Integer, nullable=True)
     channels_layout = Column(String(20), default="mono")
     expires_at = Column(DateTime, nullable=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     call = relationship("Call", back_populates="audio_objects")
 
@@ -69,7 +83,9 @@ class TranscriptSegment(Base):
     __tablename__ = "transcript_segments"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    call_id = Column(String(36), ForeignKey("calls.id", ondelete="CASCADE"), nullable=False, index=True)
+    call_id = Column(
+        String(36), ForeignKey("calls.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     namespace = Column(String(100), nullable=False, index=True)
     segment_order = Column(Integer, nullable=False)
     start_time = Column(Float, nullable=False)
@@ -83,16 +99,20 @@ class TranscriptSegment(Base):
 
     call = relationship("Call", back_populates="segments")
 
-    __table_args__ = (
-        Index("idx_segments_call_order", "call_id", "segment_order"),
-    )
+    __table_args__ = (Index("idx_segments_call_order", "call_id", "segment_order"),)
 
 
 class Analysis(Base):
     __tablename__ = "analyses"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    call_id = Column(String(36), ForeignKey("calls.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    call_id = Column(
+        String(36),
+        ForeignKey("calls.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
     namespace = Column(String(100), nullable=False, index=True)
     schema_version = Column(String(20), nullable=False, default="1.0.0")
     prompt_version = Column(String(50), nullable=False, default="v1.2-ru-outdoor")
@@ -104,7 +124,7 @@ class Analysis(Base):
     sentiment = Column(JSONB, nullable=True)
     manager_checklist = Column(JSONB, nullable=True)
     speech_metrics = Column(JSONB, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     call = relationship("Call", back_populates="analysis")
 
@@ -122,8 +142,8 @@ class Job(Base):
     file_hash_sha256 = Column(String(64), nullable=True, index=True)
     callback_url = Column(String(512), nullable=True)
     error_details = Column(JSONB, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now, index=True)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     call = relationship("Call", back_populates="jobs")
 
@@ -136,12 +156,14 @@ class CallbackLog(Base):
     __tablename__ = "callback_logs"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    job_id = Column(String(36), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    job_id = Column(
+        String(36), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     url = Column(String(512), nullable=False)
     attempt = Column(Integer, nullable=False)
     http_status = Column(Integer, nullable=True)
     response_body = Column(Text, nullable=True)
-    sent_at = Column(DateTime, default=datetime.utcnow)
+    sent_at = Column(DateTime, default=utc_now)
 
 
 class Embedding(Base):
@@ -149,5 +171,7 @@ class Embedding(Base):
 
     call_id = Column(String(36), ForeignKey("calls.id", ondelete="CASCADE"), primary_key=True)
     namespace = Column(String(100), nullable=False, index=True)
-    vector_json = Column(JSONB, nullable=False)  # Stores vector array (can also map to pgvector column)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    vector_json = Column(
+        JSONB, nullable=False
+    )  # Stores vector array (can also map to pgvector column)
+    created_at = Column(DateTime, default=utc_now)
