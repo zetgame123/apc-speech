@@ -180,24 +180,6 @@
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
       margin-bottom: 0.75rem;
     }
-    .preset-pill {
-      cursor: pointer;
-      background: #f8fafc;
-      border: 1px solid #cbd5e1;
-      padding: 6px 14px;
-      border-radius: 20px;
-      font-size: 0.88rem;
-      color: #334155;
-      transition: all 0.15s ease;
-      display: inline-block;
-      margin: 4px;
-    }
-    .preset-pill:hover {
-      background: #e0f2fe;
-      border-color: #7dd3fc;
-      color: #0369a1;
-      transform: translateY(-1px);
-    }
     .table-calls tr {
       cursor: pointer;
     }
@@ -472,11 +454,11 @@
       </div>
 
       <div class="row">
-        <!-- Voice Input & Fast Simulation Column -->
+        <!-- Voice Input Column -->
         <div class="col-lg-6 mb-4">
           <div class="card card-custom p-4 h-100">
             <h5 class="fw-bold mb-3">
-              <i class="bi bi-mic-fill me-2 text-danger"></i>Симуляция голосового запроса
+              <i class="bi bi-mic-fill me-2 text-danger"></i>Голосовой ввод запроса
             </h5>
 
             <!-- Big Microphone Center Widget -->
@@ -485,36 +467,18 @@
                 <i class="bi bi-mic" id="voiceMicIcon"></i>
               </button>
               <div id="voiceRecordingStatus" class="fw-bold fs-6 text-dark mb-1">Нажмите для записи голоса</div>
-              <div class="text-muted small" id="voiceRecordingTimer">Лимит: до 60 секунд аудио</div>
+              <div class="text-muted small" id="voiceRecordingTimer">Лимит: до 60 секунд аудио (SLA ≤ 2.5 с)</div>
             </div>
 
-            <div class="d-flex justify-content-center gap-2 mb-4">
-              <button id="btnVoiceSearchDemoAudio" class="btn btn-outline-primary btn-sm px-3">
-                <i class="bi bi-play-circle me-1"></i> Отправить демо-аудио (WAV)
-              </button>
-              <label class="btn btn-outline-secondary btn-sm px-3 mb-0">
-                <i class="bi bi-upload me-1"></i> Загрузить файл
+            <div class="d-flex justify-content-center mb-4">
+              <label class="btn btn-outline-secondary btn-sm px-4 py-2 mb-0">
+                <i class="bi bi-upload me-2"></i> Загрузить аудиофайл с устройства
                 <input type="file" id="voiceFileInput" accept="audio/*" class="d-none">
               </label>
             </div>
 
-            <!-- Ready Presets for Outdoor Advertising -->
-            <h6 class="fw-bold small text-uppercase text-secondary mb-2">
-              <i class="bi bi-lightbulb me-1"></i> Типовые фразы рекламодателей (Кликните для теста):
-            </h6>
-            <div class="mb-3">
-              <span class="preset-pill" onclick="simulatePresetQuery('щиты 3х6 в Балашихе на октябрь, только свободные')">
-                📍 щиты 3х6 в Балашихе на октябрь, только свободные
-              </span>
-              <span class="preset-pill" onclick="simulatePresetQuery('суперсайты на МКАД от пятидесяти тысяч рублей сторона А')">
-                🛣️ суперсайты на МКАД от 50 000 руб сторона А
-              </span>
-              <span class="preset-pill" onclick="simulatePresetQuery('свободные ситиборды в Химках и Мытищах на следующий месяц')">
-                🏙️ свободные ситиборды в Химках и Мытищах
-              </span>
-              <span class="preset-pill" onclick="simulatePresetQuery('медиафасад на Новом Арбате на ноябрь, стоимость брони')">
-                📺 медиафасад на Новом Арбате на ноябрь
-              </span>
+            <div class="alert alert-light border small text-muted mb-0">
+              <i class="bi bi-info-circle me-1 text-primary"></i> <strong>Голосовой поиск наружной рекламы:</strong> говорите естественные запросы по типам конструкций (<em>«ситиборды в Химках»</em>, <em>«щиты 3×6 на Ленинградке»</em>, <em>«суперсайты на МКАД от 50 000 руб»</em>). Распознавание выполняется нейросетью в реальном времени.
             </div>
           </div>
         </div>
@@ -601,14 +565,14 @@
                 <h5 class="fw-bold mb-1">
                   <i class="bi bi-clock-history me-2 text-primary"></i>История поисковых запросов
                 </h5>
-                <div class="small text-muted">Журнал всех речевых и текстовых запросов пользователей платформы</div>
+                <div class="small text-muted">Единый серверный журнал голосовых запросов со всех подключённых устройств</div>
               </div>
               <div class="d-flex gap-2">
-                <button class="btn btn-outline-secondary btn-sm" onclick="loadMonthlyDemoQueries()">
-                  <i class="bi bi-database-fill-down me-1"></i> Загрузить демо-срез (20 запросов)
+                <button class="btn btn-outline-primary btn-sm" onclick="fetchVoiceHistory()" title="Обновить историю запросов">
+                  <i class="bi bi-arrow-clockwise me-1"></i> Обновить
                 </button>
-                <button class="btn btn-outline-danger btn-sm" onclick="clearQueryHistory()">
-                  <i class="bi bi-trash"></i>
+                <button class="btn btn-outline-danger btn-sm" onclick="clearQueryHistory()" title="Очистить историю">
+                  <i class="bi bi-trash me-1"></i> Очистить
                 </button>
               </div>
             </div>
@@ -1134,7 +1098,6 @@
   const voiceMicIcon = document.getElementById('voiceMicIcon');
   const voiceRecordingStatus = document.getElementById('voiceRecordingStatus');
   const voiceRecordingTimer = document.getElementById('voiceRecordingTimer');
-  const btnVoiceSearchDemoAudio = document.getElementById('btnVoiceSearchDemoAudio');
   const voiceFileInput = document.getElementById('voiceFileInput');
 
   const voiceLatencyDisplay = document.getElementById('voiceLatencyDisplay');
@@ -1205,18 +1168,6 @@
     }
   }
 
-  btnVoiceSearchDemoAudio.addEventListener('click', async () => {
-    voiceRecordingStatus.innerText = "Отправка демонстрационного аудио...";
-    try {
-      const res = await fetch('/v1/voice/sample-audio');
-      if (!res.ok) throw new Error("Не удалось загрузить тестовое аудио");
-      const blob = await res.blob();
-      submitVoiceSearch(blob, "demo_voice_query.wav");
-    } catch (e) {
-      alert(e.message);
-    }
-  });
-
   voiceFileInput.addEventListener('change', () => {
     if (voiceFileInput.files.length) {
       submitVoiceSearch(voiceFileInput.files[0], voiceFileInput.files[0].name);
@@ -1247,20 +1198,6 @@
       voiceRecordingStatus.innerText = "Ошибка: " + err.message;
       voiceTextResult.innerHTML = `<span class="text-danger">Ошибка: ${err.message}</span>`;
     });
-  }
-
-  function simulatePresetQuery(text) {
-    // Generates simulated query metrics with typical sub-second latency
-    const fakeLatency = Math.floor(1200 + Math.random() * 450);
-    const fakeDuration = 4.2;
-    const result = {
-      text: text,
-      processing_time_ms: fakeLatency,
-      duration_sec: fakeDuration,
-      confidence: 0.985,
-      language: "ru"
-    };
-    handleVoiceSearchResult(result, fakeLatency, "⚡ Пресет");
   }
 
   function handleVoiceSearchResult(data, displayLatencyMs, sourceMethod) {
@@ -1302,14 +1239,8 @@
     // Simulated Catalog Match
     renderCatalogMatches(cleanText);
 
-    // Save to Query History
-    addQueryToHistory({
-      text: cleanText,
-      duration: data.duration_sec,
-      latency: ms,
-      method: sourceMethod || "🎤 Голос",
-      timestamp: new Date().toLocaleTimeString('ru-RU')
-    });
+    // Refresh shared server-backed query history
+    fetchVoiceHistory();
   }
 
   function renderCatalogMatches(queryText) {
@@ -1364,57 +1295,62 @@
   }
 
   // =========================================================================
-  // QUERY HISTORY LOGIC (localStorage)
+  // SHARED SERVER-BACKED QUERY HISTORY (GET/DELETE /v1/voice/history)
   // =========================================================================
   const queryHistoryTableBody = document.getElementById('queryHistoryTableBody');
-  const STORAGE_KEY = 'apc_speech_query_history_v1';
+  let activeVoiceHistory = [];
 
-  function getQueryHistory() {
+  async function fetchVoiceHistory() {
     try {
-      const data = localStorage.getItem(STORAGE_KEY);
-      return data ? JSON.parse(data) : [];
-    } catch {
-      return [];
-    }
-  }
-
-  function saveQueryHistory(hist) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(hist.slice(0, 50)));
+      const resp = await fetch(`/v1/voice/history?namespace=${getNamespace()}`, {
+        headers: { "Authorization": `Bearer ${tokenInput.value.trim()}` }
+      });
+      if (!resp.ok) {
+        console.warn("Failed to fetch voice history", resp.status);
+        return;
+      }
+      const data = await resp.json();
+      activeVoiceHistory = data.items || [];
+      renderQueryHistoryTable(activeVoiceHistory);
     } catch (e) {
-      console.warn("Storage error", e);
+      console.warn("Error fetching voice history:", e);
     }
   }
 
-  function addQueryToHistory(item) {
-    const list = getQueryHistory();
-    list.unshift(item);
-    saveQueryHistory(list);
-    renderQueryHistoryTable();
+  async function clearQueryHistory() {
+    if (!confirm("Очистить историю голосовых поисковых запросов для текущего namespace?")) return;
+    try {
+      const resp = await fetch(`/v1/voice/history?namespace=${getNamespace()}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${tokenInput.value.trim()}` }
+      });
+      if (resp.ok) {
+        activeVoiceHistory = [];
+        renderQueryHistoryTable([]);
+      } else {
+        alert("Ошибка при очистке истории");
+      }
+    } catch (e) {
+      alert("Ошибка при очистке истории: " + e.message);
+    }
   }
 
-  function clearQueryHistory() {
-    if (!confirm("Очистить историю поисковых запросов?")) return;
-    localStorage.removeItem(STORAGE_KEY);
-    renderQueryHistoryTable();
-  }
-
-  function renderQueryHistoryTable() {
-    const list = getQueryHistory();
+  function renderQueryHistoryTable(list = activeVoiceHistory) {
     queryHistoryTableBody.innerHTML = '';
-    if (list.length === 0) {
-      queryHistoryTableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">История запросов пуста. Сделайте голосовой запрос или загрузите демо-срез.</td></tr>';
+    if (!list || list.length === 0) {
+      queryHistoryTableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">История запросов пуста. Запишите голосовой запрос с микрофона или загрузите аудиофайл.</td></tr>';
       return;
     }
 
-    list.forEach((q, idx) => {
+    list.forEach((q) => {
       const tr = document.createElement('tr');
-      const isOk = q.latency <= 2500;
+      const latency = q.latency || 0;
+      const isOk = latency <= 2500;
       tr.innerHTML = `
         <td class="text-muted small">${escapeHtml(q.timestamp || '-')}</td>
-        <td class="fw-medium">${escapeHtml(q.text)}</td>
-        <td><span class="badge bg-light text-dark border">${escapeHtml(q.method || 'Голос')}</span></td>
-        <td class="fw-bold">${escapeHtml(q.latency)} мс</td>
+        <td class="fw-medium">${escapeHtml(q.text || '')}</td>
+        <td><span class="badge bg-light text-dark border">${escapeHtml(q.method || '🎤 Голосовой')}</span></td>
+        <td class="fw-bold">${escapeHtml(String(latency))} мс</td>
         <td>
           <span class="badge ${isOk ? 'bg-success' : 'bg-danger'}">
             ${isOk ? '✓ SLA' : 'Превышен'}
@@ -1425,37 +1361,6 @@
     });
   }
 
-  function loadMonthlyDemoQueries() {
-    const demoQueries = [
-      { text: "щиты 3х6 в Балашихе на октябрь, только свободные", latency: 1420, method: "🎤 Голосовой" },
-      { text: "аренда суперсайтов на МКАД от 50 000 рублей", latency: 1650, method: "🎤 Голосовой" },
-      { text: "свободные ситиборды в Химках и Мытищах", latency: 1290, method: "🎤 Голосовой" },
-      { text: "медиафасад на Новом Арбате на ноябрь", latency: 1530, method: "⌨️ Текстовый" },
-      { text: "прайс-лист на рекламные щиты в Подольске", latency: 1380, method: "⌨️ Текстовый" },
-      { text: "билборды 3х6 в Одинцово свободные даты", latency: 1470, method: "🎤 Голосовой" },
-      { text: "стоимость печати баннеров и монтаж брандмауэра", latency: 1720, method: "⌨️ Текстовый" },
-      { text: "щиты на Ярославском шоссе сторона А", latency: 1310, method: "🎤 Голосовой" },
-      { text: "цифровые экраны сити-формат в центре Москвы", latency: 1580, method: "🎤 Голосовой" },
-      { text: "скидки при бронировании десяти щитов на полгода", latency: 1840, method: "⌨️ Текстовый" },
-      { text: "щиты 3х6 возле метро Щёлковская", latency: 1350, method: "🎤 Голосовой" },
-      { text: "суперсайт на Ленинградском шоссе сторона Б", latency: 1490, method: "🎤 Голосовой" },
-      { text: "свободные рекламные места в Люберцах", latency: 1260, method: "⌨️ Текстовый" },
-      { text: "размещение рекламы на остановках и пилларах", latency: 1620, method: "⌨️ Текстовый" },
-      { text: "программатик закупка диджитал экранов OTS", latency: 1750, method: "⌨️ Текстовый" }
-    ];
-
-    const now = new Date();
-    const formatted = demoQueries.map((item, idx) => ({
-      ...item,
-      duration: 3.8,
-      timestamp: new Date(now.getTime() - idx * 3600000).toLocaleTimeString('ru-RU')
-    }));
-
-    saveQueryHistory(formatted);
-    renderQueryHistoryTable();
-    alert("Загружено 15 демонстрационных запросов рекламодателей за месяц!");
-  }
-
   // =========================================================================
   // AI TOPIC CLUSTERING (POST /v1/texts/analyze)
   // =========================================================================
@@ -1463,9 +1368,9 @@
   const btnRunClustering = document.getElementById('btnRunClustering');
 
   async function runTopicClustering() {
-    const list = getQueryHistory();
+    const list = activeVoiceHistory;
     if (list.length < 3) {
-      alert("Для кластеризации нужно хотя бы 3 запроса в истории. Нажмите «Загрузить демо-срез»!");
+      alert("Для кластеризации нужно хотя бы 3 запроса в истории. Сделайте голосовые запросы через микрофон или загрузите аудиозаписи!");
       return;
     }
 
@@ -1559,12 +1464,22 @@
     }
   }
 
-  // Load stored queries and profile on startup
-  updateProfileBadge();
-  renderQueryHistoryTable();
-  if (getQueryHistory().length === 0) {
-    loadMonthlyDemoQueries();
+  // Event listeners for voice search tab and namespace changes
+  const tabVoiceBtn = document.getElementById('tab-voice-btn');
+  if (tabVoiceBtn) {
+    tabVoiceBtn.addEventListener('shown.bs.tab', () => {
+      fetchVoiceHistory();
+    });
   }
+
+  namespaceInput.addEventListener('change', () => {
+    refreshCallsList();
+    fetchVoiceHistory();
+  });
+
+  // Load shared voice queries and profile on startup
+  updateProfileBadge();
+  fetchVoiceHistory();
 </script>
 
 </body>

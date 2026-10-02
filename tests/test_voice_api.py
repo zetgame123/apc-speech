@@ -64,13 +64,36 @@ def mock_voice_deps(monkeypatch):
     mock_preprocessor.preprocess_memory.return_value = make_wav_bytes()
     monkeypatch.setattr("app.api.voice.AudioPreprocessor", lambda: mock_preprocessor)
 
-    # Mock rate limiter's Redis
+    # Mock rate limiter and voice history Redis
     fake_redis = MagicMock()
     fake_redis.incr = AsyncMock(return_value=1)
     fake_redis.expire = AsyncMock(return_value=None)
+    stored_items = []
+
+    async def fake_lpush(key, val):
+        stored_items.insert(0, val)
+        return len(stored_items)
+
+    async def fake_ltrim(key, start, end):
+        del stored_items[end + 1 :]
+        return True
+
+    async def fake_lrange(key, start, end):
+        return stored_items[start : end + 1]
+
+    async def fake_delete(key):
+        stored_items.clear()
+        return 1
+
+    fake_redis.lpush = AsyncMock(side_effect=fake_lpush)
+    fake_redis.ltrim = AsyncMock(side_effect=fake_ltrim)
+    fake_redis.lrange = AsyncMock(side_effect=fake_lrange)
+    fake_redis.delete = AsyncMock(side_effect=fake_delete)
+
     mock_queue = MagicMock()
     mock_queue.get_client = AsyncMock(return_value=fake_redis)
     monkeypatch.setattr("app.api.rate_limit.get_queue", lambda: mock_queue)
+    monkeypatch.setattr("app.queue.redis_streams.get_queue", lambda: mock_queue)
 
     return mock_engine
 
@@ -90,6 +113,75 @@ async def test_voice_search_returns_text(mock_voice_deps):
         assert "text" in data
         assert data["language"] == "ru"
         assert data["confidence"] > 0
+        assert "3×6" in data["text"]
+
+
+@pytest.mark.asyncio
+async def test_voice_search_normalizes_cityboard(mock_voice_deps):
+    """Ensure acoustic recognition of cityboard variations gets normalized."""
+    mock_voice_deps.transcribe.return_value = (
+        [
+            {
+                "text": "свободные сити борта и сети борд в Химках",
+                "start": 0.0,
+                "end": 2.5,
+                "confidence": 0.96,
+                "words": [],
+            }
+        ],
+        {"language": "ru", "language_probability": 0.99, "duration": 2.5},
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        wav_data = make_wav_bytes()
+        headers = {"Authorization": "Bearer dev-token", "Content-Type": "audio/wav"}
+        response = await ac.post(
+            "/v1/voice/search?namespace=test_msk",
+            content=wav_data,
+            headers=headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "ситиборда" in data["text"]
+        assert "ситиборд" in data["text"]
+
+
+@pytest.mark.asyncio
+async def test_voice_history_endpoints(mock_voice_deps):
+    """Test GET and DELETE for voice search history."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        headers = {"Authorization": "Bearer dev-token"}
+
+        # 1. Initially empty
+        res = await ac.get("/v1/voice/history?namespace=test_ns", headers=headers)
+        assert res.status_code == 200
+        assert res.json()["count"] == 0
+
+        # 2. Perform a search
+        wav_data = make_wav_bytes()
+        post_headers = {"Authorization": "Bearer dev-token", "Content-Type": "audio/wav"}
+        await ac.post(
+            "/v1/voice/search?namespace=test_ns",
+            content=wav_data,
+            headers=post_headers,
+        )
+
+        # 3. History now has 1 entry
+        res = await ac.get("/v1/voice/history?namespace=test_ns", headers=headers)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["count"] == 1
+        assert len(data["items"]) == 1
+        assert "text" in data["items"][0]
+
+        # 4. Clear history
+        del_res = await ac.delete("/v1/voice/history?namespace=test_ns", headers=headers)
+        assert del_res.status_code == 200
+        assert del_res.json()["status"] == "cleared"
+
+        # 5. History is now empty
+        res = await ac.get("/v1/voice/history?namespace=test_ns", headers=headers)
+        assert res.status_code == 200
+        assert res.json()["count"] == 0
 
 
 @pytest.mark.asyncio

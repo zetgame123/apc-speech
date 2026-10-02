@@ -472,6 +472,51 @@ class MonoDiarizer:
                         centroids=final_centroids,
                     )
 
+                    # 3. Post-clustering validation (guard against false splits of monologues)
+                    n_spk0 = int(np.sum(cam_labels == 0))
+                    n_spk1 = int(np.sum(cam_labels == 1))
+                    if n_spk0 == 0 or n_spk1 == 0:
+                        cam_labels = np.zeros(len(X_cam), dtype=int)
+                    else:
+                        c0_final = np.mean(X_cam[cam_labels == 0], axis=0)
+                        c1_final = np.mean(X_cam[cam_labels == 1], axis=0)
+                        norm0 = np.linalg.norm(c0_final)
+                        norm1 = np.linalg.norm(c1_final)
+                        c0_norm = c0_final / max(norm0, 1e-6)
+                        c1_norm = c1_final / max(norm1, 1e-6)
+                        final_cluster_sep = 1.0 - float(np.dot(c0_norm, c1_norm))
+
+                        min_turns = min(n_spk0, n_spk1)
+                        turn_ratio = min_turns / max(1, len(cam_labels))
+
+                        is_monologue = False
+                        if final_cluster_sep < self.min_speaker_distance or (
+                            len(cam_labels) >= 8 and turn_ratio < 0.08
+                        ):
+                            logger.info(
+                                "monologue_detected_low_cluster_separation",
+                                sep=final_cluster_sep,
+                                threshold=self.min_speaker_distance,
+                            )
+                            is_monologue = True
+                        elif len(cam_labels) >= 4:
+                            try:
+                                from sklearn.metrics import silhouette_score
+
+                                sil = float(silhouette_score(X_cam, cam_labels, metric="cosine"))
+                                if sil < 0.12 or turn_ratio < 0.08:
+                                    logger.info(
+                                        "monologue_detected_low_silhouette",
+                                        silhouette=sil,
+                                        turn_ratio=turn_ratio,
+                                    )
+                                    is_monologue = True
+                            except Exception as e:
+                                logger.debug("silhouette_check_failed", error=str(e))
+
+                        if is_monologue:
+                            cam_labels = np.zeros(len(X_cam), dtype=int)
+
             # Map cluster labels to all valid turns
             labels = np.zeros(len(valid_indices), dtype=int)
             for pos_in_valid_cam, orig_pos in enumerate(valid_cam_positions):

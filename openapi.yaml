@@ -79,6 +79,62 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/voice/history:
+    get:
+      summary: Получение истории голосовых поисковых запросов
+      description: Возвращает журнал расшифровок голосовых запросов по namespace со всех устройств.
+      operationId: getVoiceHistory
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: namespace
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Список запросов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      summary: Очистка истории голосовых запросов
+      description: Удаляет накопленную историю голосовых запросов для указанного namespace.
+      operationId: clearVoiceHistory
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: namespace
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: История очищена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  namespace:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /v1/jobs/upload:
     post:
       summary: Создание задания анализа через загрузку файла

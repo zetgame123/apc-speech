@@ -174,6 +174,21 @@ class RoleClassifier:
         else:
             confidence = "low"
 
+        unique_spks = {s.get("speaker_label", "SPEAKER_0") for s in segments}
+        if len(unique_spks) <= 1:
+            if spk0_score >= 0.3:
+                role = "manager"
+            elif spk0_score <= -0.3:
+                role = "client"
+            else:
+                role = "participant"
+            updated_segments = []
+            for s in segments:
+                s_copy = dict(s)
+                s_copy["speaker_role"] = role
+                updated_segments.append(s_copy)
+            return updated_segments, "high"
+
         if spk0_score > spk1_score:
             role_map = {"SPEAKER_0": "manager", "SPEAKER_1": "client"}
         elif spk1_score > spk0_score:

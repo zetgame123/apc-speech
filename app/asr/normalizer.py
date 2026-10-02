@@ -91,8 +91,29 @@ class RussianTextNormalizer:
                 lambda m: "призматрон" + (m.group(1) or ""),
             ),
             (
-                re.compile(r"\bбигборд(ы|ов|а|ам|ами|ах)?\b", re.IGNORECASE),
-                lambda m: "билборд" + (m.group(1) or ""),
+                re.compile(
+                    r"\b(?:сити|сети|сеть)[-\s]*(?:борд|борт|бор)(ы|ов|а|ам|ами|ах|ом|у|е)?\b",
+                    re.IGNORECASE,
+                ),
+                lambda m: (
+                    ("Ситиборд" if m.group(0)[0].isupper() else "ситиборд") + (m.group(1) or "")
+                ),
+            ),
+            (
+                re.compile(
+                    r"\bcity[-\s]*boards?\b",
+                    re.IGNORECASE,
+                ),
+                lambda m: "ситиборды" if m.group(0).lower().endswith("s") else "ситиборд",
+            ),
+            (
+                re.compile(
+                    r"\b(?:бил|билл|биг)[-\s]*(?:борд|борт)(ы|ов|а|ам|ами|ах|ом|у|е)?\b",
+                    re.IGNORECASE,
+                ),
+                lambda m: (
+                    ("Билборд" if m.group(0)[0].isupper() else "билборд") + (m.group(1) or "")
+                ),
             ),
             (
                 re.compile(

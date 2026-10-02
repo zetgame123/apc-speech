@@ -1,13 +1,17 @@
 import asyncio
 import io
+import json
 import os
 import time
+import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Header, Query, Request, Response, UploadFile
 from pydantic import BaseModel
 
 from app.api.rate_limit import rate_limit
 from app.asr.engine import get_voice_search_engine
+from app.asr.normalizer import RussianTextNormalizer
 from app.asr.preprocessor import AudioPreprocessor
 from app.core.config import get_settings
 from app.core.errors import AppError
@@ -18,8 +22,12 @@ router = APIRouter(prefix="/v1/voice", tags=["voice"])
 logger = get_logger("voice_search_api")
 
 VOICE_SEARCH_INITIAL_PROMPT = (
-    "Поиск наружной рекламы: щиты 3×6, билборды, суперсайты 5×12, сити-формат, "
-    "ситиборды, медиафасады, digital-экраны, аренда, Балашиха, Химки, МКАД, шоссе, метро."
+    "Поиск наружной рекламы: ситиборд, ситиборды, ситиборда, ситиборду, ситибордом, ситиборде, "
+    "ситибордов, ситибордам, ситибордах, сити-формат, билборды, суперсайты 5×12, медиафасады, "
+    "digital-экраны, щиты 3×6, аренда, Балашиха, Химки, Мытищи, Подольск, МКАД, шоссе, метро."
+)
+VOICE_SEARCH_HOTWORDS = (
+    "ситиборд ситиборды ситиборда ситибордов билборд суперсайт сити-формат медиафасад"
 )
 
 
@@ -76,6 +84,7 @@ async def voice_search(
             language=lang,
             beam_size=cfg.voice_search_beam_size,
             initial_prompt=VOICE_SEARCH_INITIAL_PROMPT,
+            hotwords=VOICE_SEARCH_HOTWORDS,
             vad_filter=True,
             word_timestamps=False,
         )
@@ -96,13 +105,38 @@ async def voice_search(
             400,
         )
 
-    full_text = " ".join(s["text"] for s in segments).strip()
+    raw_text = " ".join(s["text"] for s in segments).strip()
+    full_text = RussianTextNormalizer().normalize(raw_text)
     avg_conf = sum(s.get("confidence", 0.0) for s in segments) / len(segments) if segments else 0.0
 
     elapsed_ms = int((time.time() - start_time) * 1000)
     logger.info(
         "voice_search_completed", duration=duration, latency_ms=elapsed_ms, text_len=len(full_text)
     )
+
+    # Save to shared query history in Redis so all devices see queries
+    try:
+        from app.queue.redis_streams import get_queue
+
+        queue = get_queue()
+        client = await queue.get_client()
+        history_item = {
+            "id": str(uuid.uuid4()),
+            "text": full_text,
+            "language": meta.get("language", "ru"),
+            "confidence": round(avg_conf, 3),
+            "duration": round(duration, 2),
+            "latency": elapsed_ms,
+            "method": "🎤 Голосовой",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+        }
+        await client.lpush(
+            f"voice:history:{namespace}", json.dumps(history_item, ensure_ascii=False)
+        )
+        await client.ltrim(f"voice:history:{namespace}", 0, 99)
+    except Exception as err:
+        logger.warning("voice_history_save_failed", error=str(err))
 
     return VoiceSearchResponse(
         text=full_text,
@@ -111,6 +145,56 @@ async def voice_search(
         duration_sec=duration,
         processing_time_ms=elapsed_ms,
     )
+
+
+@router.get(
+    "/history",
+    summary="Получение общей истории голосовых поисковых запросов",
+)
+async def get_voice_history(
+    namespace: str = Query(..., description="Namespace изоляции данных"),
+    auth: AuthContext = Depends(verify_auth),
+):
+    auth.verify_namespace(namespace)
+    try:
+        from app.queue.redis_streams import get_queue
+
+        queue = get_queue()
+        client = await queue.get_client()
+        raw_items = await client.lrange(f"voice:history:{namespace}", 0, 99)
+        items = []
+        for raw in raw_items:
+            try:
+                decoded = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+                items.append(json.loads(decoded))
+            except Exception:
+                continue
+        return {"items": items, "count": len(items)}
+    except Exception as err:
+        logger.warning("voice_history_fetch_failed", error=str(err))
+        return {"items": [], "count": 0}
+
+
+@router.delete(
+    "/history",
+    summary="Очистка истории голосовых запросов",
+)
+async def clear_voice_history(
+    namespace: str = Query(..., description="Namespace изоляции данных"),
+    auth: AuthContext = Depends(verify_auth),
+):
+    auth.require_scope("write")
+    auth.verify_namespace(namespace)
+    try:
+        from app.queue.redis_streams import get_queue
+
+        queue = get_queue()
+        client = await queue.get_client()
+        await client.delete(f"voice:history:{namespace}")
+        return {"status": "cleared", "namespace": namespace}
+    except Exception as err:
+        logger.warning("voice_history_clear_failed", error=str(err))
+        return {"status": "error", "error": str(err)}
 
 
 @router.get(

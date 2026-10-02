@@ -39,16 +39,46 @@ class AnalysisContext(BaseModel):
     speech_duration_sec: float = 0.0
 
 
+class ManagerChecklist(BaseModel):
+    greeting: bool = False
+    need_identification: bool = False
+    options_offered: bool = False
+    next_step_named: bool = False
+    contacts_taken: bool = False
+    forbidden_words_found: list[str] = []
+    score: int = 0
+
+
+class Sentiment(BaseModel):
+    client_overall: str = "neutral"
+    manager_tone: str = "polite_constructive"
+
+
+class Entities(BaseModel):
+    cities: list[str] = []
+    formats: list[str] = []
+    quantity: int | None = None
+    target_period: str | None = None
+    budget_rub: float | None = None
+    product_category: str | None = None
+
+
+class Agreement(BaseModel):
+    who: str = "manager"
+    what: str
+    deadline: str | None = None
+
+
 class StructuredAnalysis(BaseModel):
     schema_version: str = "1.0.0"
     prompt_version: str = "v1.2-ru-outdoor"
     summary: str
     call_result: str
     inquiry_type: str
-    entities: dict[str, Any]
-    agreements: list[dict[str, Any]]
-    sentiment: dict[str, str]
-    manager_checklist: dict[str, Any]
+    entities: Entities | dict[str, Any]
+    agreements: list[Agreement | dict[str, Any]] = []
+    sentiment: Sentiment | dict[str, Any]
+    manager_checklist: ManagerChecklist | dict[str, Any]
     deterministic_speech_metrics: dict[str, Any] | None = None
 
 

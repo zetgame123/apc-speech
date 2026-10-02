@@ -294,8 +294,9 @@ async def process_job(job_id: str, data: dict):
 
             final_segments, role_conf = role_classifier.classify_mono_speakers(raw_segments)
 
-            # In local-full profile, semantically refine speaker roles with Qwen 2.5 7B
-            if settings.app_profile == "local-full" and final_segments:
+            # In local-full profile, semantically refine speaker roles with Qwen 2.5 7B if dialogue
+            unique_speakers = {s.get("speaker_label") for s in final_segments}
+            if settings.app_profile == "local-full" and final_segments and len(unique_speakers) > 1:
                 try:
                     async with AsyncSessionLocal() as db:
                         await db.execute(

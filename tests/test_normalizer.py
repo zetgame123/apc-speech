@@ -74,3 +74,10 @@ def test_terms_and_formats():
     assert normalizer.normalize("сити формат сторона а") == "сити-формат сторона А"
     assert normalizer.normalize("супер сайт сторона б") == "суперсайт сторона Б"
     assert normalizer.normalize("диджитал экраны с высоким grp") == "digital-экраны с высоким GRP"
+    assert normalizer.normalize("сити борд в Химках") == "ситиборд в Химках"
+    assert (
+        normalizer.normalize("свободные сити борта на октябрь") == "свободные ситиборда на октябрь"
+    )
+    assert normalizer.normalize("аренда сити бордов") == "аренда ситибордов"
+    assert normalizer.normalize("сети борд и бигборд") == "ситиборд и билборд"
+    assert normalizer.normalize("размещение на city board") == "размещение на ситиборд"

@@ -68,10 +68,17 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                 )
 
         prompt = (
-            "Ты — русскоязычный аналитик деловых телефонных звонков (включая рекламу, B2B продажи, IT, услуги и клиентский сервис). "
-            "Проанализируй диалог менеджера и клиента и заполни JSON по схеме. "
-            "Все ключи и строковые значения в JSON должны быть строго на русском языке или латинице. "
-            "Ключи в entities: city, format, quantity, period, budget.\n\n"
+            "Ты — русскоязычный аналитик деловых телефонных звонков (реклама, продажи, услуги, сервис, запись клиентов). "
+            "Проанализируй диалог менеджера и клиента и заполни JSON строго по схеме. "
+            "Все строковые значения должны быть на русском языке.\n\n"
+            "Критерии чеклиста менеджера (manager_checklist):\n"
+            "- greeting: поздоровался, представился или назвал компанию (true/false)\n"
+            "- need_identification: выяснил запрос, потребность, услугу, локацию или дату (true/false)\n"
+            "- options_offered: предложил конкретные варианты, услуги, время, слоты или форматы (true/false)\n"
+            "- next_step_named: зафиксировал следующий шаг (запись, встречу, звонок, КП, расчет) (true/false)\n"
+            "- contacts_taken: уточнил или сверил контактные данные (телефон, имя, email, мессенджер) (true/false)\n"
+            "- forbidden_words_found: грубые или недопустимые слова (или [])\n"
+            "- score: сумма выполненных пунктов (от 0 до 5)\n\n"
             f"Транскрипт:\n{trimmed_transcript}"
         )
         schema = StructuredAnalysis.model_json_schema()
@@ -102,6 +109,44 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
             data = resp.json()
             content = data["choices"][0]["message"]["content"]
             parsed = json.loads(content)
+
+            # Guarantee manager_checklist normalization and recalculate score from booleans
+            if isinstance(parsed.get("manager_checklist"), dict):
+                cl = parsed["manager_checklist"]
+                checklist_keys = [
+                    "greeting",
+                    "need_identification",
+                    "options_offered",
+                    "next_step_named",
+                    "contacts_taken",
+                ]
+                for k in checklist_keys:
+                    cl.setdefault(k, False)
+                cl["forbidden_words_found"] = cl.get("forbidden_words_found") or []
+                cl["score"] = sum(1 for k in checklist_keys if cl.get(k) is True)
+
+            # Normalize entities
+            if isinstance(parsed.get("entities"), dict):
+                ent = parsed["entities"]
+                if "cities" not in ent and "city" in ent:
+                    c = ent.pop("city")
+                    ent["cities"] = [c] if c else []
+                if "formats" not in ent and "format" in ent:
+                    f_val = ent.pop("format")
+                    ent["formats"] = [f_val] if f_val else []
+                if "cities" in ent and isinstance(ent["cities"], str):
+                    ent["cities"] = [ent["cities"]] if ent["cities"] else []
+                if "formats" in ent and isinstance(ent["formats"], str):
+                    ent["formats"] = [ent["formats"]] if ent["formats"] else []
+
+            # Normalize sentiment
+            if isinstance(parsed.get("sentiment"), dict):
+                s = parsed["sentiment"]
+                if "client_overall" not in s and "client" in s:
+                    s["client_overall"] = s.pop("client")
+                if "manager_tone" not in s and "manager" in s:
+                    s["manager_tone"] = s.pop("manager")
+
             return StructuredAnalysis(**parsed)
 
     async def refine_speaker_roles(
@@ -117,6 +162,10 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         if not segments:
             return segments
 
+        unique_spks = {s.get("speaker_label") for s in segments}
+        if len(unique_spks) <= 1:
+            return segments
+
         # Build prompt using the most informative turns (first 30 turns)
         turns_to_eval = segments[:30]
         lines = []
@@ -129,9 +178,10 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
 
         dialogue_excerpt = "\n".join(lines)
         prompt = (
-            "В телефонном разговоре участвуют два собеседника (SPEAKER_0 и SPEAKER_1). "
+            "В телефонном разговоре участвуют собеседники (SPEAKER_0 и SPEAKER_1). "
             "Определи, кто из них 'manager' (представитель/организатор/продавец/оператор компании), "
             "а кто 'client' (клиент/заказчик/собеседник/абонент). "
+            "Если это монолог, стихи, басня или не деловой диалог, укажи null. "
             "Верни JSON со спикерами manager и client:\n"
             f"{dialogue_excerpt}"
         )
@@ -140,14 +190,14 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
             "type": "object",
             "properties": {
                 "manager": {
-                    "type": "string",
-                    "enum": ["SPEAKER_0", "SPEAKER_1"],
-                    "description": "Метка спикера-менеджера: SPEAKER_0 или SPEAKER_1",
+                    "type": ["string", "null"],
+                    "enum": ["SPEAKER_0", "SPEAKER_1", None],
+                    "description": "Метка спикера-менеджера: SPEAKER_0 или SPEAKER_1 (или null)",
                 },
                 "client": {
-                    "type": "string",
-                    "enum": ["SPEAKER_0", "SPEAKER_1"],
-                    "description": "Метка спикера-клиента: SPEAKER_0 или SPEAKER_1",
+                    "type": ["string", "null"],
+                    "enum": ["SPEAKER_0", "SPEAKER_1", None],
+                    "description": "Метка спикера-клиента: SPEAKER_0 или SPEAKER_1 (или null)",
                 },
             },
             "required": ["manager", "client"],
@@ -187,7 +237,13 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                 cli_spk = parsed.get("client")
                 roles = parsed.get("roles", [])
 
-                if mgr_spk and cli_spk and mgr_spk in ("SPEAKER_0", "SPEAKER_1"):
+                if (
+                    mgr_spk
+                    and cli_spk
+                    and mgr_spk in ("SPEAKER_0", "SPEAKER_1")
+                    and cli_spk in ("SPEAKER_0", "SPEAKER_1")
+                    and mgr_spk != cli_spk
+                ):
                     updated = []
                     for s in segments:
                         s_copy = dict(s)
