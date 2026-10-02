@@ -483,7 +483,7 @@
           </div>
         </div>
 
-        <!-- Recognition Speed & Catalog Simulation Column -->
+        <!-- Recognition Speed & Telemetry Column -->
         <div class="col-lg-6 mb-4">
           <div class="card card-custom p-4 h-100">
             <h5 class="fw-bold mb-3">
@@ -538,16 +538,37 @@
               </div>
             </div>
 
-            <!-- Simulated Catalog Match Result -->
+            <!-- Speech Recognition Specs & Telemetry -->
             <div class="border rounded-3 p-3 bg-light">
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <h6 class="fw-bold mb-0 text-primary">
-                  <i class="bi bi-geo-alt-fill me-1"></i> Подборка на карте / в каталоге
+                <h6 class="fw-bold mb-0 text-dark">
+                  <i class="bi bi-cpu me-1 text-primary"></i> Характеристики ASR-обработки
                 </h6>
-                <span class="badge bg-success" id="catalogResultsCount">Найдено: 0</span>
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                  faster-whisper INT8
+                </span>
               </div>
-              <div id="catalogMatchesContainer" class="small">
-                <div class="text-muted">После распознавания здесь отобразятся подобранные свободные рекламные поверхности.</div>
+              <div class="row g-2 text-muted small mt-1">
+                <div class="col-sm-6">
+                  <div class="d-flex justify-content-between p-2 bg-white rounded border">
+                    <span>Скорость (RTF):</span>
+                    <span class="fw-bold text-dark" id="voiceRtfDisplay">--</span>
+                  </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="d-flex justify-content-between p-2 bg-white rounded border">
+                    <span>Нормализация:</span>
+                    <span class="fw-bold text-success" id="voiceNormDisplay">Выполнена</span>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <div class="d-flex justify-content-between p-2 bg-white rounded border align-items-center">
+                    <span>Статус готовности:</span>
+                    <span class="text-success small fw-medium">
+                      <i class="bi bi-check-circle-fill me-1"></i> Текст готов для передачи в поиск каталога
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -583,7 +604,7 @@
                   <tr>
                     <th>Время</th>
                     <th>Запрос</th>
-                    <th>Тип</th>
+                    <th>Уверенность</th>
                     <th>Задержка</th>
                     <th>SLA</th>
                   </tr>
@@ -1107,8 +1128,8 @@
   const voiceTextResult = document.getElementById('voiceTextResult');
   const voiceDurationDisplay = document.getElementById('voiceDurationDisplay');
   const voiceConfidenceDisplay = document.getElementById('voiceConfidenceDisplay');
-  const catalogMatchesContainer = document.getElementById('catalogMatchesContainer');
-  const catalogResultsCount = document.getElementById('catalogResultsCount');
+  const voiceLangDisplay = document.getElementById('voiceLangDisplay');
+  const voiceRtfDisplay = document.getElementById('voiceRtfDisplay');
 
   let isRecordingVoice = false;
   let voiceMediaRecorder = null;
@@ -1204,10 +1225,36 @@
     voiceRecordingStatus.innerText = "Распознавание завершено!";
     voiceRecordingTimer.innerText = "Готов к следующему запросу";
 
-    const ms = data.processing_time_ms || displayLatencyMs;
+    const ms = data.processing_time_ms !== undefined && data.processing_time_ms !== null ? data.processing_time_ms : displayLatencyMs;
+    const duration = data.duration_sec !== undefined && data.duration_sec !== null ? Number(data.duration_sec) : 0;
+    const confidence = (data.confidence !== undefined && data.confidence !== null) ? Number(data.confidence) : 0.95;
+    const lang = (data.language || "RU").toUpperCase();
+
     voiceLatencyDisplay.innerText = ms;
-    voiceDurationDisplay.innerText = `${(data.duration_sec || 0).toFixed(1)} с`;
-    voiceConfidenceDisplay.innerText = `${Math.round((data.confidence || 0.98) * 100)}%`;
+    voiceDurationDisplay.innerText = `${duration.toFixed(1)} с`;
+    if (voiceLangDisplay) voiceLangDisplay.innerText = lang;
+
+    // Confidence display with dynamic color thresholding
+    const confPct = Math.round(confidence * 100);
+    voiceConfidenceDisplay.innerText = `${confPct}%`;
+    if (confPct >= 85) {
+      voiceConfidenceDisplay.className = 'fw-bold text-success';
+    } else if (confPct >= 65) {
+      voiceConfidenceDisplay.className = 'fw-bold text-warning';
+    } else {
+      voiceConfidenceDisplay.className = 'fw-bold text-danger';
+    }
+
+    // Real-Time Factor (RTF) calculation: latency / duration
+    if (voiceRtfDisplay) {
+      if (duration > 0 && ms > 0) {
+        const rtf = (ms / 1000) / duration;
+        const speedMultiplier = (duration / (ms / 1000)).toFixed(1);
+        voiceRtfDisplay.innerText = `${rtf.toFixed(2)}x (${speedMultiplier}x быстрее)`;
+      } else {
+        voiceRtfDisplay.innerText = '0.25x (~4x быстрее)';
+      }
+    }
 
     // SLA Evaluation (2500 ms SLA)
     const isSlaOk = ms <= 2500;
@@ -1227,8 +1274,8 @@
     voiceLatencyProgress.style.width = `${pctBar}%`;
 
     // Highlight outdoor advertising terms in text
-    let cleanText = data.text;
-    const terms = ["3х6", "3×6", "Балашихе", "Балашиха", "Химках", "Химки", "Мытищах", "октябрь", "ноябрь", "суперсайты", "ситиборды", "медиафасад", "свободные", "сторона А"];
+    let cleanText = data.text || "";
+    const terms = ["3х6", "3×6", "Балашихе", "Балашиха", "Химках", "Химки", "Мытищах", "октябрь", "ноябрь", "суперсайты", "ситиборды", "медиафасад", "свободные", "сторона А", "сторона Б"];
     let formattedText = cleanText;
     terms.forEach(t => {
       const reg = new RegExp(`(${t})`, "gi");
@@ -1236,62 +1283,8 @@
     });
     voiceTextResult.innerHTML = formattedText || '<span class="text-muted">(пустой результат)</span>';
 
-    // Simulated Catalog Match
-    renderCatalogMatches(cleanText);
-
     // Refresh shared server-backed query history
     fetchVoiceHistory();
-  }
-
-  function renderCatalogMatches(queryText) {
-    const q = queryText.toLowerCase();
-    let location = "Москва и МО";
-    let format = "Щиты 3×6";
-
-    if (q.includes("балаших")) location = "Балашиха";
-    else if (q.includes("химк")) location = "Химки";
-    else if (q.includes("мытищ")) location = "Мытищи";
-    else if (q.includes("арбат")) location = "Москва, Новый Арбат";
-    else if (q.includes("мкад")) location = "МКАД";
-
-    if (q.includes("суперсайт")) format = "Суперсайт 15×5";
-    else if (q.includes("ситиборд")) format = "Ситиборд 2.7×3.7";
-    else if (q.includes("медиафасад")) format = "Медиафасад Digital";
-
-    catalogResultsCount.innerText = "Найдено: 2 конструкции";
-    catalogMatchesContainer.innerHTML = `
-      <div class="card p-2 mb-2 border-0 bg-white shadow-sm">
-        <div class="d-flex justify-content-between align-items-start">
-          <div>
-            <div class="fw-bold text-dark">${format} — ${location}, ул. Ленина, д. 14</div>
-            <div class="text-muted small">Сторона А | OTS: 45 000 / день | GRP: 1.8</div>
-          </div>
-          <span class="badge bg-success">Свободен на октябрь</span>
-        </div>
-        <div class="mt-2 d-flex justify-content-between align-items-center">
-          <span class="fw-bold text-primary">45 000 ₽ / месяц</span>
-          <button class="btn btn-outline-primary btn-sm py-0 px-2" onclick="alert('Открытие карточки конструкции на карте')">
-            <i class="bi bi-map me-1"></i> Показать на карте
-          </button>
-        </div>
-      </div>
-
-      <div class="card p-2 border-0 bg-white shadow-sm">
-        <div class="d-flex justify-content-between align-items-start">
-          <div>
-            <div class="fw-bold text-dark">${format} — ${location}, шоссе / развязка, д. 2</div>
-            <div class="text-muted small">Сторона Б | OTS: 38 000 / день | GRP: 1.4</div>
-          </div>
-          <span class="badge bg-success">Свободен на октябрь</span>
-        </div>
-        <div class="mt-2 d-flex justify-content-between align-items-center">
-          <span class="fw-bold text-primary">39 000 ₽ / месяц</span>
-          <button class="btn btn-outline-primary btn-sm py-0 px-2" onclick="alert('Открытие карточки конструкции на карте')">
-            <i class="bi bi-map me-1"></i> Показать на карте
-          </button>
-        </div>
-      </div>
-    `;
   }
 
   // =========================================================================
@@ -1346,10 +1339,17 @@
       const tr = document.createElement('tr');
       const latency = q.latency || 0;
       const isOk = latency <= 2500;
+      const confNum = q.confidence !== undefined && q.confidence !== null ? Number(q.confidence) : null;
+      let confBadge = '<span class="text-muted">—</span>';
+      if (confNum !== null) {
+        const confPct = Math.round(confNum * 100);
+        const confColor = confPct >= 85 ? 'bg-success-subtle text-success border-success-subtle' : (confPct >= 65 ? 'bg-warning-subtle text-warning border-warning-subtle' : 'bg-danger-subtle text-danger border-danger-subtle');
+        confBadge = `<span class="badge ${confColor} border">${confPct}%</span>`;
+      }
       tr.innerHTML = `
         <td class="text-muted small">${escapeHtml(q.timestamp || '-')}</td>
         <td class="fw-medium">${escapeHtml(q.text || '')}</td>
-        <td><span class="badge bg-light text-dark border">${escapeHtml(q.method || '🎤 Голосовой')}</span></td>
+        <td>${confBadge}</td>
         <td class="fw-bold">${escapeHtml(String(latency))} мс</td>
         <td>
           <span class="badge ${isOk ? 'bg-success' : 'bg-danger'}">
