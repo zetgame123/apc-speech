@@ -183,6 +183,44 @@ paths:
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
 
+  /v1/jobs/by-s3:
+    post:
+      summary: Создание задания анализа по объекту в S3/MinIO
+      description: Приём аудиофайла из корзины S3/MinIO и создание асинхронного задания обработки.
+      operationId: createJobByS3
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: header
+          name: X-Request-Id
+          schema:
+            type: string
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobByS3Request'
+      responses:
+        '202':
+          description: Задание принято в обработку
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAcceptedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
   /v1/jobs/{job_id}:
     get:
       summary: Получение статуса и результата задания
@@ -697,6 +735,48 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/analytics/export.csv:
+    get:
+      summary: Экспорт аналитики в CSV (алиас)
+      description: Выгрузка данных звонков и аналитики в CSV формате.
+      operationId: exportAnalyticsCSVAlias
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: namespace
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: manager_id
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Успешный экспорт
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /v1/admin/tokens/revoke:
     post:
       summary: Горячий отзыв токена
@@ -825,6 +905,61 @@ components:
         options:
           type: object
           properties:
+            vocabulary_hints:
+              type: array
+              items:
+                type: string
+            retention_audio_days:
+              type: integer
+              default: 14
+            retention_text_days:
+              type: integer
+              default: 365
+
+    CreateJobByS3Request:
+      type: object
+      required: [namespace, s3_key]
+      properties:
+        namespace:
+          type: string
+        s3_key:
+          type: string
+          description: Ключ объекта в S3 хранилище
+        s3_bucket:
+          type: string
+          description: Название корзины S3 (по умолчанию raw-audio)
+        callback_url:
+          type: string
+          format: uri
+        language:
+          type: string
+          enum: [ru, en, auto]
+          default: ru
+          description: Язык распознавания речи (ru, en или auto)
+        metadata:
+          type: object
+          properties:
+            external_id:
+              type: string
+            direction:
+              type: string
+              enum: [inbound, outbound]
+            manager_id:
+              type: string
+            client_id:
+              type: string
+            channel_mapping:
+              type: object
+              properties:
+                channel_0:
+                  type: string
+                channel_1:
+                  type: string
+        options:
+          type: object
+          properties:
+            channel_manager:
+              type: integer
             vocabulary_hints:
               type: array
               items:

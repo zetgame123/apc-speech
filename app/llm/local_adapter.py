@@ -76,7 +76,7 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         )
         schema = StructuredAnalysis.model_json_schema()
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=180.0) as client:
             resp = await client.post(
                 f"{self.endpoint_url}/chat/completions",
                 json={
@@ -117,8 +117,8 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         if not segments:
             return segments
 
-        # Build prompt using the most informative turns (first 40 turns)
-        turns_to_eval = segments[:40]
+        # Build prompt using the most informative turns (first 30 turns)
+        turns_to_eval = segments[:30]
         lines = []
         for i, s in enumerate(turns_to_eval):
             txt = s.get("text", "").strip()
@@ -129,10 +129,10 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
 
         dialogue_excerpt = "\n".join(lines)
         prompt = (
-            "В телефонном разговоре участвуют собеседники (SPEAKER_0 и SPEAKER_1). "
-            "Определи, кто из них 'manager' (представитель/организатор/оператор компании), "
-            "а кто 'client' (клиент/заказчик/собеседник). "
-            "Верни JSON со списком roles (порядок реплик) и/или полями manager и client:\n"
+            "В телефонном разговоре участвуют два собеседника (SPEAKER_0 и SPEAKER_1). "
+            "Определи, кто из них 'manager' (представитель/организатор/продавец/оператор компании), "
+            "а кто 'client' (клиент/заказчик/собеседник/абонент). "
+            "Верни JSON со спикерами manager и client:\n"
             f"{dialogue_excerpt}"
         )
 
@@ -141,20 +141,16 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
             "properties": {
                 "manager": {
                     "type": "string",
-                    "description": "Метка спикера-менеджера (например SPEAKER_0 или SPEAKER_1)",
+                    "enum": ["SPEAKER_0", "SPEAKER_1"],
+                    "description": "Метка спикера-менеджера: SPEAKER_0 или SPEAKER_1",
                 },
                 "client": {
                     "type": "string",
-                    "description": "Метка спикера-клиента (например SPEAKER_0 или SPEAKER_1)",
-                },
-                "roles": {
-                    "type": "array",
-                    "items": {
-                        "type": "string",
-                        "enum": ["manager", "client"],
-                    },
+                    "enum": ["SPEAKER_0", "SPEAKER_1"],
+                    "description": "Метка спикера-клиента: SPEAKER_0 или SPEAKER_1",
                 },
             },
+            "required": ["manager", "client"],
             "additionalProperties": False,
         }
 
@@ -174,10 +170,11 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                         "response_format": {
                             "type": "json_schema",
                             "json_schema": {
-                                "name": "RoleClassification",
+                                "name": "SpeakerRoleMapping",
                                 "schema": schema,
                             },
                         },
+                        "max_tokens": 40,
                         "temperature": 0.0,
                     },
                 )

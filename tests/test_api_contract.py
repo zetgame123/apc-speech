@@ -49,3 +49,26 @@ async def test_dashboard_endpoint():
         assert resp.status_code == 200
         assert "APC-SPEECH" in resp.text
         assert "audioPlayer" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/metrics")
+        assert resp.status_code == 200
+        assert "python_gc_objects_collected_total" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_analytics_export_csv_endpoints():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        headers = {"Authorization": "Bearer dev-token"}
+        # Test standard route
+        resp1 = await client.get("/v1/analytics/export_csv?namespace=test_msk", headers=headers)
+        assert resp1.status_code == 200
+        assert "call_id,external_id" in resp1.text
+
+        # Test dot-alias route
+        resp2 = await client.get("/v1/analytics/export.csv?namespace=test_msk", headers=headers)
+        assert resp2.status_code == 200
+        assert "call_id,external_id" in resp2.text

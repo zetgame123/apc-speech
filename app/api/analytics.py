@@ -192,6 +192,7 @@ async def analyze_texts(
 
 
 @router.get("/analytics/export_csv")
+@router.get("/analytics/export.csv")
 async def export_analytics_csv(
     namespace: str = Query(...),
     date_from: datetime | None = Query(None),

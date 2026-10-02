@@ -46,6 +46,7 @@ def mock_infra(monkeypatch):
     mock_storage = MagicMock()
     mock_storage.upload_bytes.return_value = None
     mock_storage.ensure_buckets.return_value = None
+    mock_storage.head_object.return_value = {"ContentLength": 1024, "ContentType": "audio/wav"}
     monkeypatch.setattr("app.api.jobs.get_storage", lambda: mock_storage)
 
     # Mock queue — enqueue_long_job is async
@@ -200,3 +201,35 @@ async def test_create_job_upload_retry_after_failure(mock_infra):
         job_id_2 = resp2.json()["job_id"]
         assert job_id_2 != job_id_1
         assert resp2.json()["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_create_job_by_s3_returns_202(mock_infra):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        headers = {"Authorization": "Bearer dev-token"}
+        payload = {
+            "namespace": "test_s3_ns",
+            "s3_bucket": "raw-audio",
+            "s3_key": "recordings/call_123.wav",
+        }
+        response = await ac.post("/v1/jobs/by-s3", json=payload, headers=headers)
+        assert response.status_code == 202
+        data = response.json()
+        assert "job_id" in data
+        assert data["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_create_job_by_s3_not_found(mock_infra):
+    mock_storage, _ = mock_infra
+    mock_storage.head_object.return_value = None
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        headers = {"Authorization": "Bearer dev-token"}
+        payload = {
+            "namespace": "test_s3_ns",
+            "s3_bucket": "raw-audio",
+            "s3_key": "recordings/nonexistent.wav",
+        }
+        response = await ac.post("/v1/jobs/by-s3", json=payload, headers=headers)
+        assert response.status_code == 404
+        assert response.json()["error"] == "s3_object_not_found"

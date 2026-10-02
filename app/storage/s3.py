@@ -79,6 +79,13 @@ class S3Storage:
             logger.error("s3_delete_error", bucket=bucket, key=key, error=str(e))
             return False
 
+    def head_object(self, bucket: str, key: str) -> dict | None:
+        """Retrieves metadata of an S3 object or None if not found."""
+        try:
+            return self.s3_client.head_object(Bucket=bucket, Key=key)
+        except ClientError:
+            return None
+
     def generate_presigned_url(
         self,
         bucket: str,

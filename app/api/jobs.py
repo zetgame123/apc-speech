@@ -61,6 +61,16 @@ class CreateJobByUrlRequest(BaseModel):
     options: dict[str, Any] | None = None
 
 
+class CreateJobByS3Request(BaseModel):
+    namespace: str
+    s3_key: str
+    s3_bucket: str | None = None
+    callback_url: str | None = None
+    language: str | None = "ru"
+    metadata: dict[str, Any] | None = None
+    options: dict[str, Any] | None = None
+
+
 @router.post(
     "/upload",
     response_model=JobAcceptedResponse,
@@ -379,6 +389,165 @@ async def create_job_by_url(
         "call_id": call_id,
         "namespace": req.namespace,
         "source_url": safe_url,
+        "callback_url": req.callback_url,
+        "language": req.language or "ru",
+        "metadata": meta,
+        "options": options,
+        "channel_manager": options.get("channel_manager") or meta.get("channel_manager"),
+        "vocabulary_hints": options.get("vocabulary_hints") or meta.get("vocabulary_hints"),
+    }
+    await queue.enqueue_long_job(job_id, payload)
+
+    return JobAcceptedResponse(
+        job_id=job_id,
+        status="queued",
+        status_url=f"/v1/jobs/{job_id}?namespace={req.namespace}",
+        created_at=now.replace(tzinfo=timezone.utc),
+    )
+
+
+@router.post(
+    "/by-s3",
+    response_model=JobAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Создание задания по объекту в S3/MinIO",
+)
+async def create_job_by_s3(
+    req: CreateJobByS3Request,
+    response: Response,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    x_request_id: str | None = Header(None, alias="X-Request-Id"),
+    auth: AuthContext = Depends(verify_auth),
+    _=Depends(rate_limit),
+    db: AsyncSession = Depends(get_db),
+):
+    auth.require_scope("write")
+    auth.verify_namespace(req.namespace)
+    settings = get_settings()
+
+    if req.callback_url:
+        validate_ssrf_url(req.callback_url)
+
+    bucket = req.s3_bucket or settings.s3_bucket_audio
+    storage = get_storage()
+    obj_meta = storage.head_object(bucket, req.s3_key)
+    if not obj_meta:
+        raise AppError(
+            "s3_object_not_found",
+            f"Аудиообъект '{req.s3_key}' не найден в корзине '{bucket}'",
+            404,
+        )
+
+    file_size = obj_meta.get("ContentLength", 0)
+    meta = req.metadata or {}
+    options = req.options or {}
+    param_fingerprint = (
+        f"{req.language or 'ru'}:"
+        f"{options.get('channel_manager') or meta.get('channel_manager')}:"
+        f"{options.get('vocabulary_hints') or meta.get('vocabulary_hints')}"
+    )
+    param_hash = hashlib.sha256(param_fingerprint.encode()).hexdigest()[:8]
+    effective_idempotency = idempotency_key or f"s3:{bucket}:{req.s3_key}:{param_hash}"
+
+    stmt = select(Job).where(
+        Job.namespace == req.namespace, Job.idempotency_key == effective_idempotency
+    )
+    existing_job = (await db.execute(stmt)).scalar_one_or_none()
+    if existing_job:
+        if existing_job.status == "failed":
+            logger.info(
+                "retrying_failed_job",
+                failed_job_id=existing_job.id,
+                idempotency_key=effective_idempotency,
+            )
+            existing_job.idempotency_key = f"{effective_idempotency[:100]}:f:{existing_job.id[:8]}"
+            await db.flush()
+        else:
+            response.status_code = status.HTTP_200_OK
+            return JobAcceptedResponse(
+                job_id=existing_job.id,
+                status=existing_job.status,
+                status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
+                created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
+                if existing_job.created_at.tzinfo is None
+                else existing_job.created_at,
+            )
+
+    job_id = str(uuid.uuid4())
+    call_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    call_created_at_dt = None
+    if meta.get("call_created_at"):
+        try:
+            call_created_at_dt = datetime.fromisoformat(
+                str(meta["call_created_at"]).replace("Z", "+00:00")
+            ).replace(tzinfo=None)
+        except Exception:
+            call_created_at_dt = None
+
+    call = Call(
+        id=call_id,
+        namespace=req.namespace,
+        external_id=meta.get("external_id"),
+        direction=meta.get("direction", "inbound"),
+        call_created_at=call_created_at_dt or now,
+        manager_id=meta.get("manager_id"),
+        client_id=meta.get("client_id"),
+        created_at=now,
+        expires_at=now + timedelta(days=settings.retention_text_days),
+    )
+    db.add(call)
+
+    audio_obj = AudioObject(
+        call_id=call_id,
+        namespace=req.namespace,
+        s3_bucket=bucket,
+        s3_key=req.s3_key,
+        mime_type=obj_meta.get("ContentType", "audio/wav"),
+        file_size_bytes=file_size,
+        created_at=now,
+        expires_at=now + timedelta(days=settings.retention_audio_days),
+    )
+    db.add(audio_obj)
+
+    job = Job(
+        id=job_id,
+        namespace=req.namespace,
+        call_id=call_id,
+        status="queued",
+        progress=0,
+        step="queued_s3",
+        idempotency_key=effective_idempotency,
+        callback_url=req.callback_url,
+        created_at=now,
+    )
+    db.add(job)
+
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        existing_job = (await db.execute(stmt)).scalar_one_or_none()
+        if existing_job:
+            response.status_code = status.HTTP_200_OK
+            return JobAcceptedResponse(
+                job_id=existing_job.id,
+                status=existing_job.status,
+                status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
+                created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
+                if existing_job.created_at.tzinfo is None
+                else existing_job.created_at,
+            )
+        raise
+
+    queue = get_queue()
+    payload = {
+        "job_id": job_id,
+        "call_id": call_id,
+        "namespace": req.namespace,
+        "s3_bucket": bucket,
+        "s3_key": req.s3_key,
         "callback_url": req.callback_url,
         "language": req.language or "ru",
         "metadata": meta,
