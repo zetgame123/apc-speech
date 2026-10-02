@@ -19,6 +19,9 @@ DEFAULT_HINTS = (
     "Балашиха, Химки, Мытищи, Подольск, Красногорск, Одинцово, Люберцы, Королёв. "
     "Параметры: сторона А, сторона Б, три на шесть, свободные щиты на месяц, бронь, монтаж, GRP, OTS."
 )
+DEFAULT_CONVERSATION_PROMPT = (
+    "Деловой телефонный разговор, обсуждение предложений, компании, услуг, согласование участия."
+)
 DEFAULT_HOTWORDS = (
     "щит щиты щитов щитах билборд билборды суперсайт ситиборд медиафасад 3×6 5×12 6×3 "
     "до от руб рублей тысяч Автозаводская Автозаводской Ленинградка Ленинградке МКАД ТТК ЦКАД "
@@ -126,7 +129,11 @@ class AsrEngine:
         Returns (segments, info).
         """
         resolved_lang = None if language == "auto" else (language or "ru")
-        prompt = initial_prompt.strip() if (initial_prompt and initial_prompt.strip()) else None
+        prompt = (
+            initial_prompt.strip()
+            if (initial_prompt and initial_prompt.strip())
+            else (DEFAULT_CONVERSATION_PROMPT if resolved_lang == "ru" else None)
+        )
         applied_hotwords = hotwords.strip() if (hotwords and hotwords.strip()) else None
 
         segments_iter, info = self.model.transcribe(
@@ -137,9 +144,9 @@ class AsrEngine:
             hotwords=applied_hotwords,
             vad_filter=vad_filter,
             vad_parameters=dict(
-                threshold=0.2,
-                min_silence_duration_ms=150,
-                speech_pad_ms=250,
+                threshold=0.35,
+                min_silence_duration_ms=450,
+                speech_pad_ms=300,
             ),
             word_timestamps=word_timestamps,
             condition_on_previous_text=False,  # CRITICAL: prevents repeating loops

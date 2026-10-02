@@ -99,6 +99,7 @@ services:
       - ASR_THREADS=2
     volumes:
       - ./models:/app/models:ro
+      - ./app:/app/app:ro
     ports:
       - "8000:8000"
     healthcheck:
@@ -134,6 +135,7 @@ services:
       - ASR_COMPUTE_TYPE=int8
     volumes:
       - ./models:/app/models:ro
+      - ./app:/app/app:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 10s
@@ -161,6 +163,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER:?}:${DB_PASSWORD:?}@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
       - DEV_TOKEN=${DEV_TOKEN:-}
+    volumes:
+      - ./app:/app/app:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 10s
@@ -187,6 +191,7 @@ services:
       - DEV_TOKEN=${DEV_TOKEN:-}
     volumes:
       - ./models:/app/models:ro
+      - ./app:/app/app:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 10s

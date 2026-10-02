@@ -58,16 +58,25 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         masked_transcript: str,
         context: AnalysisContext,
     ) -> StructuredAnalysis:
+        # If transcript is very long, condense it to keep prompt evaluation fast on CPU
+        trimmed_transcript = masked_transcript
+        if len(masked_transcript) > 4000:
+            lines = masked_transcript.split("\n")
+            if len(lines) > 50:
+                trimmed_transcript = "\n".join(
+                    lines[:30] + ["... [середина разговора] ..."] + lines[-20:]
+                )
+
         prompt = (
-            "Ты — русскоязычный аналитик звонков агентства наружной рекламы. "
-            "Проанализируй диалог и заполни JSON по схеме. "
+            "Ты — русскоязычный аналитик деловых телефонных звонков (включая рекламу, B2B продажи, IT, услуги и клиентский сервис). "
+            "Проанализируй диалог менеджера и клиента и заполни JSON по схеме. "
             "Все ключи и строковые значения в JSON должны быть строго на русском языке или латинице. "
             "Ключи в entities: city, format, quantity, period, budget.\n\n"
-            f"Транскрипт:\n{masked_transcript}"
+            f"Транскрипт:\n{trimmed_transcript}"
         )
         schema = StructuredAnalysis.model_json_schema()
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
                 f"{self.endpoint_url}/chat/completions",
                 json={
@@ -75,7 +84,7 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                     "messages": [
                         {
                             "role": "system",
-                            "content": "Ты — аналитик звонков агентства наружной рекламы. Отвечай только валидным JSON согласно схеме на русском языке.",
+                            "content": "Ты — аналитик деловых звонков. Отвечай только валидным JSON согласно схеме на русском языке.",
                         },
                         {"role": "user", "content": prompt},
                     ],
@@ -98,48 +107,56 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
     async def refine_speaker_roles(
         self,
         segments: list[dict[str, Any]],
-        timeout_sec: float = 60.0,
+        timeout_sec: float = 120.0,
     ) -> list[dict[str, Any]]:
         """
         Uses Qwen 2.5 7B to semantically classify/refine speaker roles ('manager' vs 'client')
-        for each turn based on conversational pragmatics.
+        based on conversational pragmatics.
         Falls back to original segments on any error or timeout.
         """
         if not segments:
             return segments
 
-        n = len(segments)
+        # Build prompt using the most informative turns (first 40 turns)
+        turns_to_eval = segments[:40]
         lines = []
-        for i, s in enumerate(segments):
+        for i, s in enumerate(turns_to_eval):
             txt = s.get("text", "").strip()
             if len(txt) > 200:
                 txt = txt[:197] + "..."
-            current_role = s.get("speaker_role", s.get("speaker_label", "speaker"))
-            lines.append(f"{i}: [{current_role}] {txt}")
+            spk = s.get("speaker_label", f"speaker_{i}")
+            lines.append(f"[{spk}] {txt}")
 
+        dialogue_excerpt = "\n".join(lines)
         prompt = (
-            f"Для каждой из {n} реплик диалога определи реальную роль говорящего: 'manager' (представитель/оператор компании) или 'client' (клиент/заказчик). "
-            f"Верни JSON со списком roles из ровно {n} элементов ('manager' или 'client') в строгом порядке реплик от 0 до {n - 1}:\n"
-            + "\n".join(lines)
+            "В телефонном разговоре участвуют собеседники (SPEAKER_0 и SPEAKER_1). "
+            "Определи, кто из них 'manager' (представитель/организатор/оператор компании), "
+            "а кто 'client' (клиент/заказчик/собеседник). "
+            "Верни JSON со списком roles (порядок реплик) и/или полями manager и client:\n"
+            f"{dialogue_excerpt}"
         )
 
         schema = {
             "type": "object",
             "properties": {
+                "manager": {
+                    "type": "string",
+                    "description": "Метка спикера-менеджера (например SPEAKER_0 или SPEAKER_1)",
+                },
+                "client": {
+                    "type": "string",
+                    "description": "Метка спикера-клиента (например SPEAKER_0 или SPEAKER_1)",
+                },
                 "roles": {
                     "type": "array",
                     "items": {
                         "type": "string",
                         "enum": ["manager", "client"],
                     },
-                }
+                },
             },
-            "required": ["roles"],
             "additionalProperties": False,
         }
-
-        # Each role token in the array is ~3-4 tokens
-        max_tokens = max(60, n * 5 + 30)
 
         try:
             async with httpx.AsyncClient(timeout=timeout_sec) as client:
@@ -150,18 +167,17 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                         "messages": [
                             {
                                 "role": "system",
-                                "content": "Ты эксперт по анализу диалогов. Отвечай строго валидным JSON со списком ролей по заданной схеме.",
+                                "content": "Ты эксперт по анализу деловых телефонных разговоров. Отвечай строго валидным JSON.",
                             },
                             {"role": "user", "content": prompt},
                         ],
                         "response_format": {
                             "type": "json_schema",
                             "json_schema": {
-                                "name": "RoleArray",
+                                "name": "RoleClassification",
                                 "schema": schema,
                             },
                         },
-                        "max_tokens": max_tokens,
                         "temperature": 0.0,
                     },
                 )
@@ -169,21 +185,39 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                 data = resp.json()
                 content = data["choices"][0]["message"]["content"]
                 parsed = json.loads(content)
+
+                mgr_spk = parsed.get("manager")
+                cli_spk = parsed.get("client")
                 roles = parsed.get("roles", [])
 
-                if isinstance(roles, list) and len(roles) > 0:
+                if mgr_spk and cli_spk and mgr_spk in ("SPEAKER_0", "SPEAKER_1"):
+                    updated = []
+                    for s in segments:
+                        s_copy = dict(s)
+                        spk = s_copy.get("speaker_label", "SPEAKER_0")
+                        if spk == mgr_spk:
+                            s_copy["speaker_role"] = "manager"
+                        elif spk == cli_spk:
+                            s_copy["speaker_role"] = "client"
+                        updated.append(s_copy)
+                    logger.info(
+                        "llm_role_refinement_by_speaker_success", manager=mgr_spk, client=cli_spk
+                    )
+                    return updated
+
+                elif isinstance(roles, list) and len(roles) > 0:
                     updated = []
                     for i, s in enumerate(segments):
                         s_copy = dict(s)
                         if i < len(roles) and roles[i] in ("manager", "client"):
                             s_copy["speaker_role"] = roles[i]
-                            # Maintain consistent speaker_label with assigned role
                             s_copy["speaker_label"] = (
                                 "SPEAKER_0" if roles[i] == "manager" else "SPEAKER_1"
                             )
                         updated.append(s_copy)
-                    logger.info("llm_role_refinement_success", count=len(updated))
+                    logger.info("llm_role_refinement_by_array_success", count=len(updated))
                     return updated
+
         except Exception as e:
             logger.warning("llm_role_refinement_failed_fallback", error=str(e))
 
@@ -319,7 +353,10 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                 }
             )
 
-        summary = f"Обсуждение размещения наружной рекламы по тематике '{detected_type}'."
+        if detected_type != "other":
+            summary = f"Обсуждение коммерческого предложения по тематике '{detected_type}'."
+        else:
+            summary = "Деловой телефонный разговор между представителем компании и клиентом."
         if cities:
             summary += f" Локации: {', '.join(cities)}."
         if formats:
