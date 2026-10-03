@@ -93,7 +93,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
       - DEV_TOKEN=${DEV_TOKEN:-}
-      - ASR_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
+      - ASR_MODEL_NAME=${ASR_MODEL_NAME:-./models/whisper-small}
       - VOICE_SEARCH_MODEL_NAME=./models/whisper-small
       - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-2}
       - ASR_THREADS=2
@@ -133,7 +133,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
       - DEV_TOKEN=${DEV_TOKEN:-}
-      - ASR_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
+      - ASR_MODEL_NAME=${ASR_MODEL_NAME:-./models/whisper-small}
       - ASR_COMPUTE_TYPE=int8
     volumes:
       - ./models:/app/models:ro
