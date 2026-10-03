@@ -81,3 +81,18 @@ def test_terms_and_formats():
     assert normalizer.normalize("аренда сити бордов") == "аренда ситибордов"
     assert normalizer.normalize("сети борд и бигборд") == "ситиборд и билборд"
     assert normalizer.normalize("размещение на city board") == "размещение на ситиборд"
+
+
+def test_voice_search_misrecognitions_and_districts():
+    normalizer = RussianTextNormalizer()
+
+    # User reported query: "Ситиборды в Южном Путово. Свободный Нактябрь."
+    assert (
+        normalizer.normalize("Ситиборды в Южном Путово. Свободный Нактябрь.")
+        == "Ситиборды в Южном Бутово. Свободные на октябрь."
+    )
+    assert normalizer.normalize("щиты в путово") == "щиты в Бутово"
+    assert normalizer.normalize("ситиборды в северном путово") == "ситиборды в Северном Бутово"
+    assert normalizer.normalize("свободные нактябрь") == "свободные на октябрь"
+    assert normalizer.normalize("размещение навгуст") == "размещение на август"
+    assert normalizer.normalize("бронь напрель") == "бронь на апрель"

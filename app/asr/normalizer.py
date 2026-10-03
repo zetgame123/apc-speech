@@ -494,6 +494,29 @@ class RussianTextNormalizer:
                 ),
                 r"щит на \1",
             ),
+            # Phonetic acoustic contractions of preposition "на" with months
+            (re.compile(r"\bнактябр(ь|я|е)\b", re.IGNORECASE), r"на октябр\1"),
+            (re.compile(r"\bнаоктябр(ь|я|е)\b", re.IGNORECASE), r"на октябр\1"),
+            (re.compile(r"\bнавгуст(а|е)?\b", re.IGNORECASE), r"на август\1"),
+            (re.compile(r"\bнаавгуст(а|е)?\b", re.IGNORECASE), r"на август\1"),
+            (re.compile(r"\bнапрел(ь|я|е)\b", re.IGNORECASE), r"на апрел\1"),
+            (re.compile(r"\bнаапрел(ь|я|е)\b", re.IGNORECASE), r"на апрел\1"),
+            (re.compile(r"\bнаянвар(ь|я|е)\b", re.IGNORECASE), r"на январ\1"),
+            (re.compile(r"\bнаиюн(ь|я|е)\b", re.IGNORECASE), r"на июн\1"),
+            (re.compile(r"\bнаиюл(ь|я|е)\b", re.IGNORECASE), r"на июл\1"),
+            (re.compile(r"\bнаноябр(ь|я|е)\b", re.IGNORECASE), r"на ноябр\1"),
+            (re.compile(r"\bнадекабр(ь|я|е)\b", re.IGNORECASE), r"на декабр\1"),
+            (re.compile(r"\bнафеврал(ь|я|е)\b", re.IGNORECASE), r"на феврал\1"),
+            (re.compile(r"\bнамарт(а|е)?\b", re.IGNORECASE), r"на март\1"),
+            (re.compile(r"\bнамай\b", re.IGNORECASE), "на май"),
+            (re.compile(r"\bнама(е|я)\b", re.IGNORECASE), r"на ма\1"),
+            # Normalize "свободный на [месяц]" into "свободные на [месяц]"
+            (
+                re.compile(r"\bсвободн(?:ый|ая|ое)\s+на\s+([а-яё]+)\b", re.IGNORECASE),
+                lambda m: (
+                    f"{'Свободные' if m.group(0)[0].isupper() else 'свободные'} на {m.group(1)}"
+                ),
+            ),
         ]
 
         # Moscow Metro Stations
@@ -966,6 +989,33 @@ class RussianTextNormalizer:
             (re.compile(r"\bлыткарин(о|е|а|у|ом)\b", re.IGNORECASE), r"Лыткарин\1"),
             (re.compile(r"\bдзержинск(ий|ом|ого|ому)\b", re.IGNORECASE), r"Дзержинск\1"),
             (re.compile(r"\bсолнечногорск(а|е|у|ом)?\b", re.IGNORECASE), r"Солнечногорск\1"),
+            # Moscow districts & acoustic corrections
+            (
+                re.compile(
+                    r"\bюжн(ое|ом|ого|ому|ым)\s+(?:путов|бутов)(о|е|а|у|ом)\b", re.IGNORECASE
+                ),
+                r"Южн\1 Бутов\2",
+            ),
+            (
+                re.compile(
+                    r"\bсеверн(ое|ом|ого|ому|ым)\s+(?:путов|бутов)(о|е|а|у|ом)\b", re.IGNORECASE
+                ),
+                r"Северн\1 Бутов\2",
+            ),
+            (
+                re.compile(r"\b(?:в\s+)?путов(о|е|а|у|ом)\b", re.IGNORECASE),
+                lambda m: m.group(0).replace("Путов", "Бутов").replace("путов", "бутов"),
+            ),
+            (re.compile(r"\bбутов(о|е|а|у|ом)\b", re.IGNORECASE), r"Бутов\1"),
+            (re.compile(r"\bчертанов(о|е|а|у|ом)\b", re.IGNORECASE), r"Чертанов\1"),
+            (re.compile(r"\bмарьин(о|е|а|у|ом)\b", re.IGNORECASE), r"Марьин\1"),
+            (re.compile(r"\bлюблин(о|е|а|у|ом)\b", re.IGNORECASE), r"Люблин\1"),
+            (re.compile(r"\bмитин(о|е|а|у|ом)\b", re.IGNORECASE), r"Митин\1"),
+            (re.compile(r"\bстрогин(о|е|а|у|ом)\b", re.IGNORECASE), r"Строгин\1"),
+            (re.compile(r"\bкунцев(о|е|а|у|ом)\b", re.IGNORECASE), r"Кунцев\1"),
+            (re.compile(r"\bтушин(о|е|а|у|ом)\b", re.IGNORECASE), r"Тушин\1"),
+            (re.compile(r"\bкрылатск(ое|ом|ого|ому)\b", re.IGNORECASE), r"Крылатск\1"),
+            (re.compile(r"\bзеленоград(а|е|у|ом)?\b", re.IGNORECASE), r"Зеленоград\1"),
         ]
 
     def normalize(self, text: str) -> str:
