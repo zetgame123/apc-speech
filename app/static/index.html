@@ -267,6 +267,22 @@
         <div id="waveform"></div>
         <audio id="audioPlayer" class="d-none"></audio>
         
+        <!-- Speaker Diarization Gantt Timeline -->
+        <div class="d-flex justify-content-between align-items-center mb-1 mt-2">
+          <span class="small text-muted fw-bold text-uppercase" style="font-size: 0.72rem; letter-spacing: 0.5px;">
+            <i class="bi bi-bar-chart-steps me-1 text-primary"></i> Таймлайн речи спикеров (Speaker Timeline)
+          </span>
+          <div class="d-flex align-items-center gap-3 small text-muted" style="font-size: 0.75rem;">
+            <span><span class="d-inline-block rounded-circle me-1" style="width: 10px; height: 10px; background-color: #3b82f6;"></span>Менеджер</span>
+            <span><span class="d-inline-block rounded-circle me-1" style="width: 10px; height: 10px; background-color: #f97316;"></span>Клиент</span>
+            <span><span class="d-inline-block rounded-circle me-1" style="width: 10px; height: 10px; background-color: #e2e8f0; border: 1px solid #cbd5e1;"></span>Пауза</span>
+          </div>
+        </div>
+        <div id="speakerTimelineWrapper" class="position-relative mb-3" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; height: 32px; overflow: hidden; display: none;">
+          <div id="speakerTimeline" class="w-100 h-100 position-relative"></div>
+          <div id="timelinePlayhead" class="position-absolute top-0 bottom-0" style="width: 2px; background: #ef4444; z-index: 10; pointer-events: none; left: 0%; display: none;"></div>
+        </div>
+
         <div class="d-flex flex-wrap justify-content-between align-items-center">
           <div class="d-flex align-items-center gap-2">
             <button id="btnPlayPause" class="btn btn-dark btn-sm px-3" disabled>
@@ -301,11 +317,24 @@
       <div class="row">
         <!-- Chat Transcripts Column -->
         <div class="col-lg-7 mb-4">
-          <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h5 class="fw-bold mb-0">
               <i class="bi bi-chat-left-quote me-2 text-primary"></i>Стенограмма разговора с разделением ролей
             </h5>
-            <span class="badge bg-secondary" id="activeSpeakerRatioBadge">Спикеры: -</span>
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-secondary" id="activeSpeakerRatioBadge">Спикеры: -</span>
+              <div class="btn-group btn-group-sm" id="quickDownloadGroup">
+                <button id="btnQuickTxt" class="btn btn-outline-primary btn-sm fw-medium" title="Скачать текстовую расшифровку" disabled>
+                  <i class="bi bi-file-earmark-text me-1"></i>.TXT
+                </button>
+                <button id="btnQuickSrt" class="btn btn-outline-primary btn-sm fw-medium" title="Скачать субтитры SRT" disabled>
+                  <i class="bi bi-file-earmark-play me-1"></i>.SRT
+                </button>
+                <button id="btnQuickJson" class="btn btn-outline-primary btn-sm fw-medium" title="Скачать полный JSON" disabled>
+                  <i class="bi bi-filetype-json me-1"></i>.JSON
+                </button>
+              </div>
+            </div>
           </div>
           
           <div class="chat-container" id="chatBox">
@@ -340,17 +369,62 @@
             </div>
           </div>
 
-          <!-- Manager Checklist Card -->
-          <div class="card card-custom p-3 mb-3">
+          <!-- Sentiment & Emotion Profile Card -->
+          <div class="card card-custom p-3 mb-3" id="sentimentCard">
             <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="fw-bold mb-0 text-primary">
+                <i class="bi bi-emoji-smile me-1"></i> Эмоциональный профиль и тональность
+              </h6>
+              <span class="badge bg-secondary" id="overallSentimentBadge">Тональность: -</span>
+            </div>
+            <div class="row g-2 mb-2">
+              <div class="col-6">
+                <div class="p-2 border rounded bg-light text-center">
+                  <div class="small text-muted mb-1">Эмоция клиента</div>
+                  <div class="fw-bold small" id="clientEmotionText">-</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="p-2 border rounded bg-light text-center">
+                  <div class="small text-muted mb-1">Тон менеджера</div>
+                  <div class="fw-bold small text-primary" id="managerEmotionText">-</div>
+                </div>
+              </div>
+            </div>
+            <div class="small text-muted mb-1 d-flex justify-content-between">
+              <span>Распределение эмоций:</span>
+              <span id="emotionPercentages" class="fw-medium">Позитив: 0% | Нейтрал: 100% | Негатив: 0%</span>
+            </div>
+            <div class="progress" style="height: 8px;">
+              <div class="progress-bar bg-success" style="width: 0%" id="emoPosBar" title="Позитив"></div>
+              <div class="progress-bar bg-secondary" style="width: 100%" id="emoNeuBar" title="Нейтрал"></div>
+              <div class="progress-bar bg-danger" style="width: 0%" id="emoNegBar" title="Негатив"></div>
+            </div>
+          </div>
+
+          <!-- Manager Checklist & Compliance Card -->
+          <div class="card card-custom p-3 mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
               <h6 class="fw-bold mb-0">
-                <i class="bi bi-clipboard-check me-1 text-primary"></i> Чек-лист качества менеджера
+                <i class="bi bi-clipboard-check me-1 text-primary"></i> Чек-лист качества и соблюдение скрипта
               </h6>
               <span class="badge bg-secondary fs-6" id="checklistScore">Оценка: - / 5</span>
             </div>
-            <ul class="list-group list-group-flush small" id="checklistUl">
+
+            <div class="d-flex justify-content-between align-items-center mb-1 mt-2">
+              <span class="small text-muted fw-bold">Compliance Score:</span>
+              <span class="fw-bold small text-primary" id="complianceScoreText">-%</span>
+            </div>
+            <div class="progress mb-3" style="height: 8px;">
+              <div id="complianceProgressBar" class="progress-bar bg-secondary" role="progressbar" style="width: 0%"></div>
+            </div>
+
+            <ul class="list-group list-group-flush small mb-2" id="checklistUl">
               <li class="list-group-item text-muted px-0">Чек-лист будет рассчитан после анализа звонка</li>
             </ul>
+
+            <div id="violationsBox" class="mt-2" style="display: none;"></div>
+            <div id="recommendationsBox" class="mt-2" style="display: none;"></div>
           </div>
 
           <!-- Speech & Telephony Metrics Card -->
@@ -712,6 +786,13 @@
           span.classList.remove('word-active');
         }
       });
+      // Speaker timeline playhead update
+      const totalDur = wavesurfer.getDuration();
+      const playhead = document.getElementById('timelinePlayhead');
+      if (playhead && totalDur > 0) {
+        playhead.style.display = 'block';
+        playhead.style.left = `${(currentTime / totalDur) * 100}%`;
+      }
       // Timer update
       updateAudioTimer(currentTime, wavesurfer.getDuration());
     });
@@ -721,6 +802,9 @@
       document.getElementById('btnRewind5').disabled = false;
       document.getElementById('btnForward5').disabled = false;
       document.getElementById('btnExportMenu').disabled = false;
+      document.getElementById('btnQuickTxt').disabled = false;
+      document.getElementById('btnQuickSrt').disabled = false;
+      document.getElementById('btnQuickJson').disabled = false;
       updateAudioTimer(0, wavesurfer.getDuration());
     });
   }
@@ -870,6 +954,10 @@
       fetch(`/v1/calls/${callId}/transcript?namespace=${ns}`, { headers: getHeaders() }).then(r => r.json()),
       fetch(`/v1/calls/${callId}/analysis?namespace=${ns}`, { headers: getHeaders() }).then(r => r.json())
     ]).then(([transcript, analysis]) => {
+      document.getElementById('btnQuickTxt').disabled = false;
+      document.getElementById('btnQuickSrt').disabled = false;
+      document.getElementById('btnQuickJson').disabled = false;
+      document.getElementById('btnExportMenu').disabled = false;
       renderChat(transcript.segments);
       renderAnalysis(analysis);
     }).catch(err => {
@@ -877,8 +965,79 @@
     });
   }
 
+  function renderSpeakerTimeline(segments) {
+    const timelineWrapper = document.getElementById('speakerTimelineWrapper');
+    const timeline = document.getElementById('speakerTimeline');
+    if (!timelineWrapper || !timeline) return;
+
+    if (!segments || segments.length === 0) {
+      timelineWrapper.style.display = 'none';
+      return;
+    }
+
+    timelineWrapper.style.display = 'block';
+    timeline.innerHTML = '';
+
+    const wsDur = wavesurfer ? wavesurfer.getDuration() : 0;
+    const maxEnd = Math.max(...segments.map(s => s.end || 0));
+    const totalDur = wsDur > 0 ? wsDur : (maxEnd > 0 ? maxEnd : 1);
+
+    segments.forEach(seg => {
+      const isFirstSpeaker =
+        seg.speaker_role === 'manager' ||
+        seg.speaker_role === 'participant_1' ||
+        seg.speaker_label === 'SPEAKER_0';
+      const roleLabel = isFirstSpeaker ? 'Менеджер' : 'Клиент';
+      const color = isFirstSpeaker ? '#0284c7' : '#f97316';
+
+      const leftPct = (seg.start / totalDur) * 100;
+      const widthPct = Math.max(0.4, ((seg.end - seg.start) / totalDur) * 100);
+
+      const block = document.createElement('div');
+      block.className = 'speaker-block position-absolute';
+      block.style.left = `${leftPct}%`;
+      block.style.width = `${widthPct}%`;
+      block.style.top = '4px';
+      block.style.bottom = '4px';
+      block.style.backgroundColor = color;
+      block.style.borderRadius = '3px';
+      block.style.cursor = 'pointer';
+      block.style.opacity = '0.85';
+      block.style.transition = 'opacity 0.15s, transform 0.15s';
+      block.title = `${roleLabel} (${seg.start.toFixed(1)}s - ${seg.end.toFixed(1)}s): ${seg.text || ''}`;
+
+      block.addEventListener('mouseenter', () => {
+        block.style.opacity = '1';
+        block.style.transform = 'scaleY(1.15)';
+      });
+      block.addEventListener('mouseleave', () => {
+        block.style.opacity = '0.85';
+        block.style.transform = 'scaleY(1)';
+      });
+      block.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (wavesurfer) {
+          wavesurfer.setTime(seg.start);
+          wavesurfer.play();
+        }
+      });
+
+      timeline.appendChild(block);
+    });
+
+    timelineWrapper.onclick = (e) => {
+      const rect = timelineWrapper.getBoundingClientRect();
+      const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      if (wavesurfer && totalDur > 0) {
+        wavesurfer.setTime(clickRatio * totalDur);
+        wavesurfer.play();
+      }
+    };
+  }
+
   function renderChat(segments) {
     chatBox.innerHTML = '';
+    renderSpeakerTimeline(segments);
     if (!segments || segments.length === 0) {
       chatBox.innerHTML = '<div class="text-muted text-center mt-5">Пустая расшифровка (речь не обнаружена)</div>';
       return;
@@ -980,12 +1139,72 @@
     }
     if (!count) entBox.innerHTML = '<span class="text-muted small">Сущности не определены</span>';
 
-    // Checklist
+    // Sentiment and Emotion Profile
+    const sent = analysis.sentiment || {};
+    const overallSent = (typeof sent === 'string' ? sent : sent.overall) || 'neutral';
+    const overallSentBadge = document.getElementById('overallSentimentBadge');
+    if (overallSentBadge) {
+      let sentLabel = 'Нейтральная';
+      let sentBg = 'bg-secondary';
+      if (overallSent === 'positive') { sentLabel = 'Позитивная'; sentBg = 'bg-success'; }
+      else if (overallSent === 'negative') { sentLabel = 'Негативная'; sentBg = 'bg-danger'; }
+      overallSentBadge.innerText = `Тональность: ${sentLabel}`;
+      overallSentBadge.className = `badge ${sentBg}`;
+    }
+
+    const emotionMapClient = {
+      'enthusiasm_joy': '😊 Энтузиазм / Радость',
+      'neutral_business': '😐 Спокойный / Деловой',
+      'doubt_skepticism': '🤔 Сомнение / Скепсис',
+      'irritation_anger': '😠 Раздражение / Гнев',
+      'urgency_anxiety': '⚡ Спешка / Тревога'
+    };
+    const emotionMapManager = {
+      'enthusiastic_helpful': '🌟 Вовлеченный / Помогает',
+      'calm_professional': '💼 Спокойный / Профессиональный',
+      'indifferent_bored': '🥱 Безразличный / Уставший',
+      'irritated_defensive': '🛡️ Раздраженный / В защите'
+    };
+
+    const clientEmo = sent.client_emotion || 'neutral_business';
+    const managerEmo = sent.manager_emotion || 'calm_professional';
+    const elClientEmo = document.getElementById('clientEmotionText');
+    const elManagerEmo = document.getElementById('managerEmotionText');
+    if (elClientEmo) elClientEmo.innerText = emotionMapClient[clientEmo] || clientEmo;
+    if (elManagerEmo) elManagerEmo.innerText = emotionMapManager[managerEmo] || managerEmo;
+
+    const emoBreakdown = sent.emotions_breakdown || { positive_pct: 0, neutral_pct: 100, negative_pct: 0 };
+    const elEmoPercentages = document.getElementById('emotionPercentages');
+    if (elEmoPercentages) {
+      elEmoPercentages.innerText = `Позитив: ${emoBreakdown.positive_pct}% | Нейтрал: ${emoBreakdown.neutral_pct}% | Негатив: ${emoBreakdown.negative_pct}%`;
+    }
+    const barPos = document.getElementById('emoPosBar');
+    const barNeu = document.getElementById('emoNeuBar');
+    const barNeg = document.getElementById('emoNegBar');
+    if (barPos) barPos.style.width = `${emoBreakdown.positive_pct}%`;
+    if (barNeu) barNeu.style.width = `${emoBreakdown.neutral_pct}%`;
+    if (barNeg) barNeg.style.width = `${emoBreakdown.negative_pct}%`;
+
+    // Checklist & Compliance
     const cl = analysis.manager_checklist || {};
-    const score = cl.score || 0;
+    const score = cl.score !== undefined ? cl.score : 0;
     const scoreBadge = document.getElementById('checklistScore');
-    scoreBadge.innerText = `Оценка: ${score} / 5`;
-    scoreBadge.className = `badge fs-6 ${score >= 4 ? 'bg-success' : score >= 2 ? 'bg-warning text-dark' : 'bg-danger'}`;
+    if (scoreBadge) {
+      scoreBadge.innerText = `Оценка: ${score} / 5`;
+      scoreBadge.className = `badge fs-6 ${score >= 4 ? 'bg-success' : score >= 2 ? 'bg-warning text-dark' : 'bg-danger'}`;
+    }
+
+    // Integral Compliance Score
+    const complianceScore = cl.compliance_score !== undefined && cl.compliance_score !== null
+      ? Math.round(cl.compliance_score)
+      : Math.round((score / 5) * 100);
+    const complianceText = document.getElementById('complianceScoreText');
+    const complianceBar = document.getElementById('complianceProgressBar');
+    if (complianceText) complianceText.innerText = `${complianceScore}%`;
+    if (complianceBar) {
+      complianceBar.style.width = `${complianceScore}%`;
+      complianceBar.className = `progress-bar ${complianceScore >= 80 ? 'bg-success' : complianceScore >= 50 ? 'bg-warning text-dark' : 'bg-danger'}`;
+    }
 
     const ul = document.getElementById('checklistUl');
     ul.innerHTML = '';
@@ -1007,6 +1226,47 @@
         </li>
       `;
     });
+
+    // Violations Box
+    const violationsBox = document.getElementById('violationsBox');
+    if (violationsBox) {
+      if (cl.violations && cl.violations.length > 0) {
+        violationsBox.style.display = 'block';
+        violationsBox.innerHTML = `
+          <div class="alert alert-danger py-2 px-3 mb-2">
+            <div class="fw-bold small mb-1"><i class="bi bi-exclamation-octagon-fill me-1"></i> Зафиксированные нарушения (${cl.violations.length}):</div>
+            <ul class="mb-0 ps-3 small">
+              ${cl.violations.map(v => `<li>${escapeHtml(v)}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      } else {
+        violationsBox.style.display = 'block';
+        violationsBox.innerHTML = `
+          <div class="alert alert-success py-2 px-3 mb-2 small">
+            <i class="bi bi-shield-check me-1"></i> Грубых нарушений скрипта и стоп-слов не зафиксировано
+          </div>
+        `;
+      }
+    }
+
+    // Recommendations Box
+    const recommendationsBox = document.getElementById('recommendationsBox');
+    if (recommendationsBox) {
+      if (cl.recommendations && cl.recommendations.length > 0) {
+        recommendationsBox.style.display = 'block';
+        recommendationsBox.innerHTML = `
+          <div class="alert alert-info py-2 px-3 mb-0">
+            <div class="fw-bold small mb-1"><i class="bi bi-lightbulb-fill me-1"></i> Рекомендации супервайзера:</div>
+            <ul class="mb-0 ps-3 small">
+              ${cl.recommendations.map(r => `<li>${escapeHtml(r)}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      } else {
+        recommendationsBox.style.display = 'none';
+      }
+    }
 
     // Speech metrics
     const sm = analysis.deterministic_speech_metrics || {};
@@ -1086,7 +1346,41 @@
       });
   }
 
-  // Export handlers
+  // Trigger Download helper
+  function triggerDownload(url, filename) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  // Quick 1-click Transcript Download Buttons
+  const btnQuickTxt = document.getElementById('btnQuickTxt');
+  const btnQuickSrt = document.getElementById('btnQuickSrt');
+  const btnQuickJson = document.getElementById('btnQuickJson');
+
+  if (btnQuickTxt) {
+    btnQuickTxt.addEventListener('click', () => {
+      if (!currentCallId) return;
+      triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=text`, `transcript_${currentCallId}.txt`);
+    });
+  }
+  if (btnQuickSrt) {
+    btnQuickSrt.addEventListener('click', () => {
+      if (!currentCallId) return;
+      triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=srt`, `transcript_${currentCallId}.srt`);
+    });
+  }
+  if (btnQuickJson) {
+    btnQuickJson.addEventListener('click', () => {
+      if (!currentCallId) return;
+      triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=json`, `transcript_${currentCallId}.json`);
+    });
+  }
+
+  // Export handlers (dropdown)
   document.getElementById('expJson').addEventListener('click', (e) => {
     e.preventDefault();
     if (!currentCallId) return;

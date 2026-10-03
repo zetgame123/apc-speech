@@ -17,7 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Safe Streaming Ingestion**: Multipart audio uploads now stream chunks directly to disk with hard byte caps to prevent memory exhaustion (anti-OOM).
 - **S3 & Telephony Integrations**: Added Bitrix24 telephony connector, S3 presigned URL generation, and S3 inbox folder watcher daemon.
 - **Topic Clustering**: Added offline query clustering using TF-IDF vectorization and HDBSCAN for outdoor advertising requests.
-- **Test Suite Expansion**: Added comprehensive tests covering audit findings, increasing test count to 92 automated tests (`tests/test_audit_fixes.py`).
+- **Interactive Speaker Timeline (Gantt Chart)**: Added visual speaker timeline above audio waveform in web dashboard with manager (blue) and client (orange) speech segments, hover tooltips, and click-to-seek audio playback.
+- **Fine-Grained Emotion Breakdown**: Added speech emotion classification (`client_emotion`: enthusiasm/joy, neutral/business, doubt/skepticism, irritation/anger, urgency/anxiety; `manager_emotion`: enthusiastic/helpful, calm/professional, indifferent/bored, tense/defensive) with distribution percentages (`positive_pct`, `neutral_pct`, `negative_pct`) and visual progress bar.
+- **Integral Compliance Score & Violations Engine**: Added 0–100% weighted script compliance scoring, automatic detection of script violations, stop-words, and tone penalties, with actionable supervisory coaching recommendations.
+- **Direct 1-Click Transcript Downloads**: Added `.TXT`, `.SRT`, and `.JSON` quick-download buttons on the dashboard transcript view and standard `Content-Disposition: attachment` download headers on `GET /v1/calls/{id}/transcript`.
+- **Test Suite Expansion**: Added comprehensive tests covering compliance calculation, emotions breakdown, and transcript downloads, increasing test count to 97 automated tests (`tests/test_compliance_and_emotions.py`).
 
 ### Changed
 - **Strict Schema Validation**: Analysis jobs fail with `schema_validation_failed` error when LLM output violates schema, preventing corrupted records in database.

@@ -59,7 +59,23 @@
       "required": ["client_overall", "manager_tone"],
       "properties": {
         "client_overall": { "type": "string", "enum": ["positive", "neutral", "negative", "conflict"] },
-        "manager_tone": { "type": "string", "enum": ["polite_constructive", "indifferent", "rude"] }
+        "manager_tone": { "type": "string", "enum": ["polite_constructive", "indifferent", "rude"] },
+        "client_emotion": {
+          "type": "string",
+          "enum": ["enthusiasm_joy", "neutral_business", "doubt_skepticism", "irritation_anger", "urgency_anxiety"]
+        },
+        "manager_emotion": {
+          "type": "string",
+          "enum": ["enthusiastic_helpful", "calm_professional", "indifferent_bored", "tense_defensive"]
+        },
+        "emotions_breakdown": {
+          "type": "object",
+          "properties": {
+            "positive_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+            "neutral_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+            "negative_pct": { "type": "number", "minimum": 0, "maximum": 100 }
+          }
+        }
       }
     },
     "manager_checklist": {
@@ -75,7 +91,11 @@
         "next_step_named": { "type": "boolean" },
         "contacts_taken": { "type": "boolean" },
         "forbidden_words_found": { "type": "array", "items": { "type": "string" } },
-        "score": { "type": "integer", "minimum": 0, "maximum": 5 }
+        "score": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "compliance_score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "violations": { "type": "array", "items": { "type": "string" } },
+        "passed_rules": { "type": "array", "items": { "type": "string" } },
+        "recommendations": { "type": "array", "items": { "type": "string" } }
       }
     },
     "deterministic_speech_metrics": {

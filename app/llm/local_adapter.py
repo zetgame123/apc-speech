@@ -14,6 +14,176 @@ from app.llm.port import AnalysisContext, AnalysisModelPort, StructuredAnalysis
 logger = get_logger("local_llm_adapter")
 
 
+def compute_compliance_and_violations(
+    cl: dict[str, Any], manager_tone: str = "polite_constructive"
+) -> dict[str, Any]:
+    """Calculates integral compliance score (0-100), violations, passed rules, and coaching advice."""
+    greeting = bool(cl.get("greeting", False))
+    need_id = bool(cl.get("need_identification", False))
+    options = bool(cl.get("options_offered", False))
+    next_step = bool(cl.get("next_step_named", False))
+    contacts = bool(cl.get("contacts_taken", False))
+    forbidden = cl.get("forbidden_words_found") or []
+
+    # Weighted checklist score out of 100
+    base = (
+        (15 if greeting else 0)
+        + (25 if need_id else 0)
+        + (25 if options else 0)
+        + (20 if next_step else 0)
+        + (15 if contacts else 0)
+    )
+    penalty = len(forbidden) * 20
+    if manager_tone == "rude":
+        penalty += 30
+    elif manager_tone == "indifferent":
+        penalty += 10
+
+    compliance_score = max(0, min(100, base - penalty))
+    cl["compliance_score"] = compliance_score
+
+    violations = []
+    passed_rules = []
+    recommendations = []
+
+    if greeting:
+        passed_rules.append("Приветствие и представление компании")
+    else:
+        violations.append("Менеджер не поприветствовал собеседника и не представил компанию")
+        recommendations.append(
+            "Начинайте диалог с четкого приветствия, своего имени и названия компании."
+        )
+
+    if need_id:
+        passed_rules.append("Выявление потребности клиента")
+    else:
+        violations.append("Не выявлены ключевые потребности и критерии клиента")
+        recommendations.append(
+            "Задавайте открытые уточняющие вопросы о локациях, форматах и сроках размещения."
+        )
+
+    if options:
+        passed_rules.append("Презентация рекламных форматов и свободных слотов")
+    else:
+        violations.append("Не предложены конкретные форматы или локации щитов")
+        recommendations.append(
+            "Предлагайте клиенту минимум 2-3 альтернативных формата или локации."
+        )
+
+    if next_step:
+        passed_rules.append("Договоренность о следующем шаге")
+    else:
+        violations.append("Не зафиксирован следующий шаг взаимодействия (дедлайн, КП, встреча)")
+        recommendations.append(
+            "Обязательно согласуйте следующий шаг с точным дедлайном до завершения разговора."
+        )
+
+    if contacts:
+        passed_rules.append("Фиксация контактов для связи")
+    else:
+        violations.append("Не запрошены/не подтверждены контактные данные клиента")
+        recommendations.append(
+            "Уточняйте e-mail или мессенджер для отправки коммерческого предложения."
+        )
+
+    if forbidden:
+        for fw in forbidden:
+            violations.append(f"Использование недопустимой лексики: '{fw}'")
+        recommendations.append(
+            "Исключите слова-паразиты и грубые обороты, соблюдайте деловой этикет."
+        )
+    else:
+        passed_rules.append("Соблюдение делового этикета (нет запрещенных слов)")
+
+    if not recommendations:
+        recommendations.append(
+            "Отличная работа с клиентом! Стандарты обслуживания полностью соблюдены."
+        )
+
+    cl["violations"] = violations
+    cl["passed_rules"] = passed_rules
+    cl["recommendations"] = recommendations
+    return cl
+
+
+def compute_emotion_breakdown(
+    client_text: str,
+    manager_text: str,
+    client_overall: str = "neutral",
+    manager_tone: str = "polite_constructive",
+) -> dict[str, Any]:
+    """Extracts fine-grained emotions and emotion distribution percentages."""
+    c_low = client_text.lower()
+    m_low = manager_text.lower()
+
+    joy_kws = [
+        "спасибо",
+        "отлично",
+        "прекрасно",
+        "супер",
+        "здорово",
+        "замечательно",
+        "договорились",
+        "рад",
+        "устраивает",
+        "хорошо",
+    ]
+    anger_kws = [
+        "дорого",
+        "ужасно",
+        "плохо",
+        "бесит",
+        "раздражает",
+        "претензия",
+        "возмущен",
+        "отказ",
+        "нет",
+        "не устраивает",
+    ]
+    doubt_kws = ["сомневаюсь", "не уверен", "подумаю", "не знаю", "может быть", "сложно", "вопрос"]
+    urgency_kws = ["срочно", "горим", "быстрее", "сегодня же", "дедлайн"]
+
+    joy_count = sum(1 for kw in joy_kws if kw in c_low)
+    anger_count = sum(1 for kw in anger_kws if kw in c_low)
+    doubt_count = sum(1 for kw in doubt_kws if kw in c_low)
+    urgency_count = sum(1 for kw in urgency_kws if kw in c_low)
+
+    if anger_count > 0 or client_overall in ["negative", "conflict"]:
+        client_emotion = "irritation_anger"
+    elif joy_count > 0 or client_overall == "positive":
+        client_emotion = "enthusiasm_joy"
+    elif urgency_count > 0:
+        client_emotion = "urgency_anxiety"
+    elif doubt_count > 0:
+        client_emotion = "doubt_skepticism"
+    else:
+        client_emotion = "neutral_business"
+
+    if manager_tone == "rude":
+        manager_emotion = "tense_defensive"
+    elif manager_tone == "indifferent":
+        manager_emotion = "indifferent_bored"
+    elif any(kw in m_low for kw in joy_kws):
+        manager_emotion = "enthusiastic_helpful"
+    else:
+        manager_emotion = "calm_professional"
+
+    total_signals = joy_count + anger_count + doubt_count + 1
+    pos_pct = round((joy_count / total_signals) * 100, 1)
+    neg_pct = round((anger_count / total_signals) * 100, 1)
+    neu_pct = round(max(0.0, 100.0 - pos_pct - neg_pct), 1)
+
+    return {
+        "client_emotion": client_emotion,
+        "manager_emotion": manager_emotion,
+        "emotions_breakdown": {
+            "positive_pct": pos_pct,
+            "neutral_pct": neu_pct,
+            "negative_pct": neg_pct,
+        },
+    }
+
+
 class LocalLlamaCppAdapter(AnalysisModelPort):
     def __init__(self):
         settings = get_settings()
@@ -110,7 +280,23 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
             content = data["choices"][0]["message"]["content"]
             parsed = json.loads(content)
 
-            # Guarantee manager_checklist normalization and recalculate score from booleans
+            # Normalize sentiment and emotions
+            if isinstance(parsed.get("sentiment"), dict):
+                s = parsed["sentiment"]
+                if "client_overall" not in s and "client" in s:
+                    s["client_overall"] = s.pop("client")
+                if "manager_tone" not in s and "manager" in s:
+                    s["manager_tone"] = s.pop("manager")
+                if "client_emotion" not in s:
+                    emo = compute_emotion_breakdown(
+                        trimmed_transcript,
+                        "",
+                        s.get("client_overall", "neutral"),
+                        s.get("manager_tone", "polite_constructive"),
+                    )
+                    s.update(emo)
+
+            # Guarantee manager_checklist normalization, recalculate score, compliance score and violations
             if isinstance(parsed.get("manager_checklist"), dict):
                 cl = parsed["manager_checklist"]
                 checklist_keys = [
@@ -124,28 +310,12 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                     cl.setdefault(k, False)
                 cl["forbidden_words_found"] = cl.get("forbidden_words_found") or []
                 cl["score"] = sum(1 for k in checklist_keys if cl.get(k) is True)
-
-            # Normalize entities
-            if isinstance(parsed.get("entities"), dict):
-                ent = parsed["entities"]
-                if "cities" not in ent and "city" in ent:
-                    c = ent.pop("city")
-                    ent["cities"] = [c] if c else []
-                if "formats" not in ent and "format" in ent:
-                    f_val = ent.pop("format")
-                    ent["formats"] = [f_val] if f_val else []
-                if "cities" in ent and isinstance(ent["cities"], str):
-                    ent["cities"] = [ent["cities"]] if ent["cities"] else []
-                if "formats" in ent and isinstance(ent["formats"], str):
-                    ent["formats"] = [ent["formats"]] if ent["formats"] else []
-
-            # Normalize sentiment
-            if isinstance(parsed.get("sentiment"), dict):
-                s = parsed["sentiment"]
-                if "client_overall" not in s and "client" in s:
-                    s["client_overall"] = s.pop("client")
-                if "manager_tone" not in s and "manager" in s:
-                    s["manager_tone"] = s.pop("manager")
+                mgr_tone = (
+                    parsed.get("sentiment", {}).get("manager_tone")
+                    if isinstance(parsed.get("sentiment"), dict)
+                    else "polite_constructive"
+                )
+                compute_compliance_and_violations(cl, mgr_tone)
 
             return StructuredAnalysis(**parsed)
 
@@ -415,6 +585,27 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         if formats:
             summary += f" Форматы: {', '.join(formats)}."
 
+        cl_data = {
+            "greeting": greeting,
+            "need_identification": need_id,
+            "options_offered": options,
+            "next_step_named": next_step,
+            "contacts_taken": contacts,
+            "forbidden_words_found": forbidden_found,
+            "score": score,
+        }
+        compute_compliance_and_violations(cl_data, "polite_constructive")
+
+        client_text = (
+            " ".join(client_lines) if client_lines else (text if not manager_lines else "")
+        )
+        emo_data = compute_emotion_breakdown(
+            client_text,
+            manager_text,
+            "neutral",
+            "polite_constructive",
+        )
+
         return StructuredAnalysis(
             schema_version="1.0.0",
             prompt_version="v1.2-ru-outdoor",
@@ -433,14 +624,7 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
             sentiment={
                 "client_overall": "neutral",
                 "manager_tone": "polite_constructive",
+                **emo_data,
             },
-            manager_checklist={
-                "greeting": greeting,
-                "need_identification": need_id,
-                "options_offered": options,
-                "next_step_named": next_step,
-                "contacts_taken": contacts,
-                "forbidden_words_found": forbidden_found,
-                "score": score,
-            },
+            manager_checklist=cl_data,
         )

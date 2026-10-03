@@ -47,11 +47,24 @@ class ManagerChecklist(BaseModel):
     contacts_taken: bool = False
     forbidden_words_found: list[str] = []
     score: int = 0
+    compliance_score: int = 0
+    violations: list[str] = []
+    passed_rules: list[str] = []
+    recommendations: list[str] = []
+
+
+class EmotionsBreakdown(BaseModel):
+    positive_pct: float = 0.0
+    neutral_pct: float = 100.0
+    negative_pct: float = 0.0
 
 
 class Sentiment(BaseModel):
     client_overall: str = "neutral"
     manager_tone: str = "polite_constructive"
+    client_emotion: str = "neutral_business"
+    manager_emotion: str = "calm_professional"
+    emotions_breakdown: EmotionsBreakdown | dict[str, float] = EmotionsBreakdown()
 
 
 class Entities(BaseModel):

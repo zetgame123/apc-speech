@@ -78,7 +78,10 @@ async def get_transcript(
         for s in segments:
             txt = s.text_masked if masked else s.text_original
             lines.append(f"[{s.speaker_role}] {txt}")
-        return Response(content="\n".join(lines), media_type="text/plain; charset=utf-8")
+        headers = {"Content-Disposition": f'attachment; filename="transcript_{call_id}.txt"'}
+        return Response(
+            content="\n".join(lines), media_type="text/plain; charset=utf-8", headers=headers
+        )
 
     elif format == "srt":
         srt_entries = []
@@ -87,7 +90,10 @@ async def get_transcript(
             start = format_srt_timestamp(s.start_time)
             end = format_srt_timestamp(s.end_time)
             srt_entries.append(f"{i}\n{start} --> {end}\n[{s.speaker_role}] {txt}\n")
-        return Response(content="\n".join(srt_entries), media_type="text/plain; charset=utf-8")
+        headers = {"Content-Disposition": f'attachment; filename="transcript_{call_id}.srt"'}
+        return Response(
+            content="\n".join(srt_entries), media_type="text/plain; charset=utf-8", headers=headers
+        )
 
     elif format == "vtt":
         vtt_entries = ["WEBVTT\n"]
@@ -96,7 +102,10 @@ async def get_transcript(
             start = format_vtt_timestamp(s.start_time)
             end = format_vtt_timestamp(s.end_time)
             vtt_entries.append(f"{start} --> {end}\n<v {s.speaker_role}>{txt}\n")
-        return Response(content="\n".join(vtt_entries), media_type="text/vtt; charset=utf-8")
+        headers = {"Content-Disposition": f'attachment; filename="transcript_{call_id}.vtt"'}
+        return Response(
+            content="\n".join(vtt_entries), media_type="text/vtt; charset=utf-8", headers=headers
+        )
 
     # Default: JSON
     full_text = " ".join(s.text_masked if masked else s.text_original for s in segments)
