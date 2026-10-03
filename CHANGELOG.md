@@ -8,21 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Real evaluation benchmark using `faster-whisper`.
-- Local mono audio diarization based on MFCC features and KMeans clustering.
-- Real analytics calculation from the database.
-- CSV export for analytics (`GET /v1/analytics/export_csv`).
-- Long audio file chunking support for files up to 3 hours with overlap handling.
-- `expires_at` column in DB to support text retention rules.
-- Rate limiting for expensive API endpoints using Redis.
-- Explicit `uv.lock` dependency locking for reproducible Docker builds.
-- Cleanup script for expiring old audio and text data.
+- **Neural Speaker Diarization (CAM++)**: Replaced heuristic MFCC/KMeans with ONNX CAM++ speaker embeddings, stereo isolation detection, anchor-based clustering, and HMM Viterbi smoothing.
+- **LLM Speaker Role Refinement**: Integrated local `Qwen 2.5 7B Instruct` via `llama.cpp` server with strict JSON Schema constrained generation for manager/client role classification.
+- **Voice Search & Zero Audio Retention**: Added `POST /v1/voice/search` for rapid in-memory speech recognition (SLA $\le 2.5$ s) with outdoor advertising vocabulary boosting and strict zero audio retention policy (no disk/DB/S3 storage).
+- **Shared Server-Side Voice History**: Added `GET /v1/voice/history` and `DELETE /v1/voice/history` backed by Redis (`voice:history:{namespace}`) with PII masking and automatic TTL expiration (`RETENTION_AUDIO_DAYS`).
+- **Synthetic Audio Generation**: Added `GET /v1/voice/sample-audio` for testing audio ingestion pipelines and healthchecks without external audio files.
+- **Dead Letter Queue (DLQ)**: Implemented `STREAM_DLQ = "jobs:audio:dlq"` in Redis Streams with retry limits and exponential backoff for handling permanent job failures.
+- **Safe Streaming Ingestion**: Multipart audio uploads now stream chunks directly to disk with hard byte caps to prevent memory exhaustion (anti-OOM).
+- **S3 & Telephony Integrations**: Added Bitrix24 telephony connector, S3 presigned URL generation, and S3 inbox folder watcher daemon.
+- **Topic Clustering**: Added offline query clustering using TF-IDF vectorization and HDBSCAN for outdoor advertising requests.
+- **Test Suite Expansion**: Added comprehensive tests covering audit findings, increasing test count to 92 automated tests (`tests/test_audit_fixes.py`).
 
 ### Changed
-- Refactored `evaluation/run.py` to remove hardcoded results.
-- Fixed timezone issues in the database models by replacing `datetime.utcnow()` with timezone-aware `datetime.now(timezone.utc)`.
-- Updated `README.md` and `openapi.yaml` to reflect the implemented changes.
+- **Strict Schema Validation**: Analysis jobs fail with `schema_validation_failed` error when LLM output violates schema, preventing corrupted records in database.
+- **Audio Duration Limit**: Enforced immediate rejection of audio files exceeding `MAX_AUDIO_DURATION_HOURS` right after audio probing.
+- **Cross-Worker Token Revocation**: Made authentication verification asynchronous with real-time revoked token synchronization across all workers via Redis set `revoked_tokens`.
+- **Scoped Voice History Access**: Added `read` scope enforcement for `GET /v1/voice/history` (`auth.require_scope("read")`).
+- **Docker Compose Profiles**: Pinned explicit container image tags (`minio`, `llama.cpp`) and isolated `worker-fast` into an optional `--profile worker-fast`.
+- **Cross-Platform Compatibility**: Made Unix-specific `resource` module imports optional with fallback.
+- **Whisper Engine Fallback**: Added automated fallback to `small` Whisper model when configured local model directory does not exist on disk.
+- **ASR & Audio Preprocessing**: Tuned VAD thresholds and segment overlap to prevent speech chopping, replaced deprecated ffmpeg `-map_channel` with `channelsplit` filter, and expanded outdoor advertising vocabulary prompts.
 
 ### Security
-- Fixed PII leakage for phone numbers and passports before sending transcripts to the LLM (SEC-001).
-- Removed hardcoded default `dev-token` from production authentication flow (SEC-002).
+- **Per-Hop SSRF Validation (C-01)**: Implemented `download_file_ssrf_safe` with per-hop DNS resolution, redirect validation (max 3 hops), hard streaming byte limit, loopback/private/metadata IP blocking, and disabled redirects in outbound webhooks and callbacks.
+- **In-Flight PII Masking (H-04)**: Automated masking of phone numbers, credit card numbers, passport IDs, and email addresses across call transcripts and voice search query history.
+- **GDPR Compliance**: Enhanced GDPR data deletion (`POST /v1/admin/gdpr/delete`) to purge user records from both PostgreSQL and Redis voice query history keys.
+- **Rate Limiting & Concurrency Control**: Added bounded concurrency semaphore (`asyncio.Semaphore(4)`) on synchronous voice search and Redis-based rate limiting on resource-intensive endpoints.
