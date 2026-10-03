@@ -66,7 +66,8 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
     deploy:
@@ -87,7 +88,8 @@ services:
       minio: { condition: service_healthy }
       alembic-migrate: { condition: service_completed_successfully }
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
@@ -127,7 +129,8 @@ services:
       minio: { condition: service_healthy }
       alembic-migrate: { condition: service_completed_successfully }
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
@@ -140,8 +143,9 @@ services:
       - ./app:/app/app:ro
       - ./config:/app/config:ro
       - ./schemas:/app/schemas:ro
+      - ./scripts:/app/scripts:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys, os; my_pid = os.getpid(); pids = [p for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid]; sys.exit(0 if any(b'long_audio_processor' in open(f'/proc/{p}/cmdline', 'rb').read() and any(l.startswith('State:') and l.split()[1] in ('S', 'R', 'D') for l in open(f'/proc/{p}/status')) for p in pids if os.path.exists(f'/proc/{p}/cmdline') and os.path.exists(f'/proc/{p}/status')) else 1)"]
+      test: ["CMD", "python", "/app/scripts/worker_healthcheck.py", "long_audio_processor"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -162,15 +166,17 @@ services:
       redis: { condition: service_healthy }
       alembic-migrate: { condition: service_completed_successfully }
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
       - DEV_TOKEN=${DEV_TOKEN:-}
     volumes:
       - ./app:/app/app:ro
+      - ./scripts:/app/scripts:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys, os; my_pid = os.getpid(); pids = [p for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid]; sys.exit(0 if any(b'callback_dispatcher' in open(f'/proc/{p}/cmdline', 'rb').read() and any(l.startswith('State:') and l.split()[1] in ('S', 'R', 'D') for l in open(f'/proc/{p}/status')) for p in pids if os.path.exists(f'/proc/{p}/cmdline') and os.path.exists(f'/proc/{p}/status')) else 1)"]
+      test: ["CMD", "python", "/app/scripts/worker_healthcheck.py", "callback_dispatcher"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -190,15 +196,17 @@ services:
     depends_on:
       redis: { condition: service_healthy }
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - REDIS_URL=redis://redis:6379/0
       - DEV_TOKEN=${DEV_TOKEN:-}
     volumes:
       - ./models:/app/models:ro
       - ./app:/app/app:ro
+      - ./scripts:/app/scripts:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys, os; my_pid = os.getpid(); pids = [p for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid]; sys.exit(0 if any(b'fast_voice_search' in open(f'/proc/{p}/cmdline', 'rb').read() and any(l.startswith('State:') and l.split()[1] in ('S', 'R', 'D') for l in open(f'/proc/{p}/status')) for p in pids if os.path.exists(f'/proc/{p}/cmdline') and os.path.exists(f'/proc/{p}/status')) else 1)"]
+      test: ["CMD", "python", "/app/scripts/worker_healthcheck.py", "fast_voice_search"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -212,14 +220,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: python -c "import time, subprocess; [subprocess.run(['python', 'scripts/cleanup.py']) or time.sleep(86400) for _ in iter(int, 1)]"
+    command: python scripts/retention_loop.py
     restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
       minio: { condition: service_healthy }
       alembic-migrate: { condition: service_completed_successfully }
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
       - S3_ENDPOINT_URL=http://minio:9000
@@ -237,11 +246,14 @@ services:
     image: ghcr.io/ggml-org/llama.cpp:server-b3900
     restart: unless-stopped
     profiles: ["local-full"]
+    entrypoint: ["/bin/sh", "-c"]
     command: >
-      -m /models/qwen2.5-7b-instruct-q4_k_m.gguf
-      --alias qwen2.5-7b-instruct
-      --host 0.0.0.0 --port 8080
-      -c 4096 --n-gpu-layers 0
+      "if [ -f /models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf ]; then
+         MODEL=/models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf;
+       else
+         MODEL=/models/qwen2.5-7b-instruct-q4_k_m.gguf;
+       fi;
+       exec /app/llama-server -m $$MODEL --alias qwen2.5-7b-instruct --host 0.0.0.0 --port 8080 -c 4096 --n-gpu-layers 0"
     volumes:
       - ./models:/models:ro
     ports:

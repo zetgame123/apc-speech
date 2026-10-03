@@ -331,7 +331,7 @@ python3 scripts/download_models.py
 Файлы будут сохранены в каталог `./models/`:
 * `models/campplus.onnx` (~28 МБ)
 * `models/whisper-podlodka-turbo-ct2/` (~1.6 ГБ)
-* `models/qwen2.5-7b-instruct-q4_k_m.gguf` (~4.4 ГБ, для `local-full`)
+* `models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf` (или монолитный `qwen2.5-7b-instruct-q4_k_m.gguf`, ~4.4 ГБ суммарно, для `local-full`)
 
 ### 3. Запуск контейнеров
 

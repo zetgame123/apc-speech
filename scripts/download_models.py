@@ -19,8 +19,8 @@ QWEN_SHARDS = [
     "qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
     "qwen2.5-7b-instruct-q4_k_m-00002-of-00002.gguf",
 ]
-QWEN_GGUF_URL = f"{QWEN_BASE_URL}/{QWEN_SHARDS[0]}"
-QWEN_GGUF_PATH = os.path.join(MODELS_DIR, "qwen2.5-7b-instruct-q4_k_m.gguf")
+QWEN_SHARD_URLS = [f"{QWEN_BASE_URL}/{name}" for name in QWEN_SHARDS]
+QWEN_SHARD_PATHS = [os.path.join(MODELS_DIR, name) for name in QWEN_SHARDS]
 
 
 def _reporthook(block_num, block_size, total_size):
@@ -73,31 +73,35 @@ def download_whisper(model_name: str = "small", output_name: str | None = None):
 
 def download_qwen():
     os.makedirs(MODELS_DIR, exist_ok=True)
-    if os.path.exists(QWEN_GGUF_PATH) and os.path.getsize(QWEN_GGUF_PATH) > 100_000_000:
-        print(
-            f"[OK] Qwen GGUF model already present at {QWEN_GGUF_PATH} ({os.path.getsize(QWEN_GGUF_PATH)} bytes)"
-        )
+    mono_path = os.path.join(MODELS_DIR, "qwen2.5-7b-instruct-q4_k_m.gguf")
+    if os.path.exists(mono_path) and os.path.getsize(mono_path) > 100_000_000:
+        print(f"[OK] Qwen GGUF model already present at {mono_path}")
         return
 
-    # Check if shards are already downloaded in models dir
-    shard1_path = os.path.join(MODELS_DIR, QWEN_SHARDS[0])
-    shard2_path = os.path.join(MODELS_DIR, QWEN_SHARDS[1])
-    if (
-        os.path.exists(shard1_path)
-        and os.path.getsize(shard1_path) > 100_000_000
-        and os.path.exists(shard2_path)
-        and os.path.getsize(shard2_path) > 100_000_000
+    if all(
+        os.path.exists(path) and os.path.getsize(path) > 100_000_000 for path in QWEN_SHARD_PATHS
     ):
         print(f"[OK] Qwen GGUF shards already present in {MODELS_DIR}")
         return
 
-    print(f"Downloading Qwen2.5-7B-Instruct GGUF (~4.4 GB) to {QWEN_GGUF_PATH}...")
-    try:
-        urllib.request.urlretrieve(QWEN_GGUF_URL, QWEN_GGUF_PATH, reporthook=_reporthook)
-        print(f"\n[OK] Downloaded Qwen GGUF successfully ({os.path.getsize(QWEN_GGUF_PATH)} bytes)")
-    except Exception as e:
-        print(f"\n[ERROR] Failed to download Qwen GGUF: {e}")
-        raise RuntimeError(f"Failed to download Qwen GGUF: {e}") from e
+    print("Downloading Qwen2.5-7B-Instruct GGUF shards (~4.4 GB total)...")
+    for url, path in zip(QWEN_SHARD_URLS, QWEN_SHARD_PATHS, strict=True):
+        if os.path.exists(path) and os.path.getsize(path) > 100_000_000:
+            print(f"[OK] Qwen shard already present at {path}")
+            continue
+        try:
+            urllib.request.urlretrieve(url, path, reporthook=_reporthook)
+            if os.path.getsize(path) <= 100_000_000:
+                raise RuntimeError(f"downloaded file is unexpectedly small: {path}")
+            print(f"\n[OK] Downloaded Qwen shard {os.path.basename(path)}")
+        except Exception as e:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
+            print(f"\n[ERROR] Failed to download Qwen shard {path}: {e}")
+            raise RuntimeError(f"Failed to download Qwen shard {path}: {e}") from e
 
 
 def main():

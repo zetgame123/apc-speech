@@ -60,6 +60,34 @@ def test_chunk_audio_adaptive_splits_at_natural_silence():
             os.remove(temp_wav)
 
 
+def test_chunk_audio_adaptive_preserves_requested_overlap():
+    sr = 16000
+    # 25 seconds total: speech (0-11s), silence (11-13s), speech (13-25s)
+    audio = np.random.randn(int(sr * 25.0)).astype(np.float32) * 0.1
+    audio[int(sr * 11.0) : int(sr * 13.0)] = 0.0
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        temp_wav = f.name
+        sf.write(temp_wav, audio, sr)
+
+    try:
+        chunks = chunk_audio_adaptive(
+            temp_wav,
+            target_chunk_sec=12,
+            min_chunk_sec=8,
+            max_chunk_sec=15,
+            min_silence_sec=0.5,
+            overlap_sec=2,
+        )
+        assert len(chunks) == 2
+        assert chunks[1]["start_sec"] < chunks[0]["end_sec"]
+        assert round(chunks[1]["overlap_sec"], 1) == 2.0
+        assert round(chunks[1]["start_sec"], 2) == round(chunks[0]["end_sec"] - 2.0, 2)
+    finally:
+        if os.path.exists(temp_wav):
+            os.remove(temp_wav)
+
+
 def test_merge_and_deduplicate_silence_split_chunks():
     """Verify lossless timestamp offset and preservation of words across silence-split chunks."""
     chunks_info = [
