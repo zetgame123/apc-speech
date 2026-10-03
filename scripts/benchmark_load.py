@@ -1,7 +1,11 @@
 import argparse
 import asyncio
 import os
-import resource
+
+try:
+    import resource
+except ImportError:
+    resource = None
 import time
 from typing import List
 
@@ -88,9 +92,12 @@ async def benchmark_voice_search(concurrency: int = 10, total_requests: int = 50
 
 def measure_memory_footprint():
     print("\n[2/3] Замер пикового потребления памяти процесса (RAM RSS)...")
-    usage_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    # On Linux ru_maxrss is in kilobytes
-    usage_mb = usage_kb / 1024.0
+    if resource is not None:
+        usage_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # On Linux ru_maxrss is in kilobytes
+        usage_mb = usage_kb / 1024.0
+    else:
+        usage_mb = 0.0
     print(f"  ✓ Пиковый расход памяти текущего процесса: {usage_mb:.1f} МБ")
     return {"max_rss_mb": round(usage_mb, 1)}
 

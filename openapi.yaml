@@ -82,7 +82,9 @@ paths:
   /v1/voice/history:
     get:
       summary: Получение истории голосовых поисковых запросов
-      description: Возвращает журнал расшифровок голосовых запросов по namespace со всех устройств.
+      description: |
+        Возвращает журнал расшифровок голосовых запросов по namespace со всех устройств.
+        Требуется security scope: read.
       operationId: getVoiceHistory
       security:
         - BearerAuth: []
@@ -108,6 +110,8 @@ paths:
                     type: integer
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     delete:
       summary: Очистка истории голосовых запросов
       description: Удаляет накопленную историю голосовых запросов для указанного namespace.
@@ -134,6 +138,22 @@ paths:
                     type: string
         '401':
           $ref: '#/components/responses/Unauthorized'
+
+  /v1/voice/sample-audio:
+    get:
+      summary: Получение демонстрационного аудиофайла для голосового поиска
+      description: Отдает WAV-аудиозапись эталонного голосового запроса поиска наружной рекламы.
+      operationId: getSampleVoiceAudio
+      responses:
+        '200':
+          description: Аудиозапись в формате audio/wav
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /v1/jobs/upload:
     post:

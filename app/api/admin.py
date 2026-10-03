@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
@@ -90,11 +91,41 @@ async def delete_data(
     calls = (await db.execute(query)).scalars().all()
     target_call_ids = [c.id for c in calls]
 
+    # Clean up voice query history from Redis for GDPR compliance
+    deleted_voice_queries = 0
+    if not call_id and not client_id:
+        try:
+            from app.queue.redis_streams import get_queue
+
+            client = await get_queue().get_client()
+            if not date_before:
+                deleted_voice_queries = await client.delete(f"voice:history:{namespace}")
+            else:
+                raw_items = await client.lrange(f"voice:history:{namespace}", 0, -1)
+                to_keep = []
+                for raw in raw_items:
+                    try:
+                        decoded = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+                        item = json.loads(decoded)
+                        item_dt = datetime.fromisoformat(item.get("created_at"))
+                        if item_dt > date_before:
+                            to_keep.append(raw)
+                        else:
+                            deleted_voice_queries += 1
+                    except Exception:
+                        pass
+                await client.delete(f"voice:history:{namespace}")
+                if to_keep:
+                    await client.rpush(f"voice:history:{namespace}", *to_keep)
+        except Exception:
+            pass
+
     if not target_call_ids:
         return {
             "deleted_calls": 0,
             "deleted_audio_files": 0,
             "deleted_transcripts": 0,
+            "deleted_voice_queries": deleted_voice_queries,
         }
 
     # Cancel any active/queued jobs for these calls
@@ -134,4 +165,5 @@ async def delete_data(
         "deleted_calls": len(target_call_ids),
         "deleted_audio_files": deleted_files_count,
         "deleted_transcripts": len(target_call_ids),
+        "deleted_voice_queries": deleted_voice_queries,
     }

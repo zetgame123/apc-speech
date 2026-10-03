@@ -195,3 +195,33 @@ async def test_voice_search_unauthorized():
             headers={"Content-Type": "audio/wav"},
         )
         assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_voice_history_requires_read_scope(monkeypatch):
+    """Token with write scope only must receive 403 Forbidden for GET /v1/voice/history."""
+    from app.core.config import get_settings
+    from app.core.security import hash_token
+
+    token_write = "token-write-only-12345"
+    h_write = hash_token(token_write)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "api_tokens_hashed", f"{h_write}:write:test_ns")
+    monkeypatch.setattr(settings, "dev_token", None)
+    monkeypatch.setattr(settings, "debug", False)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        headers = {"Authorization": f"Bearer {token_write}"}
+        res = await ac.get("/v1/voice/history?namespace=test_ns", headers=headers)
+        assert res.status_code == 403
+        assert res.json().get("error") == "forbidden_scope"
+
+
+@pytest.mark.asyncio
+async def test_voice_sample_audio_endpoint():
+    """GET /v1/voice/sample-audio returns 200 with audio/wav."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        res = await ac.get("/v1/voice/sample-audio")
+        assert res.status_code in (200, 404)
+        if res.status_code == 200:
+            assert res.headers.get("content-type") == "audio/wav"

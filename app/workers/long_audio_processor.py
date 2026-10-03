@@ -1,5 +1,4 @@
 import asyncio
-import hashlib
 import os
 import signal
 import tempfile
@@ -7,15 +6,15 @@ import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
 
-import httpx
 from sqlalchemy import select, update
 
 from app.asr.engine import get_asr_engine
 from app.asr.preprocessor import AudioPreprocessor
 from app.asr.vad import VadDetector
 from app.core.config import get_settings
+from app.core.errors import AppError
 from app.core.logging import get_logger, setup_logging
-from app.core.security import validate_ssrf_url
+from app.core.security import download_file_ssrf_safe
 from app.db.models import Analysis, AudioObject, Call, Job, TranscriptSegment
 from app.db.session import AsyncSessionLocal
 from app.diarization.roles import RoleClassifier
@@ -79,16 +78,13 @@ async def process_job(job_id: str, data: dict):
         if "s3_key" in data:
             storage.download_to_file(data["s3_bucket"], data["s3_key"], input_audio_path)
         elif "source_url" in data:
-            source_url = validate_ssrf_url(data["source_url"])
-            hasher = hashlib.sha256()
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                async with client.stream("GET", source_url) as resp:
-                    resp.raise_for_status()
-                    with open(input_audio_path, "wb") as f:
-                        async for chunk in resp.aiter_bytes(chunk_size=1024 * 1024):
-                            hasher.update(chunk)
-                            f.write(chunk)
-            downloaded_hash = hasher.hexdigest()
+            max_bytes = settings.max_upload_size_mb * 1024 * 1024
+            downloaded_hash = await download_file_ssrf_safe(
+                url=data["source_url"],
+                target_path=input_audio_path,
+                max_bytes=max_bytes,
+                timeout=60.0,
+            )
 
             # Persist downloaded audio to S3 for replay and compliance
             s3_key = f"calls/{call_id}/audio.wav"
@@ -115,6 +111,13 @@ async def process_job(job_id: str, data: dict):
         # 2. Probe audio properties
         probe_info = preprocessor.probe_audio(input_audio_path)
         total_duration = probe_info["duration"]
+        max_duration_sec = settings.max_audio_duration_hours * 3600
+        if total_duration > max_duration_sec:
+            raise AppError(
+                error="duration_exceeded",
+                message=f"Длительность аудио ({total_duration:.1f} с) превышает лимит ({max_duration_sec} с)",
+                status_code=400,
+            )
         is_stereo = probe_info["channels"] >= 2
 
         # Check explicit channel mapping or stereo mode in request
@@ -404,7 +407,12 @@ async def process_job(job_id: str, data: dict):
         try:
             validate_analysis_schema(analysis_result)
         except Exception as schema_err:
-            logger.warning("analysis_schema_validation_warning", error=str(schema_err))
+            logger.error("analysis_schema_validation_failed", error=str(schema_err))
+            raise AppError(
+                error="schema_validation_failed",
+                message=f"Результат анализа не соответствует схеме: {schema_err}",
+                status_code=500,
+            )
 
         # 8. Save Analysis & Complete Job
         async with AsyncSessionLocal() as db:
@@ -497,10 +505,50 @@ async def main():
                 await process_job(job_id, payload)
                 await queue.ack_job(STREAM_LONG_JOBS, GROUP_WORKERS, msg_id)
             except Exception as e:
+                is_permanent = isinstance(e, AppError)
+                retry_count = int(payload.get("_retry_count", 0))
+                max_retries = 3
+
+                if not is_permanent and retry_count < max_retries:
+                    retry_count += 1
+                    payload["_retry_count"] = retry_count
+                    logger.warning(
+                        "job_processing_transient_error_retrying",
+                        job_id=job_id,
+                        retry_count=retry_count,
+                        error=str(e),
+                    )
+                    async with AsyncSessionLocal() as db:
+                        await db.execute(
+                            update(Job)
+                            .where(Job.id == job_id)
+                            .values(
+                                step=f"retrying_attempt_{retry_count}",
+                                error_details={
+                                    "error": "transient_error",
+                                    "message": str(e),
+                                    "retry": retry_count,
+                                },
+                            )
+                        )
+                        await db.commit()
+                    # Re-enqueue for retry after delay
+                    await asyncio.sleep(min(2**retry_count, 10))
+                    await queue.enqueue_long_job(job_id, payload)
+                    await queue.ack_job(STREAM_LONG_JOBS, GROUP_WORKERS, msg_id)
+                    continue
+
+                # Permanent failure or max retries exceeded
+                error_type = e.error if isinstance(e, AppError) else "job_processing_error"
+                error_msg = e.message if isinstance(e, AppError) else str(e)
+                error_step = e.error if isinstance(e, AppError) else "failed"
+
                 logger.error(
                     "job_processing_failed",
                     job_id=job_id,
-                    error=str(e),
+                    error=error_msg,
+                    error_type=error_type,
+                    retries=retry_count,
                     traceback=traceback.format_exc(),
                 )
                 async with AsyncSessionLocal() as db:
@@ -509,8 +557,8 @@ async def main():
                         .where(Job.id == job_id)
                         .values(
                             status="failed",
-                            step="failed",
-                            error_details={"error": "job_processing_error", "message": str(e)},
+                            step=error_step,
+                            error_details={"error": error_type, "message": error_msg},
                         )
                     )
                     await db.commit()
@@ -523,13 +571,23 @@ async def main():
                             "job_id": job_id,
                             "call_id": payload.get("call_id"),
                             "status": "failed",
-                            "error": {"error": "job_processing_error", "message": str(e)},
+                            "error": {"error": error_type, "message": error_msg},
                         }
                         await queue.enqueue_callback(job_id, callback_url, failure_payload)
                     except Exception as cb_err:
                         logger.error(
                             "failure_callback_enqueue_error", job_id=job_id, error=str(cb_err)
                         )
+
+                # Move failed job to Dead Letter Queue (DLQ)
+                try:
+                    await queue.enqueue_dlq(
+                        job_id=job_id,
+                        error={"error": error_type, "message": error_msg},
+                        payload=payload,
+                    )
+                except Exception as dlq_err:
+                    logger.error("dlq_enqueue_failed", job_id=job_id, error=str(dlq_err))
 
                 await queue.ack_job(STREAM_LONG_JOBS, GROUP_WORKERS, msg_id)
 

@@ -1,10 +1,12 @@
 import hashlib
 import hmac
 import ipaddress
+import os
 import socket
 import time
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
+import httpx
 from fastapi import Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -99,7 +101,7 @@ def authenticate_token(token: str) -> AuthContext:
     )
 
 
-def verify_auth(
+async def verify_auth(
     credentials: HTTPAuthorizationCredentials | None = Security(security_bearer),
 ) -> AuthContext:
     if not credentials:
@@ -108,7 +110,27 @@ def verify_auth(
             message="Отсутствует заголовок Authorization: Bearer <token>",
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
-    return authenticate_token(credentials.credentials)
+    auth_ctx = authenticate_token(credentials.credentials)
+
+    # Check shared revocation in Redis (multi-worker synchronization)
+    token_hash = hash_token(credentials.credentials)
+    try:
+        from app.queue.redis_streams import get_queue
+
+        client = await get_queue().get_client()
+        if await client.sismember("revoked_tokens", token_hash):
+            _revoked_token_hashes.add(token_hash)
+            raise AppError(
+                error="token_revoked",
+                message="Токен был отозван",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+            )
+    except AppError:
+        raise
+    except Exception:
+        pass
+
+    return auth_ctx
 
 
 # --- Token revocation support (hot, without restart) ---
@@ -215,3 +237,94 @@ def sign_callback_payload(secret: str, raw_body: bytes) -> tuple[int, str]:
     message = f"{timestamp}.".encode() + raw_body
     signature = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
     return timestamp, f"sha256={signature}"
+
+
+async def download_file_ssrf_safe(
+    url: str,
+    target_path: str,
+    max_bytes: int,
+    timeout: float = 60.0,
+    max_redirects: int = 3,
+) -> str:
+    """Downloads a file securely preventing SSRF attacks and streaming denial-of-service.
+
+    - Manually validates every redirect hop against private/loopback/cloud metadata IP ranges.
+    - Limits redirect chains to max_redirects hops.
+    - Enforces hard limit max_bytes via Content-Length header and streaming chunks.
+    - Computes and returns SHA256 hex digest of downloaded data.
+    - Automatically cleans up target_path on failure.
+    """
+    current_url = url
+    hasher = hashlib.sha256()
+    total_bytes = 0
+
+    try:
+        for hop in range(max_redirects + 1):
+            validate_ssrf_url(current_url)
+
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+                async with client.stream("GET", current_url) as resp:
+                    if resp.status_code in (301, 302, 303, 307, 308):
+                        if hop >= max_redirects:
+                            raise AppError(
+                                error="too_many_redirects",
+                                message="Превышено максимальное число редиректов при скачивании файла",
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                            )
+                        redirect_location = resp.headers.get("location")
+                        if not redirect_location:
+                            raise AppError(
+                                error="invalid_redirect",
+                                message="Получен редирект без заголовка Location",
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                            )
+                        current_url = urljoin(current_url, redirect_location)
+                        continue
+
+                    resp.raise_for_status()
+
+                    content_length = resp.headers.get("content-length")
+                    if content_length:
+                        try:
+                            if int(content_length) > max_bytes:
+                                raise AppError(
+                                    error="payload_too_large",
+                                    message=f"Размер файла превышает лимит {max_bytes // (1024 * 1024)} МБ",
+                                    status_code=413,
+                                )
+                        except ValueError:
+                            pass
+
+                    with open(target_path, "wb") as f:
+                        async for chunk in resp.aiter_bytes(chunk_size=1024 * 1024):
+                            total_bytes += len(chunk)
+                            if total_bytes > max_bytes:
+                                raise AppError(
+                                    error="payload_too_large",
+                                    message=f"Размер файла превышает лимит {max_bytes // (1024 * 1024)} МБ",
+                                    status_code=413,
+                                )
+                            hasher.update(chunk)
+                            f.write(chunk)
+
+                    if total_bytes == 0:
+                        raise AppError(
+                            error="empty_file",
+                            message="Скачанный файл пуст",
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                        )
+
+                    return hasher.hexdigest()
+
+        raise AppError(
+            error="too_many_redirects",
+            message="Превышено максимальное число редиректов при скачивании файла",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    except Exception:
+        if os.path.exists(target_path):
+            try:
+                os.remove(target_path)
+            except Exception:
+                pass
+        raise

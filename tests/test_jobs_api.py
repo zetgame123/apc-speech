@@ -45,6 +45,7 @@ def mock_infra(monkeypatch):
     # Mock storage
     mock_storage = MagicMock()
     mock_storage.upload_bytes.return_value = None
+    mock_storage.upload_file.return_value = None
     mock_storage.ensure_buckets.return_value = None
     mock_storage.head_object.return_value = {"ContentLength": 1024, "ContentType": "audio/wav"}
     monkeypatch.setattr("app.api.jobs.get_storage", lambda: mock_storage)

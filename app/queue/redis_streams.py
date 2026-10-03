@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -10,6 +11,7 @@ logger = get_logger("redis_queue")
 
 STREAM_LONG_JOBS = "jobs:audio:long"
 STREAM_CALLBACKS = "jobs:callbacks"
+STREAM_DLQ = "jobs:audio:dlq"
 GROUP_WORKERS = "group:workers"
 GROUP_CALLBACKS = "group:callbacks"
 
@@ -67,6 +69,18 @@ class RedisQueue:
         }
         msg_id = await client.xadd(STREAM_CALLBACKS, msg_payload)
         logger.info("callback_enqueued", job_id=job_id, callback_url=callback_url, msg_id=msg_id)
+        return msg_id
+
+    async def enqueue_dlq(self, job_id: str, error: dict[str, Any], payload: dict[str, Any]) -> str:
+        client = await self.get_client()
+        dlq_data = {
+            "job_id": job_id,
+            "error": json.dumps(error, ensure_ascii=False),
+            "payload": json.dumps(payload, ensure_ascii=False),
+            "failed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        msg_id = await client.xadd(STREAM_DLQ, dlq_data)
+        logger.warning("job_moved_to_dlq", job_id=job_id, stream=STREAM_DLQ, msg_id=msg_id)
         return msg_id
 
     async def read_next_job(

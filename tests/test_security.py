@@ -95,3 +95,39 @@ async def test_token_revocation_enforced(monkeypatch):
             assert resp_after.json().get("error") == "token_revoked"
         finally:
             unrevoke_token(hash_x)
+
+
+@pytest.mark.asyncio
+async def test_token_revocation_redis_sync(monkeypatch):
+    """When a token is revoked in Redis by another worker, verify_auth rejects it."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.core.security import hash_token, unrevoke_token
+
+    token_y = "token-revoked-via-redis-55555"
+    hash_y = hash_token(token_y)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "api_tokens_hashed", f"{hash_y}:read+write:tenant-y")
+    monkeypatch.setattr(settings, "dev_token", None)
+    monkeypatch.setattr(settings, "debug", False)
+
+    fake_redis = MagicMock()
+
+    async def fake_sismember(key, member):
+        return member == hash_y
+
+    fake_redis.sismember = fake_sismember
+
+    mock_queue = MagicMock()
+    mock_queue.get_client = AsyncMock(return_value=fake_redis)
+    monkeypatch.setattr("app.queue.redis_streams.get_queue", lambda: mock_queue)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        try:
+            resp = await client.get(
+                "/v1/calls?namespace=tenant-y", headers={"Authorization": f"Bearer {token_y}"}
+            )
+            assert resp.status_code == 401
+            assert resp.json().get("error") == "token_revoked"
+        finally:
+            unrevoke_token(hash_y)

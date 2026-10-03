@@ -95,6 +95,13 @@ class AsrEngine:
                 candidate = os.path.join(base_dir, model_target.lstrip("./"))
                 if os.path.exists(candidate):
                     model_target = candidate
+                elif model_target.startswith(("./", "/", "models/")):
+                    logger.warning(
+                        "local_asr_model_directory_missing_falling_back",
+                        configured=model_target,
+                        fallback="small",
+                    )
+                    model_target = "small"
 
             logger.info(
                 "loading_asr_model",

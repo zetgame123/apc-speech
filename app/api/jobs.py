@@ -1,4 +1,6 @@
 import hashlib
+import os
+import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -103,84 +105,104 @@ async def create_job_upload(
     if callback_url:
         validate_ssrf_url(callback_url)
 
-    # Read uploaded bytes with chunk streaming to prevent OOM
-    chunks = []
+    # Stream uploaded audio directly to a temporary file to prevent RAM duplication and OOM
+    tmp_upload = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
+    tmp_upload_path = tmp_upload.name
+    tmp_upload.close()
     total_bytes = 0
     max_bytes = settings.max_upload_size_mb * 1024 * 1024
     hasher = hashlib.sha256()
 
-    while True:
-        chunk = await file.read(1024 * 1024)  # 1MB chunk
-        if not chunk:
-            break
-        total_bytes += len(chunk)
-        if total_bytes > max_bytes:
-            raise AppError(
-                "payload_too_large",
-                f"Размер файла превышает лимит {settings.max_upload_size_mb} МБ",
-                413,
-            )
-        hasher.update(chunk)
-        chunks.append(chunk)
+    try:
+        with open(tmp_upload_path, "wb") as f:
+            while True:
+                chunk = await file.read(1024 * 1024)  # 1MB chunk
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > max_bytes:
+                    raise AppError(
+                        "payload_too_large",
+                        f"Размер файла превышает лимит {settings.max_upload_size_mb} МБ",
+                        413,
+                    )
+                hasher.update(chunk)
+                f.write(chunk)
 
-    if total_bytes == 0:
-        raise AppError("empty_file", "Загруженный файл пуст", 400)
+        if total_bytes == 0:
+            raise AppError("empty_file", "Загруженный файл пуст", 400)
 
-    file_bytes = b"".join(chunks)
-    file_hash = hasher.hexdigest()
-    param_fingerprint = f"{language or 'ru'}:{channel_manager}:{vocabulary_hints}"
-    param_hash = hashlib.sha256(param_fingerprint.encode()).hexdigest()[:8]
-    effective_idempotency = idempotency_key or f"hash:{file_hash}:{param_hash}"
+        file_hash = hasher.hexdigest()
+        param_fingerprint = f"{language or 'ru'}:{channel_manager}:{vocabulary_hints}"
+        param_hash = hashlib.sha256(param_fingerprint.encode()).hexdigest()[:8]
+        effective_idempotency = idempotency_key or f"hash:{file_hash}:{param_hash}"
 
-    # Check for existing job with same idempotency key
-    stmt = select(Job).where(
-        Job.namespace == namespace, Job.idempotency_key == effective_idempotency
-    )
-    existing_job = (await db.execute(stmt)).scalar_one_or_none()
-    if existing_job:
-        if existing_job.status == "failed":
-            logger.info(
-                "retrying_failed_job",
-                failed_job_id=existing_job.id,
-                idempotency_key=effective_idempotency,
-            )
-            existing_job.idempotency_key = f"{effective_idempotency[:100]}:f:{existing_job.id[:8]}"
-            await db.flush()
-        else:
-            if (
-                idempotency_key
-                and existing_job.file_hash_sha256
-                and existing_job.file_hash_sha256 != file_hash
-            ):
-                raise AppError(
-                    error="idempotency_conflict",
-                    message="Idempotency key has already been used with different content",
-                    status_code=409,
+        # Check for existing job with same idempotency key
+        stmt = select(Job).where(
+            Job.namespace == namespace, Job.idempotency_key == effective_idempotency
+        )
+        existing_job = (await db.execute(stmt)).scalar_one_or_none()
+        if existing_job:
+            if existing_job.status == "failed":
+                logger.info(
+                    "retrying_failed_job",
+                    failed_job_id=existing_job.id,
+                    idempotency_key=effective_idempotency,
                 )
-            response.status_code = status.HTTP_200_OK
-            return JobAcceptedResponse(
-                job_id=existing_job.id,
-                status=existing_job.status,
-                status_url=f"/v1/jobs/{existing_job.id}?namespace={namespace}",
-                created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
-                if existing_job.created_at.tzinfo is None
-                else existing_job.created_at,
+                existing_job.idempotency_key = (
+                    f"{effective_idempotency[:100]}:f:{existing_job.id[:8]}"
+                )
+                await db.flush()
+            else:
+                if (
+                    idempotency_key
+                    and existing_job.file_hash_sha256
+                    and existing_job.file_hash_sha256 != file_hash
+                ):
+                    raise AppError(
+                        error="idempotency_conflict",
+                        message="Idempotency key has already been used with different content",
+                        status_code=409,
+                    )
+                response.status_code = status.HTTP_200_OK
+                return JobAcceptedResponse(
+                    job_id=existing_job.id,
+                    status=existing_job.status,
+                    status_url=f"/v1/jobs/{existing_job.id}?namespace={namespace}",
+                    created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
+                    if existing_job.created_at.tzinfo is None
+                    else existing_job.created_at,
+                )
+
+        # Generate IDs
+        job_id = str(uuid.uuid4())
+        call_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        # Upload raw audio to MinIO directly from disk
+        storage = get_storage()
+        s3_key = f"{namespace}/{now.strftime('%Y/%m/%d')}/{call_id}/original_{file.filename}"
+        if hasattr(storage, "upload_file"):
+            storage.upload_file(
+                local_path=tmp_upload_path,
+                bucket=settings.s3_bucket_audio,
+                key=s3_key,
+                content_type=file.content_type or "application/octet-stream",
             )
-
-    # Generate IDs
-    job_id = str(uuid.uuid4())
-    call_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-
-    # Upload raw audio to MinIO
-    storage = get_storage()
-    s3_key = f"{namespace}/{now.strftime('%Y/%m/%d')}/{call_id}/original_{file.filename}"
-    storage.upload_bytes(
-        bucket=settings.s3_bucket_audio,
-        key=s3_key,
-        data=file_bytes,
-        content_type=file.content_type or "application/octet-stream",
-    )
+        else:
+            with open(tmp_upload_path, "rb") as f:
+                storage.upload_bytes(
+                    bucket=settings.s3_bucket_audio,
+                    key=s3_key,
+                    data=f.read(),
+                    content_type=file.content_type or "application/octet-stream",
+                )
+    finally:
+        if os.path.exists(tmp_upload_path):
+            try:
+                os.remove(tmp_upload_path)
+            except Exception:
+                pass
 
     # Create Call record
     call = Call(
@@ -203,7 +225,7 @@ async def create_job_upload(
         s3_bucket=settings.s3_bucket_audio,
         s3_key=s3_key,
         mime_type=file.content_type,
-        file_size_bytes=len(file_bytes),
+        file_size_bytes=total_bytes,
         created_at=now,
         expires_at=now + timedelta(days=settings.retention_audio_days),
     )

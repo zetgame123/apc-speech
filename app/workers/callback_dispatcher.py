@@ -63,7 +63,7 @@ async def dispatch_callback(job_id: str, callback_url: str, payload: dict):
             logger.info(
                 "dispatching_callback_attempt", job_id=job_id, url=callback_url, attempt=attempt
             )
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
                 response = await client.post(callback_url, content=raw_body, headers=headers)
 
                 # Log attempt in DB

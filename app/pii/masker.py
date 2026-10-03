@@ -52,6 +52,8 @@ class PiiMasker:
 
         return masked
 
+    mask = mask_text
+
     def assert_no_leaked_pii(self, text: str) -> bool:
         """
         Safety check before passing text to any external adapter.

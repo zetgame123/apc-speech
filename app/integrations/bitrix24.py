@@ -205,7 +205,7 @@ async def post_to_crm_timeline(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
             resp = await client.post(url, json=payload)
             if resp.is_success:
                 logger.info(

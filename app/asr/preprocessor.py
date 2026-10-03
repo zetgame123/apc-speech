@@ -1,7 +1,11 @@
 import json
 import os
-import resource
 import subprocess
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 import numpy as np
 
@@ -13,6 +17,8 @@ logger = get_logger("audio_preprocessor")
 
 def set_process_limits():
     """Restricts CPU time and address space for FFmpeg subprocesses."""
+    if resource is None:
+        return
     try:
         # Max 300 seconds CPU time
         resource.setrlimit(resource.RLIMIT_CPU, (300, 300))

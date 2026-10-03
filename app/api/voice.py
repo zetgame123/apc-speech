@@ -17,9 +17,12 @@ from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.logging import get_logger
 from app.core.security import AuthContext, verify_auth
+from app.pii.masker import PiiMasker
 
 router = APIRouter(prefix="/v1/voice", tags=["voice"])
 logger = get_logger("voice_search_api")
+
+_voice_search_semaphore = asyncio.Semaphore(4)
 
 VOICE_SEARCH_INITIAL_PROMPT = (
     "Поиск наружной рекламы: ситиборд, ситиборды, ситиборда, ситиборду, ситибордом, ситиборде, "
@@ -57,20 +60,43 @@ async def voice_search(
     auth.require_scope("write")
     auth.verify_namespace(namespace)
 
-    # Read audio bytes either from multipart file or direct raw body
+    max_voice_bytes = 10 * 1024 * 1024
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_voice_bytes:
+                raise AppError(
+                    "payload_too_large",
+                    "Размер аудио для голосового поиска превышает 10 МБ",
+                    413,
+                )
+        except ValueError:
+            pass
+
+    # Read audio bytes either from multipart file or streaming raw body
     if file:
-        audio_bytes = await file.read()
+        chunk = await file.read(max_voice_bytes + 1)
+        if len(chunk) > max_voice_bytes:
+            raise AppError(
+                "payload_too_large", "Размер аудио для голосового поиска превышает 10 МБ", 413
+            )
+        audio_bytes = chunk
     else:
-        audio_bytes = await request.body()
+        chunks = []
+        total_len = 0
+        async for chunk in request.stream():
+            total_len += len(chunk)
+            if total_len > max_voice_bytes:
+                raise AppError(
+                    "payload_too_large",
+                    "Размер аудио для голосового поиска превышает 10 МБ",
+                    413,
+                )
+            chunks.append(chunk)
+        audio_bytes = b"".join(chunks)
 
     if not audio_bytes:
         raise AppError("empty_audio", "Тело запроса не содержит аудиоданных", 400)
-
-    # Size check (max 10MB for 60s audio)
-    if len(audio_bytes) > 10 * 1024 * 1024:
-        raise AppError(
-            "payload_too_large", "Размер аудио для голосового поиска превышает 10 МБ", 413
-        )
 
     # Preprocess and transcribe in background worker thread to prevent event loop blocking
     def _sync_process(raw_bytes: bytes, lang: str):
@@ -90,11 +116,12 @@ async def voice_search(
         )
         return segs, metadata
 
-    try:
-        segments, meta = await asyncio.to_thread(_sync_process, audio_bytes, language)
-    except Exception as e:
-        logger.error("voice_search_transcribe_error", error=str(e))
-        raise AppError("transcription_failed", "Ошибка распознавания голосового запроса", 500)
+    async with _voice_search_semaphore:
+        try:
+            segments, meta = await asyncio.to_thread(_sync_process, audio_bytes, language)
+        except Exception as e:
+            logger.error("voice_search_transcribe_error", error=str(e))
+            raise AppError("transcription_failed", "Ошибка распознавания голосового запроса", 500)
 
     duration = meta.get("duration", 0.0)
     settings = get_settings()
@@ -120,9 +147,10 @@ async def voice_search(
 
         queue = get_queue()
         client = await queue.get_client()
+        masked_history_text = PiiMasker().mask_text(full_text)
         history_item = {
             "id": str(uuid.uuid4()),
-            "text": full_text,
+            "text": masked_history_text,
             "language": meta.get("language", "ru"),
             "confidence": round(avg_conf, 3),
             "duration": round(duration, 2),
@@ -135,6 +163,8 @@ async def voice_search(
             f"voice:history:{namespace}", json.dumps(history_item, ensure_ascii=False)
         )
         await client.ltrim(f"voice:history:{namespace}", 0, 99)
+        ttl_seconds = max(1, getattr(settings, "retention_audio_days", 14) * 86400)
+        await client.expire(f"voice:history:{namespace}", ttl_seconds)
     except Exception as err:
         logger.warning("voice_history_save_failed", error=str(err))
 
@@ -155,6 +185,7 @@ async def get_voice_history(
     namespace: str = Query(..., description="Namespace изоляции данных"),
     auth: AuthContext = Depends(verify_auth),
 ):
+    auth.require_scope("read")
     auth.verify_namespace(namespace)
     try:
         from app.queue.redis_streams import get_queue
