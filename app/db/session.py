@@ -10,7 +10,7 @@ settings = get_settings()
 
 engine = create_async_engine(
     settings.database_url,
-    echo=settings.debug,
+    echo=False,  # Strict security: never dump SQL queries with transcripts/PII into stdout logs
     pool_size=settings.db_pool_size,
     max_overflow=settings.db_max_overflow,
 )

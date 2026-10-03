@@ -110,7 +110,7 @@ def main():
     print(f"=== APC Speech Model Downloader (profile: {args.profile}) ===")
     try:
         download_campplus()
-        download_whisper("base")
+        download_whisper("small")
 
         if args.profile in ("local-full", "all"):
             download_whisper("medium")
