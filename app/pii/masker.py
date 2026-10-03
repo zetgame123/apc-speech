@@ -59,6 +59,164 @@ NUMBER_WORDS = {
 }
 
 
+HUNDREDS_WORDS = {
+    "сто": 100,
+    "двести": 200,
+    "триста": 300,
+    "четыреста": 400,
+    "пятьсот": 500,
+    "шестьсот": 600,
+    "семьсот": 700,
+    "восемьсот": 800,
+    "девятьсот": 900,
+}
+TENS_WORDS = {
+    "двадцать": 20,
+    "тридцать": 30,
+    "сорок": 40,
+    "пятьдесят": 50,
+    "шестьдесят": 60,
+    "семьдесят": 70,
+    "восемьдесят": 80,
+    "девяносто": 90,
+}
+TEENS_WORDS = {
+    "десять": 10,
+    "одиннадцать": 11,
+    "двенадцать": 12,
+    "тринадцать": 13,
+    "четырнадцать": 14,
+    "пятнадцать": 15,
+    "шестнадцать": 16,
+    "семнадцать": 17,
+    "восемнадцать": 18,
+    "девятнадцать": 19,
+}
+UNITS_WORDS = {
+    "ноль": 0,
+    "нуль": 0,
+    "один": 1,
+    "одна": 1,
+    "два": 2,
+    "две": 2,
+    "три": 3,
+    "четыре": 4,
+    "пять": 5,
+    "шесть": 6,
+    "семь": 7,
+    "восемь": 8,
+    "девять": 9,
+}
+
+ALL_NUM_WORDS = (
+    set(HUNDREDS_WORDS)
+    | set(TENS_WORDS)
+    | set(TEENS_WORDS)
+    | set(UNITS_WORDS)
+    | {"плюс", "+7", "8", "7"}
+)
+
+
+def convert_spoken_phones(text: str) -> str:
+    """Parses arbitrary spoken Russian phone number constructions into digits."""
+    tokens = list(re.finditer(r"(\+?\d+|[а-яёА-ЯЁ]+)", text))
+    if not tokens:
+        return text
+
+    i = 0
+    replacements = []
+    while i < len(tokens):
+        w = tokens[i].group(0).lower()
+        if w in ALL_NUM_WORDS or w.isdigit() or w == "+7":
+            start_idx = i
+            digits = []
+            prefix = ""
+            curr = i
+
+            # Check for leading 'плюс семь' or 'плюс 7'
+            if (
+                curr + 1 < len(tokens)
+                and tokens[curr].group(0).lower() == "плюс"
+                and tokens[curr + 1].group(0).lower() in ("семь", "7")
+            ):
+                prefix = "+7"
+                curr += 2
+            elif w == "+7":
+                prefix = "+7"
+                curr += 1
+            elif w in ("восемь", "8"):
+                prefix = "8"
+                curr += 1
+            elif w in ("семь", "7"):
+                prefix = "7"
+                curr += 1
+
+            # Parse remaining tokens in sequence
+            while curr < len(tokens):
+                t_raw = tokens[curr].group(0).lower()
+                if t_raw.isdigit():
+                    digits.append(t_raw)
+                    curr += 1
+                elif t_raw in HUNDREDS_WORDS:
+                    val = HUNDREDS_WORDS[t_raw]
+                    curr += 1
+                    if curr < len(tokens) and tokens[curr].group(0).lower() in TENS_WORDS:
+                        val += TENS_WORDS[tokens[curr].group(0).lower()]
+                        curr += 1
+                        if curr < len(tokens) and tokens[curr].group(0).lower() in UNITS_WORDS:
+                            val += UNITS_WORDS[tokens[curr].group(0).lower()]
+                            curr += 1
+                    elif curr < len(tokens) and tokens[curr].group(0).lower() in TEENS_WORDS:
+                        val += TEENS_WORDS[tokens[curr].group(0).lower()]
+                        curr += 1
+                    elif curr < len(tokens) and tokens[curr].group(0).lower() in UNITS_WORDS:
+                        val += UNITS_WORDS[tokens[curr].group(0).lower()]
+                        curr += 1
+                    digits.append(f"{val:03d}")
+                elif t_raw in TENS_WORDS:
+                    val = TENS_WORDS[t_raw]
+                    curr += 1
+                    if curr < len(tokens) and tokens[curr].group(0).lower() in UNITS_WORDS:
+                        val += UNITS_WORDS[tokens[curr].group(0).lower()]
+                        curr += 1
+                    digits.append(f"{val:02d}")
+                elif t_raw in TEENS_WORDS:
+                    digits.append(str(TEENS_WORDS[t_raw]))
+                    curr += 1
+                elif t_raw in UNITS_WORDS:
+                    digits.append(str(UNITS_WORDS[t_raw]))
+                    curr += 1
+                else:
+                    break
+
+            digit_str = "".join(digits)
+            raw_digits_only = re.sub(r"\D", "", prefix + digit_str)
+            total_digits = len(raw_digits_only)
+
+            if total_digits == 11 and (
+                prefix in ("+7", "8", "7") or (prefix == "" and digit_str.startswith(("7", "8")))
+            ):
+                full_num = (prefix if prefix else "") + digit_str
+                span_start = tokens[start_idx].start()
+                span_end = tokens[curr - 1].end()
+                replacements.append((span_start, span_end, full_num))
+                i = curr
+                continue
+            elif total_digits == 10 and digit_str.startswith("9"):
+                full_num = "+7" + digit_str
+                span_start = tokens[start_idx].start()
+                span_end = tokens[curr - 1].end()
+                replacements.append((span_start, span_end, full_num))
+                i = curr
+                continue
+        i += 1
+
+    res = text
+    for start, end, rep in reversed(replacements):
+        res = res[:start] + rep + res[end:]
+    return res
+
+
 def _parse_num_group(g: str, length: int) -> str:
     parts = g.strip().split()
     total = 0
@@ -110,6 +268,7 @@ class PiiMasker:
         masked = EMAIL_REGEX.sub("[EMAIL]", masked)
 
         # 4. Convert spoken phone numbers to standard format
+        masked = convert_spoken_phones(masked)
         masked = SPOKEN_PHONE_PATTERN.sub(_spoken_phone_repl, masked)
 
         # 5. Mask phone numbers with consistent numbering

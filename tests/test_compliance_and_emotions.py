@@ -143,7 +143,7 @@ def test_schema_validates_neutral_manager_tone():
     """Verify that manager_tone='neutral' validates cleanly against JSON schema."""
     analysis = StructuredAnalysis(
         summary="Монолог клиента или нейтральный диалог.",
-        inquiry_type="general",
+        inquiry_type="other",
         call_result="info_provided",
         entities=Entities(cities=["Москва"], formats=["щит 3х6"]),
         sentiment=Sentiment(

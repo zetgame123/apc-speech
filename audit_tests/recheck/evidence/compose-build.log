@@ -1,0 +1,393 @@
+ Image apc-recheck-worker-long Building 
+ Image apc-recheck-worker-callback Building 
+ Image apc-recheck-api Building 
+ Image apc-recheck-alembic-migrate Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.89kB done
+#1 DONE 0.0s
+
+#2 [api internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.93kB done
+#2 DONE 0.0s
+
+#3 [worker-long internal] load metadata for docker.io/library/python:3.12-slim
+#3 DONE 1.6s
+
+#4 [worker-callback internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [alembic-migrate internal] load build context
+#5 transferring context: 741.38kB 0.0s done
+#5 DONE 0.0s
+
+#6 [worker-long builder 1/6] FROM docker.io/library/python:3.12-slim@sha256:dddfd7e07f9d15aeeca61529320492139d21cac7f0070c00609243e51e4e0016
+#6 resolve docker.io/library/python:3.12-slim@sha256:dddfd7e07f9d15aeeca61529320492139d21cac7f0070c00609243e51e4e0016 0.0s done
+#6 DONE 0.0s
+
+#7 [worker-long builder 2/6] WORKDIR /build
+#7 CACHED
+
+#8 [worker-long builder 3/6] RUN apt-get update && apt-get install -y --no-install-recommends     build-essential     curl     git     && rm -rf /var/lib/apt/lists/*
+#8 CACHED
+
+#9 [alembic-migrate builder 4/6] RUN curl -LsSf https://astral.sh/uv/0.7.12/install.sh | sh
+#9 CACHED
+
+#10 [alembic-migrate builder 5/6] COPY pyproject.toml uv.lock README.md ./
+#10 DONE 0.1s
+
+#11 [alembic-migrate builder 6/6] RUN uv sync --frozen --no-dev
+#11 0.499 Using CPython 3.12.15 interpreter at: /usr/local/bin/python3
+#11 0.499 Creating virtual environment at: /opt/venv
+#11 0.540    Building apc-speech @ file:///build
+#11 1.091 Downloading aiohttp (1.7MiB)
+#11 1.095 Downloading pydantic-core (2.0MiB)
+#11 1.095 Downloading uvloop (4.2MiB)
+#11 1.198 Downloading onnxruntime (22.5MiB)
+#11 1.199 Downloading natasha (32.8MiB)
+#11 1.199 Downloading tokenizers (3.2MiB)
+#11 1.201 Downloading faster-whisper (1.1MiB)
+#11 1.201 Downloading pymorphy2-dicts-ru (7.8MiB)
+#11 1.202 Downloading scikit-learn (8.7MiB)
+#11 1.202 Downloading botocore (13.4MiB)
+#11 1.203 Downloading numba (3.7MiB)
+#11 1.203 Downloading hf-xet (4.3MiB)
+#11 1.203 Downloading pygments (1.2MiB)
+#11 1.204 Downloading asyncpg (3.4MiB)
+#11 1.204 Downloading scipy (33.6MiB)
+#11 1.205 Downloading av (34.1MiB)
+#11 1.206 Downloading llvmlite (57.1MiB)
+#11 1.207 Downloading ctranslate2 (37.7MiB)
+#11 1.207 Downloading numpy (17.1MiB)
+#11 1.207 Downloading sqlalchemy (4.5MiB)
+#11 1.208 Downloading soundfile (1.3MiB)
+#11 2.172    Building docopt==0.6.2
+#11 2.182  Downloading faster-whisper
+#11 2.226  Downloading pygments
+#11 2.329  Downloading soundfile
+#11 2.561  Downloading aiohttp
+#11 2.792  Downloading pydantic-core
+#11 2.924       Built apc-speech @ file:///build
+#11 3.748  Downloading tokenizers
+#11 3.838  Downloading asyncpg
+#11 3.986       Built docopt==0.6.2
+#11 4.024  Downloading numba
+#11 4.328  Downloading uvloop
+#11 4.365  Downloading hf-xet
+#11 4.623  Downloading sqlalchemy
+#11 15.99  Downloading pymorphy2-dicts-ru
+#11 20.74  Downloading scikit-learn
+#11 30.06  Downloading botocore
+#11 38.65  Downloading numpy
+#11 51.25  Downloading onnxruntime
+#11 71.28  Downloading natasha
+#11 75.23  Downloading scipy
+#11 76.88  Downloading av
+#11 81.59  Downloading ctranslate2
+#11 87.70  Downloading llvmlite
+#11 87.70 Prepared 113 packages in 1m 27s
+#11 88.01 Installed 113 packages in 311ms
+#11 89.87 Bytecode compiled 6341 files in 1.85s
+#11 89.87  + aioboto3==15.5.0
+#11 89.87  + aiobotocore==2.25.1
+#11 89.87  + aiofiles==25.1.0
+#11 89.87  + aiohappyeyeballs==2.7.1
+#11 89.87  + aiohttp==3.14.3
+#11 89.87  + aioitertools==0.13.0
+#11 89.87  + aiosignal==1.4.0
+#11 89.87  + alembic==1.20.0
+#11 89.87  + annotated-doc==0.0.5
+#11 89.87  + annotated-types==0.8.0
+#11 89.87  + anyio==4.15.1
+#11 89.87  + apc-speech==0.1.0 (from file:///build)
+#11 89.87  + asyncpg==0.31.0
+#11 89.87  + attrs==26.1.0
+#11 89.87  + audioread==3.1.0
+#11 89.87  + av==18.1.0
+#11 89.87  + boto3==1.40.61
+#11 89.87  + botocore==1.40.61
+#11 89.87  + certifi==2026.7.22
+#11 89.87  + cffi==2.1.1
+#11 89.87  + charset-normalizer==3.5.1
+#11 89.87  + click==8.1.8
+#11 89.87  + cloudpickle==3.1.2
+#11 89.87  + ctranslate2==4.8.2
+#11 89.87  + dawg-python==0.7.2
+#11 89.87  + decorator==5.3.1
+#11 89.87  + docopt==0.6.2
+#11 89.87  + fastapi==0.141.1
+#11 89.87  + faster-whisper==1.2.1
+#11 89.87  + filelock==4.0.5
+#11 89.87  + flatbuffers==25.12.19
+#11 89.87  + frozenlist==1.8.0
+#11 89.87  + fsspec==2026.9.0
+#11 89.87  + greenlet==3.5.6
+#11 89.87  + h11==0.16.0
+#11 89.87  + hf-xet==1.6.0
+#11 89.87  + hiredis==3.4.2
+#11 89.87  + httpcore==1.0.9
+#11 89.87  + httptools==0.8.0
+#11 89.87  + httpx==0.28.1
+#11 89.87  + huggingface-hub==1.16.1
+#11 89.87  + idna==3.20
+#11 89.87  + intervaltree==3.2.1
+#11 89.87  + ipymarkup==0.9.0
+#11 89.87  + jmespath==1.1.0
+#11 89.87  + joblib==1.6.0
+#11 89.87  + jsonschema==4.26.0
+#11 89.87  + jsonschema-specifications==2025.9.1
+#11 89.87  + lazy-loader==0.6
+#11 89.87  + librosa==0.11.0
+#11 89.87  + llvmlite==0.49.0
+#11 89.87  + mako==1.4.3
+#11 89.87  + markdown-it-py==4.2.0
+#11 89.87  + markupsafe==3.0.3
+#11 89.87  + mdurl==0.1.2
+#11 89.87  + msgpack==1.2.2
+#11 89.87  + multidict==6.9.1
+#11 89.87  + narwhals==2.26.0
+#11 89.87  + natasha==1.6.0
+#11 89.87  + navec==0.10.0
+#11 89.87  + numba==0.67.0
+#11 89.87  + numpy==1.26.4
+#11 89.87  + onnxruntime==1.30.0
+#11 89.87  + packaging==26.3
+#11 89.87  + pgvector==0.5.0
+#11 89.87  + platformdirs==4.12.1
+#11 89.87  + pooch==1.9.0
+#11 89.87  + prometheus-client==0.26.0
+#11 89.87  + propcache==0.5.4
+#11 89.87  + protobuf==7.36.2
+#11 89.87  + pycparser==3.0
+#11 89.87  + pydantic==2.13.5
+#11 89.87  + pydantic-core==2.46.5
+#11 89.87  + pydantic-settings==2.15.0
+#11 89.87  + pygments==2.21.0
+#11 89.87  + pymorphy2==0.9.1
+#11 89.87  + pymorphy2-dicts-ru==2.4.417127.4579844
+#11 89.87  + python-dateutil==2.9.0.post0
+#11 89.87  + python-dotenv==1.2.3
+#11 89.87  + python-multipart==0.0.32
+#11 89.87  + pyyaml==6.0.3
+#11 89.87  + razdel==0.5.0
+#11 89.87  + redis==8.1.0
+#11 89.87  + referencing==0.37.0
+#11 89.87  + requests==2.34.2
+#11 89.87  + rich==15.0.0
+#11 89.87  + rpds-py==2026.6.3
+#11 89.87  + s3transfer==0.14.0
+#11 89.87  + scikit-learn==1.9.1
+#11 89.87  + scipy==1.17.1
+#11 89.87  + shellingham==1.5.4
+#11 89.87  + six==1.17.0
+#11 89.87  + slovnet==0.6.0
+#11 89.87  + sortedcontainers==2.4.0
+#11 89.87  + soundfile==0.14.0
+#11 89.87  + soxr==1.1.0
+#11 89.87  + sqlalchemy==2.1.1
+#11 89.87  + starlette==1.7.0
+#11 89.87  + structlog==26.1.0
+#11 89.87  + threadpoolctl==3.7.0
+#11 89.87  + tokenizers==0.23.2
+#11 89.87  + tqdm==4.70.1
+#11 89.87  + typer==0.27.2
+#11 89.87  + typing-extensions==4.16.0
+#11 89.87  + typing-inspection==0.4.4
+#11 89.87  + urllib3==2.8.0
+#11 89.87  + uvicorn==0.54.0
+#11 89.87  + uvloop==0.22.1
+#11 89.87  + watchfiles==1.3.0
+#11 89.87  + websockets==17.1
+#11 89.87  + wrapt==1.17.3
+#11 89.87  + yargy==0.16.0
+#11 89.87  + yarl==1.25.1
+#11 DONE 90.1s
+
+#12 [alembic-migrate runtime  3/13] RUN apt-get update && apt-get install -y --no-install-recommends     ffmpeg     curl     ca-certificates     && rm -rf /var/lib/apt/lists/*
+#12 CACHED
+
+#13 [alembic-migrate runtime  2/13] WORKDIR /app
+#13 CACHED
+
+#14 [alembic-migrate runtime  4/13] RUN groupadd -g 10001 apcgroup &&     useradd -u 10000 -g apcgroup -s /bin/bash -m apcuser
+#14 CACHED
+
+#13 [worker-long runtime  2/13] WORKDIR /app
+#13 CACHED
+
+#12 [worker-long runtime  3/13] RUN apt-get update && apt-get install -y --no-install-recommends     ffmpeg     curl     ca-certificates     && rm -rf /var/lib/apt/lists/*
+#12 CACHED
+
+#15 [api runtime  5/13] COPY --from=builder /opt/venv /opt/venv
+#15 DONE 1.6s
+
+#16 [worker-callback runtime  6/13] COPY --chown=apcuser:apcgroup app/ /app/app/
+#16 DONE 0.2s
+
+#17 [alembic-migrate runtime  7/13] COPY --chown=apcuser:apcgroup config/ /app/config/
+#17 DONE 0.1s
+
+#18 [worker-long runtime  8/13] COPY --chown=apcuser:apcgroup schemas/ /app/schemas/
+#18 DONE 0.1s
+
+#19 [worker-callback runtime  9/13] COPY --chown=apcuser:apcgroup scripts/ /app/scripts/
+#19 DONE 0.1s
+
+#20 [alembic-migrate runtime 10/13] COPY --chown=apcuser:apcgroup alembic/ /app/alembic/
+#20 DONE 0.1s
+
+#21 [alembic-migrate runtime 11/13] COPY --chown=apcuser:apcgroup alembic.ini /app/
+#21 DONE 0.1s
+
+#22 [worker-long runtime 12/13] COPY --chown=apcuser:apcgroup openapi.yaml /app/
+#22 DONE 0.1s
+
+#23 [worker-long runtime 13/13] COPY --chown=apcuser:apcgroup pyproject.toml /app/
+#23 DONE 0.1s
+
+#24 [alembic-migrate] exporting to image
+#24 exporting layers
+#24 ...
+
+#25 [api] exporting to image
+#25 ...
+
+#26 [worker-long] exporting to image
+#26 ...
+
+#27 [worker-callback] exporting to image
+#27 ...
+
+#24 [alembic-migrate] exporting to image
+#24 exporting layers 28.4s done
+#24 exporting manifest sha256:1635d68a77a9986958171dd6ca40d0306dd1727094a2e0c9fb4ecaab0163a31a 0.0s done
+#24 exporting config sha256:81a593d36e48514b3f66e54f107175ebc6ba5b7aa2a43934c21daf5b39459177 0.0s done
+#24 exporting attestation manifest sha256:983f60acc5fa65fcf1dab418d649426fb537e040f6daea1050e908076a3ef6cf 0.0s done
+#24 exporting manifest list sha256:4c05cd192b62184e8b62a48408fb75d5eb46bc2ee348ff377a3309aeeaacd27f 0.0s done
+#24 naming to docker.io/library/apc-recheck-alembic-migrate:latest
+#24 naming to docker.io/library/apc-recheck-alembic-migrate:latest 0.0s done
+#24 unpacking to docker.io/library/apc-recheck-alembic-migrate:latest
+#24 ...
+
+#25 [api] exporting to image
+#25 exporting layers 28.4s done
+#25 exporting manifest sha256:bed35145687136c76b09832f5b810aded0035b5bfb8d6fb4d7f603f03c403623 0.0s done
+#25 exporting config sha256:f27ef986deba7d2d5c40ee61fcc52d3c0cbe8ec18903c98d9b2d9587eb32ba5d 0.0s done
+#25 exporting attestation manifest sha256:932b72d7ac8dd335e14ac0e6f58d28bc712e82ab97f48a4a909f6ee1573d374a 0.0s done
+#25 exporting manifest list sha256:056b94b247822790f3634e03d0b90d4bee1f8c60b2df6571a1b29aab9271bcce 0.0s done
+#25 naming to docker.io/library/apc-recheck-api:latest done
+#25 unpacking to docker.io/library/apc-recheck-api:latest
+#25 ...
+
+#27 [worker-callback] exporting to image
+#27 exporting layers 28.4s done
+#27 exporting manifest sha256:454ab6ba1796e733503a98864d3a8714d4fd85b52cdbffbd862b81c21b309e8b 0.0s done
+#27 exporting config sha256:e2728e62b8d007cf0b967afcc46b523a9c078e2c29dcd55d3cdcee382d8c86f9 0.0s done
+#27 exporting attestation manifest sha256:da047bf736b4c0d30a82250684a0383bd6c13f35b022aa9145face2321b9fcbe 0.0s done
+#27 exporting manifest list sha256:28c84a19130ee850b08e970a41684881296594963b853647bedb21c2d98e3b82 0.0s done
+#27 naming to docker.io/library/apc-recheck-worker-callback:latest done
+#27 unpacking to docker.io/library/apc-recheck-worker-callback:latest 8.7s done
+#27 DONE 37.2s
+
+#26 [worker-long] exporting to image
+#26 exporting layers 28.4s done
+#26 exporting manifest sha256:29d1ae628455d588893e9a78a542b22159b67dcedf6f1500a50376a7babab248 0.0s done
+#26 exporting config sha256:bb8986c031b6f503eb78fdf9a1736a9b36d775d40e5d51213493448dcdbcd238 0.0s done
+#26 exporting attestation manifest sha256:01cfb4efa0ec4e20db4a71174ba652453a792e6c7b6f30313690969cdad5f6b0 0.0s done
+#26 exporting manifest list sha256:ade9140bef4fc46581bbd9481ae0abaf40b32e34ab4e90b3979abd9d9ae1a644 0.0s done
+#26 naming to docker.io/library/apc-recheck-worker-long:latest done
+#26 unpacking to docker.io/library/apc-recheck-worker-long:latest 8.7s done
+#26 DONE 37.2s
+
+#25 [api] exporting to image
+#25 unpacking to docker.io/library/apc-recheck-api:latest 8.7s done
+#25 DONE 37.2s
+
+#24 [alembic-migrate] exporting to image
+#24 unpacking to docker.io/library/apc-recheck-alembic-migrate:latest 8.8s done
+#24 DONE 37.3s
+
+#28 [alembic-migrate] resolving provenance for metadata file
+#28 DONE 0.0s
+
+#29 [worker-long] resolving provenance for metadata file
+#29 DONE 0.1s
+
+#30 [worker-callback] resolving provenance for metadata file
+#30 DONE 0.1s
+
+#31 [api] resolving provenance for metadata file
+#31 DONE 0.0s
+ Image apc-recheck-alembic-migrate Built 
+ Image apc-recheck-api Built 
+ Image apc-recheck-worker-callback Built 
+ Image apc-recheck-worker-long Built 
+ Volume apc-recheck_pgdata Creating 
+ Volume apc-recheck_redisdata Creating 
+ Volume apc-recheck_redisdata Creating 
+ Volume apc-recheck_miniodata Creating 
+ Volume apc-recheck_miniodata Creating 
+ Volume apc-recheck_pgdata Creating 
+ Network apc-recheck_default Creating 
+ Network apc-recheck_default Creating 
+ Volume apc-recheck_redisdata Created 
+ Volume apc-recheck_redisdata Created 
+ Volume apc-recheck_pgdata Created 
+ Volume apc-recheck_pgdata Created 
+ Volume apc-recheck_miniodata Created 
+ Volume apc-recheck_miniodata Created 
+ Network apc-recheck_default Created 
+ Network apc-recheck_default Created 
+ Container apc-recheck-postgres-1 Creating 
+ Container apc-recheck-minio-1 Creating 
+ Container apc-recheck-redis-1 Creating 
+ Container apc-recheck-minio-1 Created 
+ Container apc-recheck-postgres-1 Created 
+ Container apc-recheck-alembic-migrate-1 Creating 
+ Container apc-recheck-redis-1 Created 
+ Container apc-recheck-alembic-migrate-1 Created 
+ Container apc-recheck-worker-long-1 Creating 
+ Container apc-recheck-api-1 Creating 
+ Container apc-recheck-worker-callback-1 Creating 
+ Container apc-recheck-worker-long-1 Created 
+ Container apc-recheck-api-1 Created 
+ Container apc-recheck-worker-callback-1 Created 
+ Container apc-recheck-minio-1 Starting 
+ Container apc-recheck-redis-1 Starting 
+ Container apc-recheck-postgres-1 Starting 
+ Container apc-recheck-minio-1 Started 
+ Container apc-recheck-redis-1 Started 
+ Container apc-recheck-postgres-1 Started 
+ Container apc-recheck-postgres-1 Waiting 
+ Container apc-recheck-postgres-1 Healthy 
+ Container apc-recheck-alembic-migrate-1 Starting 
+ Container apc-recheck-alembic-migrate-1 Started 
+ Container apc-recheck-postgres-1 Waiting 
+ Container apc-recheck-redis-1 Waiting 
+ Container apc-recheck-redis-1 Waiting 
+ Container apc-recheck-minio-1 Waiting 
+ Container apc-recheck-alembic-migrate-1 Waiting 
+ Container apc-recheck-postgres-1 Waiting 
+ Container apc-recheck-minio-1 Waiting 
+ Container apc-recheck-alembic-migrate-1 Waiting 
+ Container apc-recheck-postgres-1 Waiting 
+ Container apc-recheck-redis-1 Waiting 
+ Container apc-recheck-alembic-migrate-1 Waiting 
+ Container apc-recheck-redis-1 Healthy 
+ Container apc-recheck-postgres-1 Healthy 
+ Container apc-recheck-postgres-1 Healthy 
+ Container apc-recheck-minio-1 Healthy 
+ Container apc-recheck-minio-1 Healthy 
+ Container apc-recheck-postgres-1 Healthy 
+ Container apc-recheck-redis-1 Healthy 
+ Container apc-recheck-redis-1 Healthy 
+ Container apc-recheck-alembic-migrate-1 Exited 
+ Container apc-recheck-alembic-migrate-1 Exited 
+ Container apc-recheck-worker-long-1 Starting 
+ Container apc-recheck-alembic-migrate-1 Exited 
+ Container apc-recheck-worker-callback-1 Starting 
+ Container apc-recheck-api-1 Starting 
+ Container apc-recheck-worker-long-1 Started 
+ Container apc-recheck-worker-callback-1 Started 
+ Container apc-recheck-api-1 Started 

@@ -1,7 +1,11 @@
+import os
+import time
 import uuid
 from contextlib import asynccontextmanager
+from typing import Any
 
 import structlog
+import yaml
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +16,10 @@ from app.core.config import get_settings
 from app.core.errors import AppError, error_response
 from app.core.logging import get_logger, setup_logging
 from app.db.session import init_db
+from app.metrics.prometheus import (
+    HTTP_REQUEST_DURATION_SECONDS,
+    HTTP_REQUESTS_TOTAL,
+)
 from app.queue.redis_streams import get_queue
 from app.storage.s3 import get_storage
 
@@ -31,10 +39,12 @@ async def lifespan(app: FastAPI):
             or len(settings.callback_signing_secret) < 32
             or "change_me" in settings.callback_signing_secret
         ):
-            logger.error(
+            msg = (
                 "CRITICAL: CALLBACK_SIGNING_SECRET is missing, too short, or default placeholder for production! "
                 "Set a random string of at least 32 characters."
             )
+            logger.error(msg)
+            raise RuntimeError(msg)
         if "*" in settings.cors_allowed_origins:
             logger.warning(
                 "CORS_ALLOWED_ORIGINS is set to '*' in production — restrict to specific domains"
@@ -115,13 +125,59 @@ app.add_middleware(
 )
 
 
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "openapi.yaml")
+    if os.path.exists(openapi_path):
+        with open(openapi_path, "r", encoding="utf-8") as f:
+            app.openapi_schema = yaml.safe_load(f)
+            return app.openapi_schema
+    from fastapi.openapi.utils import get_openapi
+
+    app.openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        openapi_version=app.openapi_version,
+        description=app.description,
+        routes=app.routes,
+    )
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
+
+
+def _sanitize_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sanitizes Pydantic validation errors by stripping raw input/ctx to prevent PII leakage in logs."""
+    sanitized = []
+    for err in errors:
+        item = {
+            "type": err.get("type"),
+            "loc": err.get("loc"),
+            "msg": err.get("msg"),
+        }
+        sanitized.append(item)
+    return sanitized
+
+
 @app.middleware("http")
 async def request_id_and_logging_middleware(request: Request, call_next):
     req_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
     structlog.contextvars.bind_contextvars(request_id=req_id)
 
+    start_time = time.time()
     response = await call_next(request)
+    duration = time.time() - start_time
     response.headers["X-Request-Id"] = req_id
+
+    # Record Prometheus metrics
+    endpoint = request.url.path
+    HTTP_REQUESTS_TOTAL.labels(
+        method=request.method, endpoint=endpoint, status=response.status_code
+    ).inc()
+    HTTP_REQUEST_DURATION_SECONDS.labels(method=request.method, endpoint=endpoint).observe(duration)
+
     return response
 
 
@@ -138,12 +194,24 @@ async def app_error_handler(request: Request, exc: AppError):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.warning("request_validation_failed", errors=exc.errors())
+    raw_errors = exc.errors()
+    sanitized = _sanitize_validation_errors(raw_errors)
+    logger.warning("request_validation_failed", errors=sanitized)
+
+    is_json_invalid = any(e.get("type") == "json_invalid" for e in raw_errors)
+    if is_json_invalid:
+        return error_response(
+            error="bad_request",
+            message="Некорректный формат JSON в теле запроса",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            details={"errors": sanitized},
+        )
+
     return error_response(
         error="validation_error",
         message="Ошибка валидации входных параметров",
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        details={"errors": exc.errors()},
+        details={"errors": sanitized},
     )
 
 

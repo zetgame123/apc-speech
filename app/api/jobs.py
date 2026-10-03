@@ -137,7 +137,13 @@ async def create_job_upload(
         param_hash = hashlib.sha256(param_fingerprint.encode()).hexdigest()[:8]
         effective_idempotency = idempotency_key or f"hash:{file_hash}:{param_hash}"
 
-        # Check for existing job with same idempotency key
+        # Check for existing job with same idempotency key (explicit or content-hash derived)
+        # Note on Idempotency semantics:
+        # - When client provides explicit `Idempotency-Key`, idempotency is strict and immutable:
+        #   retries return the exact existing job (even if failed) with HTTP 200.
+        # - When no `Idempotency-Key` is provided (implicit content-hash dedup), queued/processing/completed
+        #   jobs are deduplicated to avoid duplicate compute; but if the prior job failed, re-upload
+        #   allows re-processing by generating a new job.
         stmt = select(Job).where(
             Job.namespace == namespace, Job.idempotency_key == effective_idempotency
         )
@@ -145,7 +151,7 @@ async def create_job_upload(
         if existing_job:
             if existing_job.status == "failed" and not idempotency_key:
                 logger.info(
-                    "retrying_failed_job",
+                    "retrying_failed_job_without_explicit_idempotency_key",
                     failed_job_id=existing_job.id,
                     idempotency_key=effective_idempotency,
                 )

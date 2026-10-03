@@ -1,0 +1,9 @@
+........................................................................ [ 52%]
+..................................................................       [100%]
+=============================== warnings summary ===============================
+tests/test_clustering.py::test_clustering_engine_with_sample_queries
+  /home/zet/Projects/apc-speech/.venv/lib/python3.12/site-packages/sklearn/cluster/_hdbscan/hdbscan.py:722: FutureWarning: The default value of `copy` will change from False to True in 1.10. Explicitly set a value for `copy` to silence this warning.
+    warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+138 passed, 1 warning in 3.16s

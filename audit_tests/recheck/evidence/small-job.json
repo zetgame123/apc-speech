@@ -1,0 +1,11 @@
+{
+  "job_id": "361c9aaf-19ca-4b12-970a-432e37f15180",
+  "call_id": "e6234370-b12d-4316-9325-cb177a4370a1",
+  "status": "succeeded",
+  "progress": 100,
+  "step": "completed",
+  "result_url": "/v1/calls/e6234370-b12d-4316-9325-cb177a4370a1/analysis?namespace=recheck",
+  "error": null,
+  "created_at": "2026-10-03T19:05:33.049538Z",
+  "updated_at": "2026-10-03T19:05:54.836069Z"
+}

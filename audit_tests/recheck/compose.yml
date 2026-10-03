@@ -1,0 +1,270 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: apc_speech
+      POSTGRES_USER: ${DB_USER:-apc_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secure_pass}
+    volumes:
+    - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U ${DB_USER:-apc_user} -d apc_speech
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy noeviction
+    volumes:
+    - redisdata:/data
+    healthcheck:
+      test:
+      - CMD
+      - redis-cli
+      - ping
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+  minio:
+    image: minio/minio:RELEASE.2024-11-07T00-52-16Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret_pass}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio_admin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret_pass}
+    volumes:
+    - miniodata:/data
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - curl -f http://localhost:9000/minio/health/live || exit 1
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    ports: []
+  alembic-migrate:
+    build:
+      context: /home/zet/Projects/apc-speech
+      dockerfile: Dockerfile
+    command: alembic upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+    - /home/zet/Projects/apc-speech/audit_tests/recheck/runtime.env
+    environment:
+    - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+  api:
+    build:
+      context: /home/zet/Projects/apc-speech
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      alembic-migrate:
+        condition: service_completed_successfully
+    env_file:
+    - /home/zet/Projects/apc-speech/audit_tests/recheck/runtime.env
+    environment:
+    - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
+    - REDIS_URL=redis://redis:6379/0
+    - S3_ENDPOINT_URL=http://minio:9000
+    - DEV_TOKEN=${DEV_TOKEN:-}
+    - ASR_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
+    - VOICE_SEARCH_MODEL_NAME=./models/whisper-small
+    - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-2}
+    - ASR_THREADS=2
+    volumes:
+    - /home/zet/Projects/apc-speech/models:/app/models:ro
+    - /home/zet/Projects/apc-speech/app:/app/app:ro
+    - /home/zet/Projects/apc-speech/config:/app/config:ro
+    - /home/zet/Projects/apc-speech/schemas:/app/schemas:ro
+    ports:
+    - 127.0.0.1:18000:8000
+    healthcheck:
+      test:
+      - CMD
+      - curl
+      - -f
+      - http://localhost:8000/health
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1280M
+  worker-long:
+    build:
+      context: /home/zet/Projects/apc-speech
+      dockerfile: Dockerfile
+    command: python -m app.workers.long_audio_processor
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      alembic-migrate:
+        condition: service_completed_successfully
+    env_file:
+    - /home/zet/Projects/apc-speech/audit_tests/recheck/runtime.env
+    environment:
+    - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
+    - REDIS_URL=redis://redis:6379/0
+    - S3_ENDPOINT_URL=http://minio:9000
+    - DEV_TOKEN=${DEV_TOKEN:-}
+    - ASR_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
+    - ASR_COMPUTE_TYPE=int8
+    volumes:
+    - /home/zet/Projects/apc-speech/models:/app/models:ro
+    - /home/zet/Projects/apc-speech/app:/app/app:ro
+    - /home/zet/Projects/apc-speech/config:/app/config:ro
+    - /home/zet/Projects/apc-speech/schemas:/app/schemas:ro
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import sys, os; my_pid = os.getpid(); pids = [p for p in os.listdir('/proc')
+        if p.isdigit() and int(p) != my_pid]; sys.exit(0 if any(b'long_audio_processor'
+        in open(f'/proc/{p}/cmdline', 'rb').read() for p in pids if os.path.exists(f'/proc/{p}/cmdline'))
+        else 1)
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1792M
+  worker-callback:
+    build:
+      context: /home/zet/Projects/apc-speech
+      dockerfile: Dockerfile
+    command: python -m app.workers.callback_dispatcher
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      alembic-migrate:
+        condition: service_completed_successfully
+    env_file:
+    - /home/zet/Projects/apc-speech/audit_tests/recheck/runtime.env
+    environment:
+    - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
+    - REDIS_URL=redis://redis:6379/0
+    - DEV_TOKEN=${DEV_TOKEN:-}
+    volumes:
+    - /home/zet/Projects/apc-speech/app:/app/app:ro
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import sys, os; my_pid = os.getpid(); pids = [p for p in os.listdir('/proc')
+        if p.isdigit() and int(p) != my_pid]; sys.exit(0 if any(b'callback_dispatcher'
+        in open(f'/proc/{p}/cmdline', 'rb').read() for p in pids if os.path.exists(f'/proc/{p}/cmdline'))
+        else 1)
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+  worker-fast:
+    build:
+      context: /home/zet/Projects/apc-speech
+      dockerfile: Dockerfile
+    command: python -m app.workers.fast_voice_search
+    restart: unless-stopped
+    profiles:
+    - worker-fast
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+    - /home/zet/Projects/apc-speech/audit_tests/recheck/runtime.env
+    environment:
+    - REDIS_URL=redis://redis:6379/0
+    - DEV_TOKEN=${DEV_TOKEN:-}
+    volumes:
+    - /home/zet/Projects/apc-speech/models:/app/models:ro
+    - /home/zet/Projects/apc-speech/app:/app/app:ro
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import sys, os; my_pid = os.getpid(); pids = [p for p in os.listdir('/proc')
+        if p.isdigit() and int(p) != my_pid]; sys.exit(0 if any(b'fast_voice_search'
+        in open(f'/proc/{p}/cmdline', 'rb').read() for p in pids if os.path.exists(f'/proc/{p}/cmdline'))
+        else 1)
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+  llm-runtime:
+    image: ghcr.io/ggml-org/llama.cpp:server-b3900
+    restart: unless-stopped
+    profiles:
+    - local-full
+    command: '-m /models/qwen2.5-7b-instruct-q4_k_m.gguf --alias qwen2.5-7b-instruct
+      --host 0.0.0.0 --port 8080 -c 4096 --n-gpu-layers 0
+
+      '
+    volumes:
+    - /home/zet/Projects/apc-speech/models:/models:ro
+    ports: []
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8192M
+volumes:
+  pgdata: null
+  redisdata: null
+  miniodata: null

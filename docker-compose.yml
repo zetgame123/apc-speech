@@ -141,7 +141,7 @@ services:
       - ./config:/app/config:ro
       - ./schemas:/app/schemas:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys, os; my_pid = os.getpid(); pids = [p for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid]; sys.exit(0 if any(b'long_audio_processor' in open(f'/proc/{p}/cmdline', 'rb').read() for p in pids if os.path.exists(f'/proc/{p}/cmdline')) else 1)"]
+      test: ["CMD", "python", "-c", "import sys, os; my_pid = os.getpid(); pids = [p for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid]; sys.exit(0 if any(b'long_audio_processor' in open(f'/proc/{p}/cmdline', 'rb').read() and any(l.startswith('State:') and l.split()[1] in ('S', 'R', 'D') for l in open(f'/proc/{p}/status')) for p in pids if os.path.exists(f'/proc/{p}/cmdline') and os.path.exists(f'/proc/{p}/status')) else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -170,7 +170,7 @@ services:
     volumes:
       - ./app:/app/app:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys, os; my_pid = os.getpid(); pids = [p for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid]; sys.exit(0 if any(b'callback_dispatcher' in open(f'/proc/{p}/cmdline', 'rb').read() for p in pids if os.path.exists(f'/proc/{p}/cmdline')) else 1)"]
+      test: ["CMD", "python", "-c", "import sys, os; my_pid = os.getpid(); pids = [p for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid]; sys.exit(0 if any(b'callback_dispatcher' in open(f'/proc/{p}/cmdline', 'rb').read() and any(l.startswith('State:') and l.split()[1] in ('S', 'R', 'D') for l in open(f'/proc/{p}/status')) for p in pids if os.path.exists(f'/proc/{p}/cmdline') and os.path.exists(f'/proc/{p}/status')) else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -198,7 +198,7 @@ services:
       - ./models:/app/models:ro
       - ./app:/app/app:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys, os; my_pid = os.getpid(); pids = [p for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid]; sys.exit(0 if any(b'fast_voice_search' in open(f'/proc/{p}/cmdline', 'rb').read() for p in pids if os.path.exists(f'/proc/{p}/cmdline')) else 1)"]
+      test: ["CMD", "python", "-c", "import sys, os; my_pid = os.getpid(); pids = [p for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid]; sys.exit(0 if any(b'fast_voice_search' in open(f'/proc/{p}/cmdline', 'rb').read() and any(l.startswith('State:') and l.split()[1] in ('S', 'R', 'D') for l in open(f'/proc/{p}/status')) for p in pids if os.path.exists(f'/proc/{p}/cmdline') and os.path.exists(f'/proc/{p}/status')) else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -206,7 +206,31 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 512M
+          memory: 1024M
+
+  cleanup-retention:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -c "import time, subprocess; [subprocess.run(['python', 'scripts/cleanup.py']) or time.sleep(86400) for _ in iter(int, 1)]"
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      alembic-migrate: { condition: service_completed_successfully }
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
+      - S3_ENDPOINT_URL=http://minio:9000
+    volumes:
+      - ./app:/app/app:ro
+      - ./scripts:/app/scripts:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 64M
 
   # Активируется только для профиля local-full: docker compose --profile local-full up
   llm-runtime:

@@ -171,6 +171,10 @@ paths:
           name: Idempotency-Key
           schema:
             type: string
+          description: |
+            Уникальный ключ идемпотентности запроса.
+            При указании явного Idempotency-Key повтор всегда возвращает исходный Job (включая failed) с кодом 200.
+            Без Idempotency-Key дедупликация выполняется по SHA-256 хэшу и параметрам; в случае сбоя (failed) повторный запрос допускает ретрай с созданием нового задания.
       requestBody:
         required: true
         content:

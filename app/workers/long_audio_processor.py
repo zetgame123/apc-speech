@@ -403,8 +403,11 @@ async def process_job(job_id: str, data: dict):
             analysis_result = structured_analysis.model_dump()
             analysis_result["deterministic_speech_metrics"] = speech_metrics
 
-        # Strict JSON Schema validation
+        # Strict JSON Schema validation & normalization
         try:
+            from app.llm.local_adapter import normalize_analysis_dict
+
+            analysis_result = normalize_analysis_dict(analysis_result, full_masked_text)
             validate_analysis_schema(analysis_result)
         except Exception as schema_err:
             logger.error("analysis_schema_validation_failed", error=str(schema_err))
@@ -449,6 +452,12 @@ async def process_job(job_id: str, data: dict):
             await db.commit()
 
         logger.info("job_completed_successfully", job_id=job_id, call_id=call_id)
+        try:
+            from app.metrics.prometheus import JOBS_TOTAL
+
+            JOBS_TOTAL.labels(status="succeeded", namespace=namespace).inc()
+        except Exception:
+            pass
 
         # 9. Trigger callback if requested
         if callback_url:
@@ -551,6 +560,14 @@ async def main():
                     retries=retry_count,
                     traceback=traceback.format_exc(),
                 )
+                try:
+                    from app.metrics.prometheus import JOBS_TOTAL
+
+                    JOBS_TOTAL.labels(
+                        status="failed", namespace=payload.get("namespace", "default")
+                    ).inc()
+                except Exception:
+                    pass
                 async with AsyncSessionLocal() as db:
                     await db.execute(
                         update(Job)

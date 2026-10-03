@@ -184,6 +184,229 @@ def compute_emotion_breakdown(
     }
 
 
+WHO_MAP = {
+    "client": "client",
+    "клиент": "client",
+    "клиента": "client",
+    "заказчик": "client",
+    "покупатель": "client",
+    "manager": "manager",
+    "менеджер": "manager",
+    "оператор": "manager",
+    "компания": "manager",
+    "агентство": "manager",
+    "both": "both",
+    "оба": "both",
+    "обе стороны": "both",
+    "вместе": "both",
+}
+
+INQUIRY_MAP = {
+    "продажи": "pricing",
+    "продажа": "pricing",
+    "цена": "pricing",
+    "цены": "pricing",
+    "стоимость": "pricing",
+    "расчет": "pricing",
+    "прайс": "pricing",
+    "наличие": "availability",
+    "свободные слоты": "availability",
+    "поиск": "inventory_search",
+    "подбор": "inventory_search",
+    "характеристики": "specs",
+    "статус": "order_status",
+    "статус заказа": "order_status",
+    "производство": "production",
+    "печать": "production",
+    "документы": "documents_billing",
+    "бухгалтерия": "documents_billing",
+    "счет": "documents_billing",
+    "счета": "documents_billing",
+    "жалоба": "complaint",
+    "претензия": "complaint",
+    "партнерство": "partnership_supply",
+    "сотрудничество": "partnership_supply",
+    "спам": "spam_irrelevant",
+    "general": "other",
+    "общий": "other",
+    "прочее": "other",
+}
+
+CALL_RESULT_MAP = {
+    "продажи": "success_deal",
+    "сделка": "success_deal",
+    "успех": "success_deal",
+    "договорились": "success_deal",
+    "следующий шаг": "follow_up_scheduled",
+    "кп": "follow_up_scheduled",
+    "информация": "info_provided",
+    "консультация": "info_provided",
+    "отказ": "client_declined",
+    "спам": "unclear_spam",
+}
+
+VALID_CALL_RESULTS = {
+    "success_deal",
+    "follow_up_scheduled",
+    "info_provided",
+    "client_declined",
+    "unclear_spam",
+}
+
+CLIENT_SENTIMENT_MAP = {
+    "positive": "positive",
+    "позитивный": "positive",
+    "положительный": "positive",
+    "neutral": "neutral",
+    "нейтральный": "neutral",
+    "спокойный": "neutral",
+    "деловой": "neutral",
+    "negative": "negative",
+    "негативный": "negative",
+    "отрицательный": "negative",
+    "conflict": "conflict",
+    "конфликтный": "conflict",
+    "конфликт": "conflict",
+}
+
+TONE_MAP = {
+    "polite_constructive": "polite_constructive",
+    "вежливый": "polite_constructive",
+    "вежливый_конструктивный": "polite_constructive",
+    "конструктивный": "polite_constructive",
+    "деловой": "polite_constructive",
+    "neutral": "neutral",
+    "нейтральный": "neutral",
+    "спокойный": "neutral",
+    "indifferent": "indifferent",
+    "равнодушный": "indifferent",
+    "безразличный": "indifferent",
+    "пассивный": "indifferent",
+    "rude": "rude",
+    "грубый": "rude",
+    "агрессивный": "rude",
+    "невежливый": "rude",
+}
+
+
+def normalize_analysis_dict(parsed: dict[str, Any], transcript: str = "") -> dict[str, Any]:
+    """Ensures that all fields in the analysis dictionary conform to the strict JSON schema and enum slugs."""
+    from app.llm.port import get_allowed_taxonomy_categories
+
+    # 1. inquiry_type
+    if "inquiry_type" in parsed:
+        inq_clean = str(parsed["inquiry_type"]).strip().lower()
+        if inq_clean in INQUIRY_MAP:
+            parsed["inquiry_type"] = INQUIRY_MAP[inq_clean]
+        elif parsed["inquiry_type"] not in get_allowed_taxonomy_categories():
+            parsed["inquiry_type"] = "other"
+    else:
+        parsed["inquiry_type"] = "other"
+
+    # 2. call_result
+    if "call_result" in parsed:
+        cr_clean = str(parsed["call_result"]).strip().lower()
+        if cr_clean in CALL_RESULT_MAP:
+            parsed["call_result"] = CALL_RESULT_MAP[cr_clean]
+        elif parsed["call_result"] not in VALID_CALL_RESULTS:
+            parsed["call_result"] = "info_provided"
+    else:
+        parsed["call_result"] = "info_provided"
+
+    # 3. entities
+    if not isinstance(parsed.get("entities"), dict):
+        parsed["entities"] = {"cities": [], "formats": []}
+    else:
+        if not isinstance(parsed["entities"].get("cities"), list):
+            parsed["entities"]["cities"] = []
+        if not isinstance(parsed["entities"].get("formats"), list):
+            parsed["entities"]["formats"] = []
+
+    # 4. agreements
+    if not isinstance(parsed.get("agreements"), list):
+        parsed["agreements"] = []
+    else:
+        for agr in parsed["agreements"]:
+            if isinstance(agr, dict):
+                raw_who = str(agr.get("who", "manager")).strip().lower()
+                agr["who"] = WHO_MAP.get(
+                    raw_who,
+                    "client" if "клиент" in raw_who else ("both" if "об" in raw_who else "manager"),
+                )
+                if not agr.get("what"):
+                    agr["what"] = "Договоренность по обращению"
+                if "deadline" not in agr:
+                    agr["deadline"] = None
+
+    # 5. sentiment
+    if not isinstance(parsed.get("sentiment"), dict):
+        parsed["sentiment"] = {
+            "client_overall": "neutral",
+            "manager_tone": "polite_constructive",
+        }
+    s = parsed["sentiment"]
+    if "client_overall" not in s and "client" in s:
+        s["client_overall"] = s.pop("client")
+    if "manager_tone" not in s and "manager" in s:
+        s["manager_tone"] = s.pop("manager")
+
+    if "client_overall" in s:
+        c_clean = str(s["client_overall"]).strip().lower()
+        s["client_overall"] = CLIENT_SENTIMENT_MAP.get(
+            c_clean,
+            c_clean if c_clean in ("positive", "neutral", "negative", "conflict") else "neutral",
+        )
+    else:
+        s["client_overall"] = "neutral"
+
+    if "manager_tone" in s:
+        m_clean = str(s["manager_tone"]).strip().lower()
+        s["manager_tone"] = TONE_MAP.get(
+            m_clean,
+            m_clean
+            if m_clean in ("polite_constructive", "indifferent", "rude", "neutral")
+            else "polite_constructive",
+        )
+    else:
+        s["manager_tone"] = "polite_constructive"
+
+    if "client_emotion" not in s:
+        emo = compute_emotion_breakdown(
+            transcript,
+            "",
+            s.get("client_overall", "neutral"),
+            s.get("manager_tone", "polite_constructive"),
+        )
+        s.update(emo)
+
+    # 6. manager_checklist
+    if not isinstance(parsed.get("manager_checklist"), dict):
+        parsed["manager_checklist"] = {}
+    cl = parsed["manager_checklist"]
+    checklist_keys = [
+        "greeting",
+        "need_identification",
+        "options_offered",
+        "next_step_named",
+        "contacts_taken",
+    ]
+    for k in checklist_keys:
+        cl[k] = bool(cl.get(k, False))
+    if not isinstance(cl.get("forbidden_words_found"), list):
+        cl["forbidden_words_found"] = []
+    cl["score"] = sum(1 for k in checklist_keys if cl.get(k) is True)
+    mgr_tone = s.get("manager_tone", "polite_constructive")
+    compute_compliance_and_violations(cl, mgr_tone)
+
+    # 7. Metadata
+    parsed["schema_version"] = "1.0.0"
+    parsed["prompt_version"] = "v1.2-ru-outdoor"
+    if not parsed.get("summary"):
+        parsed["summary"] = "Деловой разговор представителя компании и клиента."
+
+    return parsed
+
+
 class LocalLlamaCppAdapter(AnalysisModelPort):
     def __init__(self):
         settings = get_settings()
@@ -192,11 +415,22 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         self.taxonomy = self._load_taxonomy()
         self.checklist_cfg = self._load_checklist()
 
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "taxonomy" and isinstance(value, dict):
+            from app.llm.port import register_taxonomy_categories
+
+            register_taxonomy_categories(value)
+        super().__setattr__(name, value)
+
     def _load_taxonomy(self) -> dict[str, Any]:
         path = "config/taxonomy.yaml"
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f).get("categories", {})
+                cats = yaml.safe_load(f).get("categories", {})
+                from app.llm.port import register_taxonomy_categories
+
+                register_taxonomy_categories(cats)
+                return cats
         return {}
 
     def _load_checklist(self) -> dict[str, Any]:
@@ -240,13 +474,16 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         prompt = (
             "Ты — русскоязычный аналитик деловых телефонных звонков (реклама, продажи, услуги, сервис, запись клиентов). "
             "Проанализируй диалог менеджера и клиента и заполни JSON строго по схеме.\n"
-            "ВАЖНО по полям категории и результата:\n"
+            "ВАЖНО по полям категории, результата и ролей:\n"
             "- inquiry_type ОБЯЗАТЕЛЬНО должен быть одним из английских слагов: "
             "'pricing', 'availability', 'inventory_search', 'specs', 'order_status', "
             "'production', 'documents_billing', 'complaint', 'partnership_supply', "
             "'programmatic_digital', 'spam_irrelevant', 'other'.\n"
             "- call_result ОБЯЗАТЕЛЬНО должен быть одним из английских слагов: "
             "'success_deal', 'follow_up_scheduled', 'info_provided', 'client_declined', 'unclear_spam'.\n"
+            "- who в agreements ОБЯЗАТЕЛЬНО должен быть одним из: 'manager', 'client', 'both'.\n"
+            "- client_overall в sentiment ОБЯЗАТЕЛЬНО должен быть одним из: 'positive', 'neutral', 'negative', 'conflict'.\n"
+            "- manager_tone в sentiment ОБЯЗАТЕЛЬНО должен быть одним из: 'polite_constructive', 'indifferent', 'rude', 'neutral'.\n"
             "- Текстовые поля (summary, what в agreements, сущности) заполняй на русском языке.\n\n"
             "Критерии чеклиста менеджера (manager_checklist):\n"
             "- greeting: поздоровался, представился или назвал компанию (true/false)\n"
@@ -268,7 +505,10 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                     "messages": [
                         {
                             "role": "system",
-                            "content": "Ты — аналитик деловых звонков. Отвечай только валидным JSON согласно схеме. Поля inquiry_type и call_result заполняй только английскими слагами.",
+                            "content": (
+                                "Ты — аналитик деловых звонков. Отвечай только валидным JSON согласно схеме. "
+                                "Поля inquiry_type, call_result, who, client_overall и manager_tone заполняй только указанными английскими слагами."
+                            ),
                         },
                         {"role": "user", "content": prompt},
                     ],
@@ -287,184 +527,7 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
             content = data["choices"][0]["message"]["content"]
             parsed = json.loads(content)
 
-            # Map Russian synonyms to canonical slugs for inquiry_type and call_result
-            inquiry_map = {
-                "продажи": "pricing",
-                "продажа": "pricing",
-                "цена": "pricing",
-                "цены": "pricing",
-                "стоимость": "pricing",
-                "расчет": "pricing",
-                "прайс": "pricing",
-                "наличие": "availability",
-                "свободные слоты": "availability",
-                "поиск": "inventory_search",
-                "подбор": "inventory_search",
-                "характеристики": "specs",
-                "статус": "order_status",
-                "статус заказа": "order_status",
-                "производство": "production",
-                "печать": "production",
-                "документы": "documents_billing",
-                "бухгалтерия": "documents_billing",
-                "счет": "documents_billing",
-                "счета": "documents_billing",
-                "жалоба": "complaint",
-                "претензия": "complaint",
-                "партнерство": "partnership_supply",
-                "сотрудничество": "partnership_supply",
-                "спам": "spam_irrelevant",
-            }
-            if "inquiry_type" in parsed:
-                inq_clean = str(parsed["inquiry_type"]).strip().lower()
-                if inq_clean in inquiry_map:
-                    parsed["inquiry_type"] = inquiry_map[inq_clean]
-
-            call_result_map = {
-                "продажи": "success_deal",
-                "сделка": "success_deal",
-                "успех": "success_deal",
-                "договорились": "success_deal",
-                "следующий шаг": "follow_up_scheduled",
-                "кп": "follow_up_scheduled",
-                "информация": "info_provided",
-                "консультация": "info_provided",
-                "отказ": "client_declined",
-                "спам": "unclear_spam",
-            }
-            valid_cr = {
-                "success_deal",
-                "follow_up_scheduled",
-                "info_provided",
-                "client_declined",
-                "unclear_spam",
-            }
-            if "call_result" in parsed:
-                cr_clean = str(parsed["call_result"]).strip().lower()
-                if cr_clean in call_result_map:
-                    parsed["call_result"] = call_result_map[cr_clean]
-                elif parsed["call_result"] not in valid_cr:
-                    parsed["call_result"] = "info_provided"
-            else:
-                parsed["call_result"] = "info_provided"
-
-            # Normalize entities
-            if not isinstance(parsed.get("entities"), dict):
-                parsed["entities"] = {"cities": [], "formats": []}
-            else:
-                if not isinstance(parsed["entities"].get("cities"), list):
-                    parsed["entities"]["cities"] = []
-                if not isinstance(parsed["entities"].get("formats"), list):
-                    parsed["entities"]["formats"] = []
-
-            # Normalize agreements
-            if not isinstance(parsed.get("agreements"), list):
-                parsed["agreements"] = []
-            else:
-                for agr in parsed["agreements"]:
-                    if isinstance(agr, dict):
-                        if agr.get("who") not in ("manager", "client", "both"):
-                            agr["who"] = "manager"
-                        if not agr.get("what"):
-                            agr["what"] = "Договоренность по обращению"
-
-            # Normalize sentiment and emotions
-            if not isinstance(parsed.get("sentiment"), dict):
-                parsed["sentiment"] = {
-                    "client_overall": "neutral",
-                    "manager_tone": "polite_constructive",
-                }
-            s = parsed["sentiment"]
-            if "client_overall" not in s and "client" in s:
-                s["client_overall"] = s.pop("client")
-            if "manager_tone" not in s and "manager" in s:
-                s["manager_tone"] = s.pop("manager")
-
-            client_sentiment_map = {
-                "positive": "positive",
-                "позитивный": "positive",
-                "положительный": "positive",
-                "neutral": "neutral",
-                "нейтральный": "neutral",
-                "спокойный": "neutral",
-                "деловой": "neutral",
-                "negative": "negative",
-                "негативный": "negative",
-                "отрицательный": "negative",
-                "conflict": "conflict",
-                "конфликтный": "conflict",
-                "конфликт": "conflict",
-            }
-            if "client_overall" in s:
-                c_clean = str(s["client_overall"]).strip().lower()
-                s["client_overall"] = client_sentiment_map.get(
-                    c_clean,
-                    c_clean
-                    if c_clean in ("positive", "neutral", "negative", "conflict")
-                    else "neutral",
-                )
-            else:
-                s["client_overall"] = "neutral"
-
-            tone_map = {
-                "polite_constructive": "polite_constructive",
-                "вежливый": "polite_constructive",
-                "вежливый_конструктивный": "polite_constructive",
-                "конструктивный": "polite_constructive",
-                "деловой": "polite_constructive",
-                "neutral": "neutral",
-                "нейтральный": "neutral",
-                "спокойный": "neutral",
-                "indifferent": "indifferent",
-                "равнодушный": "indifferent",
-                "безразличный": "indifferent",
-                "пассивный": "indifferent",
-                "rude": "rude",
-                "грубый": "rude",
-                "агрессивный": "rude",
-                "невежливый": "rude",
-            }
-            if "manager_tone" in s:
-                m_clean = str(s["manager_tone"]).strip().lower()
-                s["manager_tone"] = tone_map.get(
-                    m_clean,
-                    m_clean
-                    if m_clean in ("polite_constructive", "indifferent", "rude", "neutral")
-                    else "polite_constructive",
-                )
-            else:
-                s["manager_tone"] = "polite_constructive"
-
-            if "client_emotion" not in s:
-                emo = compute_emotion_breakdown(
-                    trimmed_transcript,
-                    "",
-                    s.get("client_overall", "neutral"),
-                    s.get("manager_tone", "polite_constructive"),
-                )
-                s.update(emo)
-
-            # Guarantee manager_checklist normalization, recalculate score, compliance score and violations
-            if isinstance(parsed.get("manager_checklist"), dict):
-                cl = parsed["manager_checklist"]
-                checklist_keys = [
-                    "greeting",
-                    "need_identification",
-                    "options_offered",
-                    "next_step_named",
-                    "contacts_taken",
-                ]
-                for k in checklist_keys:
-                    cl.setdefault(k, False)
-                cl["forbidden_words_found"] = cl.get("forbidden_words_found") or []
-                cl["score"] = sum(1 for k in checklist_keys if cl.get(k) is True)
-                mgr_tone = (
-                    parsed.get("sentiment", {}).get("manager_tone")
-                    if isinstance(parsed.get("sentiment"), dict)
-                    else "polite_constructive"
-                )
-                compute_compliance_and_violations(cl, mgr_tone)
-
+            parsed = normalize_analysis_dict(parsed, trimmed_transcript)
             return StructuredAnalysis(**parsed)
 
     async def refine_speaker_roles(

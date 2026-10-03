@@ -164,7 +164,15 @@ async def voice_search(
     full_text = RussianTextNormalizer().normalize(raw_text)
     avg_conf = sum(s.get("confidence", 0.0) for s in segments) / len(segments) if segments else 0.0
 
-    elapsed_ms = int((time.time() - start_time) * 1000)
+    elapsed_sec = time.time() - start_time
+    elapsed_ms = int(elapsed_sec * 1000)
+    try:
+        from app.metrics.prometheus import VOICE_SEARCH_DURATION_SECONDS
+
+        VOICE_SEARCH_DURATION_SECONDS.observe(elapsed_sec)
+    except Exception:
+        pass
+
     logger.info(
         "voice_search_completed", duration=duration, latency_ms=elapsed_ms, text_len=len(full_text)
     )
