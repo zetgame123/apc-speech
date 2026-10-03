@@ -34,6 +34,20 @@ VOICE_SEARCH_HOTWORDS = (
 )
 
 
+def is_16k_mono_pcm_wav(data: bytes) -> bool:
+    if len(data) < 44:
+        return False
+    if data[:4] == b"RIFF" and data[8:12] == b"WAVE" and data[12:16] == b"fmt ":
+        audio_format = int.from_bytes(data[20:22], "little")
+        channels = int.from_bytes(data[22:24], "little")
+        sample_rate = int.from_bytes(data[24:28], "little")
+        bits_per_sample = int.from_bytes(data[34:36], "little")
+        return (
+            audio_format == 1 and channels == 1 and sample_rate == 16000 and bits_per_sample == 16
+        )
+    return False
+
+
 class VoiceSearchResponse(BaseModel):
     text: str
     language: str
@@ -100,8 +114,11 @@ async def voice_search(
 
     # Preprocess and transcribe in background worker thread to prevent event loop blocking
     def _sync_process(raw_bytes: bytes, lang: str):
-        preproc = AudioPreprocessor()
-        clean_bytes = preproc.preprocess_memory(raw_bytes)
+        if is_16k_mono_pcm_wav(raw_bytes):
+            clean_bytes = raw_bytes
+        else:
+            preproc = AudioPreprocessor()
+            clean_bytes = preproc.preprocess_memory(raw_bytes)
         eng = get_voice_search_engine()
         stream = io.BytesIO(clean_bytes)
         cfg = get_settings()

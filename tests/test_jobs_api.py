@@ -205,6 +205,46 @@ async def test_create_job_upload_retry_after_failure(mock_infra):
 
 
 @pytest.mark.asyncio
+async def test_create_job_upload_idempotency_preserves_failed_job(mock_infra):
+    from sqlalchemy import update
+
+    from app.db.models import Job
+    from tests.conftest import TestingSessionLocal
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        wav = make_wav_bytes(duration_sec=1)
+        headers = {"Authorization": "Bearer dev-token", "Idempotency-Key": "failed-key-456"}
+
+        # 1. First upload
+        resp1 = await ac.post(
+            "/v1/jobs/upload",
+            files={"file": ("test.wav", wav, "audio/wav")},
+            data={"namespace": "test_failed_idem"},
+            headers=headers,
+        )
+        assert resp1.status_code == 202
+        job_id_1 = resp1.json()["job_id"]
+
+        # 2. Simulate job failure
+        async with TestingSessionLocal() as session:
+            await session.execute(
+                update(Job).where(Job.id == job_id_1).values(status="failed", step="failed")
+            )
+            await session.commit()
+
+        # 3. Retry upload with identical content and same Idempotency-Key -> returns same failed job (HTTP 200)
+        resp2 = await ac.post(
+            "/v1/jobs/upload",
+            files={"file": ("test.wav", wav, "audio/wav")},
+            data={"namespace": "test_failed_idem"},
+            headers=headers,
+        )
+        assert resp2.status_code == 200
+        assert resp2.json()["job_id"] == job_id_1
+        assert resp2.json()["status"] == "failed"
+
+
+@pytest.mark.asyncio
 async def test_create_job_by_s3_returns_202(mock_infra):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         headers = {"Authorization": "Bearer dev-token"}

@@ -237,8 +237,10 @@ class TopicClusteringEngine:
         else:
             # Fallback for small batches
             n_clusters = min(n_samples, 2)
+            has_zero_vectors = np.any(np.all(dense_vectors == 0, axis=1))
+            metric = "euclidean" if has_zero_vectors else "cosine"
             clusterer = AgglomerativeClustering(
-                n_clusters=n_clusters, metric="cosine", linkage="average"
+                n_clusters=n_clusters, metric=metric, linkage="average"
             )
             labels = clusterer.fit_predict(dense_vectors)
 

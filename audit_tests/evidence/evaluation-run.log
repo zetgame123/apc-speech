@@ -1,0 +1,46 @@
+=================================================================
+  APC-SPEECH EVALUATION BENCHMARK (Profile: small)
+=================================================================
+2026-10-03 17:30:35 [info     ] loading_asr_model              compute_type=int8 device=cpu model=./models/whisper-small
+2026-10-03 17:30:36 [info     ] asr_model_loaded_successfully  model=./models/whisper-small
+[0;93m2026-10-03 17:30:36.416325120 [W:onnxruntime:Default, telemetry.cc:800 operator()] Failed to persist telemetry device ID; using an in-memory identifier[m
+2026-10-03 17:30:39 [info     ] loading_asr_model              compute_type=int8 device=cpu model=./models/whisper-podlodka-turbo-ct2
+2026-10-03 17:30:40 [info     ] asr_model_loaded_successfully  model=./models/whisper-podlodka-turbo-ct2
+[clean] REF: Здравствуйте агентство наружной рекламы слушаю вас
+[clean] HYP: Здравствуйте, агентство наружной рекламы. Слушаю вас.
+[telephony] REF: Подскажите свободны ли щиты три на шесть в Балашихе на октябрь
+[telephony] HYP: Подскажите, свободны ли счеты 3×6 в Балашихе на октябрь?
+2026-10-03 17:30:51 [info     ] campplus_model_loaded          path=models/campplus.onnx
+2026-10-03 17:30:57 [info     ] role_scores                    spk0_score=-0.4 spk1_score=0.4
+{
+  "voice_search_latency": {
+    "target": "<= 2500 ms",
+    "measured": "1453 ms",
+    "status": "PASS"
+  },
+  "clean_speech": {
+    "target_wer": "<= 12%",
+    "measured_wer": "0.0%",
+    "measured_cer": "0.0%",
+    "samples_evaluated": 1,
+    "status": "PASS"
+  },
+  "telephony_8khz": {
+    "target_wer": "<= 25%",
+    "measured_wer": "11.1%",
+    "measured_cer": "5.7%",
+    "samples_evaluated": 1,
+    "status": "PASS"
+  },
+  "diarization": {
+    "der": "0.0%",
+    "speaker_confusion": "0.0%",
+    "target_der": "<= 20%",
+    "status": "PASS"
+  },
+  "profile": "small",
+  "synthetic_suite_files": 2
+}
+=================================================================
+  BENCHMARK COMPLETED: ALL TARGETS PASSED
+=================================================================

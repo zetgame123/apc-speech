@@ -14,10 +14,13 @@ logger = get_logger("health")
 
 @router.get("/health")
 async def health_check():
+    cfg = get_settings()
     return {
         "status": "ok",
         "version": "1.0.0",
-        "profile": get_settings().app_profile,
+        "profile": cfg.app_profile,
+        "app_profile": cfg.app_profile,
+        "llm_model": cfg.local_llm_model,
     }
 
 

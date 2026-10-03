@@ -3,7 +3,9 @@ from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import admin, analytics, calls, dashboard, health, integrations, jobs, voice
 from app.core.config import get_settings
@@ -24,9 +26,13 @@ async def lifespan(app: FastAPI):
 
     # Security validations at startup
     if settings.app_env == "production":
-        if not settings.callback_signing_secret or len(settings.callback_signing_secret) < 32:
+        if (
+            not settings.callback_signing_secret
+            or len(settings.callback_signing_secret) < 32
+            or "change_me" in settings.callback_signing_secret
+        ):
             logger.error(
-                "CRITICAL: CALLBACK_SIGNING_SECRET is missing or too short for production! "
+                "CRITICAL: CALLBACK_SIGNING_SECRET is missing, too short, or default placeholder for production! "
                 "Set a random string of at least 32 characters."
             )
         if "*" in settings.cors_allowed_origins:
@@ -127,6 +133,27 @@ async def app_error_handler(request: Request, exc: AppError):
         status_code=exc.status_code,
         details=exc.details,
         headers=exc.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.warning("request_validation_failed", errors=exc.errors())
+    return error_response(
+        error="validation_error",
+        message="Ошибка валидации входных параметров",
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        details={"errors": exc.errors()},
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    return error_response(
+        error=f"http_{exc.status_code}",
+        message=str(exc.detail),
+        status_code=exc.status_code,
+        headers=getattr(exc, "headers", None),
     )
 
 

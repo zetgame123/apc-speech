@@ -1,0 +1,48 @@
+evaluation/run.py:52:        vs_engine.transcribe(
+evaluation/run.py:59:        vs_engine.transcribe(
+evaluation/run.py:95:        segments, meta = asr.transcribe(audio_path)
+evaluation/run.py:164:        segs, _ = asr.transcribe(dialogue_sample["audio_file"])
+scripts/download_models.py:8:import urllib.request
+scripts/download_models.py:36:        urllib.request.urlretrieve(CAMPPLUS_URL, CAMPPLUS_PATH, reporthook=reporthook)
+app/integrations/bitrix24.py:3:import httpx
+app/integrations/bitrix24.py:208:        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+scripts/e2e_demo.sh:15:curl -s -f "${API_URL}/health" | grep -q "ok" && echo "  ✓ /health: OK" || (echo "  ✗ Ошибка /health" && exit 1)
+scripts/e2e_demo.sh:16:curl -s -f "${API_URL}/ready" | grep -q "ready" && echo "  ✓ /ready: Все зависимости доступны" || (echo "  ✗ Ошибка /ready" && exit 1)
+scripts/e2e_demo.sh:28:SEARCH_RESP=$(curl -s -X POST "${API_URL}/v1/voice/search?namespace=${NAMESPACE}" \
+scripts/e2e_demo.sh:40:JOB_RESP=$(curl -s -X POST "${API_URL}/v1/jobs/upload" \
+scripts/e2e_demo.sh:55:  STATUS_RESP=$(curl -s -X GET "${API_URL}/v1/jobs/${JOB_ID}?namespace=${NAMESPACE}" \
+scripts/e2e_demo.sh:78:TRANSCRIPT_RESP=$(curl -s -X GET "${API_URL}/v1/calls/${CALL_ID}/transcript?namespace=${NAMESPACE}&masked=true" \
+scripts/e2e_demo.sh:85:ANALYSIS_RESP=$(curl -s -X GET "${API_URL}/v1/calls/${CALL_ID}/analysis?namespace=${NAMESPACE}" \
+scripts/e2e_demo.sh:92:CLUSTERS_RESP=$(curl -s -X POST "${API_URL}/v1/texts/analyze" \
+scripts/e2e_demo.sh:109:DEL_RESP=$(curl -s -X DELETE "${API_URL}/v1/data/delete?namespace=${NAMESPACE}&call_id=${CALL_ID}" \
+scripts/benchmark_load.py:12:import httpx
+scripts/benchmark_load.py:18:async def benchmark_voice_search(concurrency: int = 10, total_requests: int = 50):
+scripts/benchmark_load.py:20:        f"\n[1/3] Запуск нагрузочного теста Voice Search (Потоков: {concurrency}, Всего: {total_requests})..."
+scripts/benchmark_load.py:44:    async def send_single_query(client: httpx.AsyncClient):
+scripts/benchmark_load.py:64:    async with httpx.AsyncClient() as client:
+scripts/benchmark_load.py:65:        tasks = [send_single_query(client) for _ in range(total_requests)]
+scripts/benchmark_load.py:77:    print(f"  ✓ Успешных запросов: {success_count} / {total_requests}")
+scripts/benchmark_load.py:85:        "success_rate": f"{(success_count / total_requests) * 100:.1f}%",
+scripts/benchmark_load.py:107:    parser.add_argument("--concurrency", type=int, default=5, help="Number of concurrent requests")
+scripts/benchmark_load.py:108:    parser.add_argument("--requests", type=int, default=20, help="Total requests to send")
+scripts/benchmark_load.py:117:        async with httpx.AsyncClient(timeout=3.0) as client:
+scripts/benchmark_load.py:126:        vs_results = await benchmark_voice_search(args.concurrency, args.requests)
+app/workers/long_audio_processor.py:196:                segs, _ = asr_engine.transcribe(
+app/workers/long_audio_processor.py:218:                segs, _ = asr_engine.transcribe(
+app/workers/long_audio_processor.py:265:                segs, _ = asr_engine.transcribe(
+app/llm/external_adapter.py:3:import httpx
+app/llm/external_adapter.py:55:        async with httpx.AsyncClient(timeout=30.0) as client:
+app/workers/callback_dispatcher.py:7:import httpx
+app/workers/callback_dispatcher.py:66:            async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+app/llm/local_adapter.py:6:import httpx
+app/llm/local_adapter.py:256:        async with httpx.AsyncClient(timeout=180.0) as client:
+app/llm/local_adapter.py:378:            async with httpx.AsyncClient(timeout=timeout_sec) as client:
+app/core/security.py:7:from urllib.parse import urljoin, urlparse
+app/core/security.py:9:import httpx
+app/core/security.py:265:            async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+app/asr/engine.py:124:    def transcribe(
+app/asr/engine.py:146:        segments_iter, info = self.model.transcribe(
+app/api/voice.py:101:    # Preprocess and transcribe in background worker thread to prevent event loop blocking
+app/api/voice.py:108:        segs, metadata = eng.transcribe(
+app/api/voice.py:123:            logger.error("voice_search_transcribe_error", error=str(e))
+app/api/rate_limit.py:13:    Limits to 5 requests per 10 seconds per IP or token.

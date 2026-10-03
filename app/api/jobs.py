@@ -143,7 +143,7 @@ async def create_job_upload(
         )
         existing_job = (await db.execute(stmt)).scalar_one_or_none()
         if existing_job:
-            if existing_job.status == "failed":
+            if existing_job.status == "failed" and not idempotency_key:
                 logger.info(
                     "retrying_failed_job",
                     failed_job_id=existing_job.id,
@@ -330,7 +330,7 @@ async def create_job_by_url(
     )
     existing_job = (await db.execute(stmt)).scalar_one_or_none()
     if existing_job:
-        if existing_job.status == "failed":
+        if existing_job.status == "failed" and not idempotency_key:
             logger.info(
                 "retrying_failed_job",
                 failed_job_id=existing_job.id,
@@ -476,7 +476,7 @@ async def create_job_by_s3(
     )
     existing_job = (await db.execute(stmt)).scalar_one_or_none()
     if existing_job:
-        if existing_job.status == "failed":
+        if existing_job.status == "failed" and not idempotency_key:
             logger.info(
                 "retrying_failed_job",
                 failed_job_id=existing_job.id,

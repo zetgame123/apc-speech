@@ -42,6 +42,113 @@ NUMBER_WORDS = {
     "девятьсот": 900,
 }
 
+RUSSIAN_ORDINALS = {
+    "первое": 1,
+    "первого": 1,
+    "второе": 2,
+    "второго": 2,
+    "третье": 3,
+    "третьего": 3,
+    "четвертое": 4,
+    "четвёртое": 4,
+    "четвертого": 4,
+    "четвёртого": 4,
+    "пятое": 5,
+    "пятого": 5,
+    "шестое": 6,
+    "шестого": 6,
+    "седьмое": 7,
+    "седьмого": 7,
+    "восьмое": 8,
+    "восьмого": 8,
+    "девятое": 9,
+    "девятого": 9,
+    "десятое": 10,
+    "десятого": 10,
+    "одиннадцатое": 11,
+    "одиннадцатого": 11,
+    "двенадцатое": 12,
+    "двенадцатого": 12,
+    "тринадцатое": 13,
+    "тринадцатого": 13,
+    "четырнадцатое": 14,
+    "четырнадцатого": 14,
+    "пятнадцатое": 15,
+    "пятнадцатого": 15,
+    "шестнадцатое": 16,
+    "шестнадцатого": 16,
+    "семнадцатое": 17,
+    "семнадцатого": 17,
+    "восемнадцатое": 18,
+    "восемнадцатого": 18,
+    "девятнадцатое": 19,
+    "девятнадцатого": 19,
+    "двадцатое": 20,
+    "двадцатого": 20,
+    "двадцать первое": 21,
+    "двадцать первого": 21,
+    "двадцать второе": 22,
+    "двадцать второго": 22,
+    "двадцать третье": 23,
+    "двадцать третьего": 23,
+    "двадцать четвертое": 24,
+    "двадцать четвёртое": 24,
+    "двадцать четвертого": 24,
+    "двадцать четвёртого": 24,
+    "двадцать пятое": 25,
+    "двадцать пятого": 25,
+    "двадцать шестое": 26,
+    "двадцать шестого": 26,
+    "двадцать седьмое": 27,
+    "двадцать седьмого": 27,
+    "двадцать восьмое": 28,
+    "двадцать восьмого": 28,
+    "двадцать девятое": 29,
+    "двадцать девятого": 29,
+    "тридцатое": 30,
+    "тридцатого": 30,
+    "тридцать первое": 31,
+    "тридцать первого": 31,
+}
+
+RUSSIAN_MONTHS = (
+    r"(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)"
+)
+
+_WORDS_PAT = "|".join(
+    sorted(list(NUMBER_WORDS.keys()) + ["одна", "две", "ноль"], key=len, reverse=True)
+)
+_NUM_PHRASE_PAT = rf"(?:(?:{_WORDS_PAT})\s*)+"
+
+SPOKEN_PHONE_PATTERN = re.compile(
+    r"\b(плюс\s+семь|восемь)\s+"
+    r"((?:девятьсот|восемьсот|семьсот|шестьсот|пятьсот|четыреста|триста|двести|сто|\d+)(?:\s+(?:[а-я]+|\d+)){0,2})\s+"
+    r"((?:девятьсот|восемьсот|семьсот|шестьсот|пятьсот|четыреста|триста|двести|сто|\d+)(?:\s+(?:[а-я]+|\d+)){0,2})\s+"
+    r"((?:девяносто|восемьдесят|семьдесят|шестьдесят|пятьдесят|сорок|тридцать|двадцать|\d+)(?:\s+(?:[а-я]+|\d+))?)\s+"
+    r"((?:девяносто|восемьдесят|семьдесят|шестьдесят|пятьдесят|сорок|тридцать|двадцать|\d+)(?:\s+(?:[а-я]+|\d+))?)\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_spoken_phone_group(g: str, length: int) -> str:
+    parts = g.strip().split()
+    total = 0
+    for p in parts:
+        if p.isdigit():
+            total += int(p)
+        elif p.lower() in NUMBER_WORDS:
+            total += NUMBER_WORDS[p.lower()]
+    return str(total).zfill(length)
+
+
+def _spoken_phone_normalizer(m: re.Match) -> str:
+    prefix = "+7" if "плюс" in m.group(1).lower() or "семь" in m.group(1).lower() else "8"
+    g1 = _parse_spoken_phone_group(m.group(2), 3)
+    g2 = _parse_spoken_phone_group(m.group(3), 3)
+    g3 = _parse_spoken_phone_group(m.group(4), 2)
+    g4 = _parse_spoken_phone_group(m.group(5), 2)
+    return f"{prefix} {g1} {g2} {g3} {g4}"
+
 
 class RussianTextNormalizer:
     def __init__(self):
@@ -301,6 +408,15 @@ class RussianTextNormalizer:
             (re.compile(r"\b(\d{1,3})\s*000\s*(?:рублей|рубля)\b", re.IGNORECASE), r"\1 000 руб."),
             # General: X тысяч рублей -> X 000 руб.
             (re.compile(r"\b(\d+)\s+тысяч\s+рублей\b", re.IGNORECASE), r"\1 000 руб."),
+            (
+                re.compile(
+                    rf"\b({_NUM_PHRASE_PAT})\s*тысяч[аеиу]?\s*(рублей|рубля|руб\.?)?\b",
+                    re.IGNORECASE,
+                ),
+                lambda m: (
+                    f"{sum(NUMBER_WORDS.get(w, 0) for w in m.group(1).lower().split())} 000{' руб.' if m.group(2) else ''}"
+                ),
+            ),
             (re.compile(r"\b(\d+)\s+рублей\b", re.IGNORECASE), r"\1 руб."),
             (re.compile(r"\b(\d+)\s+рубля\b", re.IGNORECASE), r"\1 руб."),
             (re.compile(r"\b(\d+)\s+рубль\b", re.IGNORECASE), r"\1 руб."),
@@ -312,6 +428,13 @@ class RussianTextNormalizer:
 
         # Dates
         self.date_patterns = [
+            (
+                re.compile(
+                    rf"\b({'|'.join(sorted(RUSSIAN_ORDINALS.keys(), key=len, reverse=True))})\s+({RUSSIAN_MONTHS})\b",
+                    re.IGNORECASE,
+                ),
+                lambda m: f"{RUSSIAN_ORDINALS[m.group(1).lower()]} {m.group(2).lower()}",
+            ),
             (re.compile(r"\bпервое\s+октября\b", re.IGNORECASE), "1 октября"),
             (re.compile(r"\bдвадцать\s+шестой\s+год\b", re.IGNORECASE), "2026 г."),
             (re.compile(r"\bс\s+мая\s+по\s+сентябрь\b", re.IGNORECASE), "с мая по сентябрь"),
@@ -319,6 +442,10 @@ class RussianTextNormalizer:
 
         # Phone
         self.phone_patterns = [
+            (
+                SPOKEN_PHONE_PATTERN,
+                _spoken_phone_normalizer,
+            ),
             (
                 re.compile(r"\bплюс\s+семь\s+девятьсот\s+двадцать\s+шесть\b", re.IGNORECASE),
                 "+7 926",
@@ -353,8 +480,20 @@ class RussianTextNormalizer:
             ),
             (re.compile(r"\b(лещиты|лищиты)\b", re.IGNORECASE), "щиты"),
             (re.compile(r"\bсчетов\s+в\s+([А-Яа-яA-Za-z]+)", re.IGNORECASE), r"щитов в \1"),
-            (re.compile(r"\bсчета\s+на\s+([А-Яа-яA-Za-z]+)", re.IGNORECASE), r"щиты на \1"),
-            (re.compile(r"\bсчет\s+на\s+([А-Яа-яA-Za-z]+)", re.IGNORECASE), r"щит на \1"),
+            (
+                re.compile(
+                    r"\bсчета\s+на\s+(?!оплат|безнал|почт|email|согласов|карту)([А-Яа-яA-Za-z]+)",
+                    re.IGNORECASE,
+                ),
+                r"щиты на \1",
+            ),
+            (
+                re.compile(
+                    r"\bсчет\s+на\s+(?!оплат|безнал|почт|email|согласов|карту)([А-Яа-яA-Za-z]+)",
+                    re.IGNORECASE,
+                ),
+                r"щит на \1",
+            ),
         ]
 
         # Moscow Metro Stations

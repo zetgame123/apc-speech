@@ -1,0 +1,405 @@
+...FF..FF......FF..............F...FF.F.                                 [100%]
+=================================== FAILURES ===================================
+_ test_normalization[\u0434\u0432\u0430\u0434\u0446\u0430\u0442\u044c \u043f\u044f\u0442\u044c \u0442\u044b\u0441\u044f\u0447 \u0440\u0443\u0431\u043b\u0435\u0439-25 000 \u0440\u0443\u0431.] _
+
+source = 'двадцать пять тысяч рублей', expected = '25 000 руб.'
+
+    @pytest.mark.parametrize('source,expected',[
+     ('три на шесть','3×6'),('шесть на три','6×3'),('пятнадцать секунд','15 с'),
+     ('двадцать пять тысяч рублей','25 000 руб.'),('тринадцатого октября','13 октября'),
+     ('в Балашихе','в Балашихе'),('в Химках','в Химках'),
+     ('пришлите счет на оплату','пришлите счет на оплату'),
+     ('номер телефона плюс семь девятьсот двенадцать триста сорок пять шестьдесят семь восемьдесят девять',
+      'номер телефона +7 912 345 67 89')])
+    def test_normalization(source,expected):
+>    assert RussianTextNormalizer().normalize(source)==expected
+E    AssertionError: assert 'двадцать пять тысяч рублей' == '25 000 руб.'
+E      
+E      - 25 000 руб.
+E      + двадцать пять тысяч рублей
+
+audit_tests/test_independent.py:22: AssertionError
+_ test_normalization[\u0442\u0440\u0438\u043d\u0430\u0434\u0446\u0430\u0442\u043e\u0433\u043e \u043e\u043a\u0442\u044f\u0431\u0440\u044f-13 \u043e\u043a\u0442\u044f\u0431\u0440\u044f] _
+
+source = 'тринадцатого октября', expected = '13 октября'
+
+    @pytest.mark.parametrize('source,expected',[
+     ('три на шесть','3×6'),('шесть на три','6×3'),('пятнадцать секунд','15 с'),
+     ('двадцать пять тысяч рублей','25 000 руб.'),('тринадцатого октября','13 октября'),
+     ('в Балашихе','в Балашихе'),('в Химках','в Химках'),
+     ('пришлите счет на оплату','пришлите счет на оплату'),
+     ('номер телефона плюс семь девятьсот двенадцать триста сорок пять шестьдесят семь восемьдесят девять',
+      'номер телефона +7 912 345 67 89')])
+    def test_normalization(source,expected):
+>    assert RussianTextNormalizer().normalize(source)==expected
+E    AssertionError: assert 'тринадцатого октября' == '13 октября'
+E      
+E      - 13 октября
+E      + тринадцатого октября
+
+audit_tests/test_independent.py:22: AssertionError
+_ test_normalization[\u043f\u0440\u0438\u0448\u043b\u0438\u0442\u0435 \u0441\u0447\u0435\u0442 \u043d\u0430 \u043e\u043f\u043b\u0430\u0442\u0443-\u043f\u0440\u0438\u0448\u043b\u0438\u0442\u0435 \u0441\u0447\u0435\u0442 \u043d\u0430 \u043e\u043f\u043b\u0430\u0442\u0443] _
+
+source = 'пришлите счет на оплату', expected = 'пришлите счет на оплату'
+
+    @pytest.mark.parametrize('source,expected',[
+     ('три на шесть','3×6'),('шесть на три','6×3'),('пятнадцать секунд','15 с'),
+     ('двадцать пять тысяч рублей','25 000 руб.'),('тринадцатого октября','13 октября'),
+     ('в Балашихе','в Балашихе'),('в Химках','в Химках'),
+     ('пришлите счет на оплату','пришлите счет на оплату'),
+     ('номер телефона плюс семь девятьсот двенадцать триста сорок пять шестьдесят семь восемьдесят девять',
+      'номер телефона +7 912 345 67 89')])
+    def test_normalization(source,expected):
+>    assert RussianTextNormalizer().normalize(source)==expected
+E    AssertionError: assert 'пришлите щит на оплату' == 'пришлите счет на оплату'
+E      
+E      - пришлите счет на оплату
+E      ?          ^^^
+E      + пришлите щит на оплату
+E      ?          ^^
+
+audit_tests/test_independent.py:22: AssertionError
+_ test_normalization[\u043d\u043e\u043c\u0435\u0440 \u0442\u0435\u043b\u0435\u0444\u043e\u043d\u0430 \u043f\u043b\u044e\u0441 \u0441\u0435\u043c\u044c \u0434\u0435\u0432\u044f\u0442\u044c\u0441\u043e\u0442 \u0434\u0432\u0435\u043d\u0430\u0434\u0446\u0430\u0442\u044c \u0442\u0440\u0438\u0441\u0442\u0430 \u0441\u043e\u0440\u043e\u043a \u043f\u044f\u0442\u044c \u0448\u0435\u0441\u0442\u044c\u0434\u0435\u0441\u044f\u0442 \u0441\u0435\u043c\u044c \u0432\u043e\u0441\u0435\u043c\u044c\u0434\u0435\u0441\u044f\u0442 \u0434\u0435\u0432\u044f\u0442\u044c-\u043d\u043e\u043c\u0435\u0440 \u0442\u0435\u043b\u0435\u0444\u043e\u043d\u0430 +7 912 345 67 89] _
+
+source = 'номер телефона плюс семь девятьсот двенадцать триста сорок пять шестьдесят семь восемьдесят девять'
+expected = 'номер телефона +7 912 345 67 89'
+
+    @pytest.mark.parametrize('source,expected',[
+     ('три на шесть','3×6'),('шесть на три','6×3'),('пятнадцать секунд','15 с'),
+     ('двадцать пять тысяч рублей','25 000 руб.'),('тринадцатого октября','13 октября'),
+     ('в Балашихе','в Балашихе'),('в Химках','в Химках'),
+     ('пришлите счет на оплату','пришлите счет на оплату'),
+     ('номер телефона плюс семь девятьсот двенадцать триста сорок пять шестьдесят семь восемьдесят девять',
+      'номер телефона +7 912 345 67 89')])
+    def test_normalization(source,expected):
+>    assert RussianTextNormalizer().normalize(source)==expected
+E    AssertionError: assert 'номер телефо...ьдесят девять' == 'номер телефо...912 345 67 89'
+E      
+E      - номер телефона +7 912 345 67 89
+E      + номер телефона плюс семь девятьсот двенадцать триста сорок пять шестьдесят семь восемьдесят девять
+
+audit_tests/test_independent.py:22: AssertionError
+_ test_pii_edge_cases[\u0422\u0435\u043b\u0435\u0444\u043e\u043d 8.912.345.67.89] _
+
+source = 'Телефон 8.912.345.67.89'
+
+    @pytest.mark.parametrize('source',[
+     'Телефон +7 (912) 345-67-89','Почта client@example.test',
+     'Карта 4111 1111 1111 1111','Паспорт 45 08 123456',
+     'Карта 3782 822463 10005','Паспорт 4508123456',
+     'Телефон 8.912.345.67.89',
+     'Телефон восемь девятьсот двенадцать триста сорок пять шестьдесят семь восемьдесят девять'])
+    def test_pii_edge_cases(source):
+     masked=PiiMasker().mask_text(source)
+>    assert masked!=source
+E    AssertionError: assert 'Телефон 8.912.345.67.89' != 'Телефон 8.912.345.67.89'
+
+audit_tests/test_independent.py:32: AssertionError
+_ test_pii_edge_cases[\u0422\u0435\u043b\u0435\u0444\u043e\u043d \u0432\u043e\u0441\u0435\u043c\u044c \u0434\u0435\u0432\u044f\u0442\u044c\u0441\u043e\u0442 \u0434\u0432\u0435\u043d\u0430\u0434\u0446\u0430\u0442\u044c \u0442\u0440\u0438\u0441\u0442\u0430 \u0441\u043e\u0440\u043e\u043a \u043f\u044f\u0442\u044c \u0448\u0435\u0441\u0442\u044c\u0434\u0435\u0441\u044f\u0442 \u0441\u0435\u043c\u044c \u0432\u043e\u0441\u0435\u043c\u044c\u0434\u0435\u0441\u044f\u0442 \u0434\u0435\u0432\u044f\u0442\u044c] _
+
+source = 'Телефон восемь девятьсот двенадцать триста сорок пять шестьдесят семь восемьдесят девять'
+
+    @pytest.mark.parametrize('source',[
+     'Телефон +7 (912) 345-67-89','Почта client@example.test',
+     'Карта 4111 1111 1111 1111','Паспорт 45 08 123456',
+     'Карта 3782 822463 10005','Паспорт 4508123456',
+     'Телефон 8.912.345.67.89',
+     'Телефон восемь девятьсот двенадцать триста сорок пять шестьдесят семь восемьдесят девять'])
+    def test_pii_edge_cases(source):
+     masked=PiiMasker().mask_text(source)
+>    assert masked!=source
+E    AssertionError: assert 'Телефон восемь девятьсот двенадцать триста сорок пять шестьдесят семь восемьдесят девять' != 'Телефон восемь девятьсот двенадцать триста сорок пять шестьдесят семь восемьдесят девять'
+
+audit_tests/test_independent.py:32: AssertionError
+________________________ test_clustering_edges[texts1] _________________________
+
+texts = ['а', 'я', 'щит']
+
+    @pytest.mark.parametrize('texts',[['','щит'],['а','я','щит'],[' ',' '],['щит','щит'],[]])
+    def test_clustering_edges(texts):
+>    labels,names,vectors=TopicClusteringEngine().fit_transform_texts(texts)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+audit_tests/test_independent.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/analytics/clustering.py:243: in fit_transform_texts
+    labels = clusterer.fit_predict(dense_vectors)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sklearn/cluster/_agglomerative.py:1117: in fit_predict
+    return super().fit_predict(X, y)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sklearn/base.py:769: in fit_predict
+    self.fit(X, **kwargs)
+.venv/lib/python3.12/site-packages/sklearn/base.py:1403: in wrapper
+    return fit_method(estimator, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sklearn/cluster/_agglomerative.py:992: in fit
+    return self._fit(X)
+           ^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sklearn/cluster/_agglomerative.py:1064: in _fit
+    out = memory.cache(tree_builder)(
+.venv/lib/python3.12/site-packages/joblib/memory.py:331: in __call__
+    return self.func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/sklearn/cluster/_agglomerative.py:711: in _average_linkage
+    return linkage_tree(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+X = array([[0.],
+       [0.],
+       [1.]]), connectivity = None
+n_clusters = None, linkage = 'average', affinity = 'cosine'
+return_distance = False
+
+    def linkage_tree(
+        X,
+        connectivity=None,
+        n_clusters=None,
+        linkage="complete",
+        affinity="euclidean",
+        return_distance=False,
+    ):
+        """Linkage agglomerative clustering based on a Feature matrix.
+    
+        The inertia matrix uses a Heapq-based representation.
+    
+        This is the structured version, that takes into account some topological
+        structure between samples.
+    
+        Read more in the :ref:`User Guide <hierarchical_clustering>`.
+    
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, n_features)
+            Feature matrix representing `n_samples` samples to be clustered.
+    
+        connectivity : sparse matrix, default=None
+            Connectivity matrix. Defines for each sample the neighboring samples
+            following a given structure of the data. The matrix is assumed to
+            be symmetric and only the upper triangular half is used.
+            Default is `None`, i.e, the Ward algorithm is unstructured.
+    
+        n_clusters : int, default=None
+            Stop early the construction of the tree at `n_clusters`. This is
+            useful to decrease computation time if the number of clusters is
+            not small compared to the number of samples. In this case, the
+            complete tree is not computed, thus the 'children' output is of
+            limited use, and the 'parents' output should rather be used.
+            This option is valid only when specifying a connectivity matrix.
+    
+        linkage : {"average", "complete", "single"}, default="complete"
+            Which linkage criteria to use. The linkage criterion determines which
+            distance to use between sets of observation.
+                - "average" uses the average of the distances of each observation of
+                  the two sets.
+                - "complete" or maximum linkage uses the maximum distances between
+                  all observations of the two sets.
+                - "single" uses the minimum of the distances between all
+                  observations of the two sets.
+    
+        affinity : str or callable, default='euclidean'
+            Which metric to use. Can be 'euclidean', 'manhattan', or any
+            distance known to paired distance (see metric.pairwise).
+    
+        return_distance : bool, default=False
+            Whether or not to return the distances between the clusters.
+    
+        Returns
+        -------
+        children : ndarray of shape (n_nodes-1, 2)
+            The children of each non-leaf node. Values less than `n_samples`
+            correspond to leaves of the tree which are the original samples.
+            A node `i` greater than or equal to `n_samples` is a non-leaf
+            node and has children `children_[i - n_samples]`. Alternatively
+            at the i-th iteration, children[i][0] and children[i][1]
+            are merged to form node `n_samples + i`.
+    
+        n_connected_components : int
+            The number of connected components in the graph.
+    
+        n_leaves : int
+            The number of leaves in the tree.
+    
+        parents : ndarray of shape (n_nodes, ) or None
+            The parent of each node. Only returned when a connectivity matrix
+            is specified, elsewhere 'None' is returned.
+    
+        distances : ndarray of shape (n_nodes-1,)
+            Returned when `return_distance` is set to `True`.
+    
+            distances[i] refers to the distance between children[i][0] and
+            children[i][1] when they are merged.
+    
+        See Also
+        --------
+        ward_tree : Hierarchical clustering with ward linkage.
+        """
+        X = np.asarray(X)
+        if X.ndim == 1:
+            X = np.reshape(X, (-1, 1))
+        n_samples, n_features = X.shape
+    
+        linkage_choices = {
+            "complete": _hierarchical.max_merge,
+            "average": _hierarchical.average_merge,
+            "single": None,
+        }  # Single linkage is handled differently
+        try:
+            join_func = linkage_choices[linkage]
+        except KeyError as e:
+            raise ValueError(
+                "Unknown linkage option, linkage should be one of %s, but %s was given"
+                % (linkage_choices.keys(), linkage)
+            ) from e
+    
+        if affinity == "cosine" and np.any(~np.any(X, axis=1)):
+>           raise ValueError("Cosine affinity cannot be used when X contains zero vectors")
+E           ValueError: Cosine affinity cannot be used when X contains zero vectors
+
+.venv/lib/python3.12/site-packages/sklearn/cluster/_agglomerative.py:529: ValueError
+__________________ test_schema_rejects_unexpected_properties ___________________
+
+    def test_schema_rejects_unexpected_properties():
+     a=with_metrics(analysis('[manager] Здравствуйте!'))
+     validate_analysis_schema(a)
+     a['unexpected']='not allowed'
+>    with pytest.raises(Exception):validate_analysis_schema(a)
+          ^^^^^^^^^^^^^^^^^^^^^^^^
+E    Failed: DID NOT RAISE Exception
+
+audit_tests/test_independent.py:57: Failed
+____________________ test_taxonomy_config_can_add_category _____________________
+
+    def test_taxonomy_config_can_add_category():
+     adapter=LocalLlamaCppAdapter()
+     adapter.taxonomy={'audit_category':{'keywords':['новотаксономия']}}
+     a=adapter._analyze_via_rules('[client] новотаксономия',AnalysisContext(namespace='audit',call_id='audit')).model_dump()
+     assert a['inquiry_type']=='audit_category'
+>    validate_analysis_schema(with_metrics(a))
+
+audit_tests/test_independent.py:64: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/llm/port.py:32: in validate_analysis_schema
+    jsonschema.validate(instance=data, schema=schema)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+instance = {'schema_version': '1.0.0', 'prompt_version': 'v1.2-ru-outdoor', 'summary': "Обсуждение коммерческого предложения по тематике 'audit_category'.", 'call_result': 'info_provided', ...}
+schema = {'$schema': 'https://json-schema.org/draft/2020-12/schema', 'title': 'CallAnalysisResult', 'type': 'object', 'required': ['schema_version', 'prompt_version', 'summary', 'call_result', 'inquiry_type', 'entities', ...], ...}
+cls = <class 'jsonschema.validators.Draft202012Validator'>, args = ()
+kwargs = {}
+
+    def validate(instance, schema, cls=None, *args, **kwargs):  # noqa: D417
+        """
+        Validate an instance under the given schema.
+    
+            >>> validate([2, 3, 4], {"maxItems": 2})
+            Traceback (most recent call last):
+                ...
+            ValidationError: [2, 3, 4] is too long
+    
+        :func:`~jsonschema.validators.validate` will first verify that the
+        provided schema is itself valid, since not doing so can lead to less
+        obvious error messages and fail in less obvious or consistent ways.
+    
+        If you know you have a valid schema already, especially
+        if you intend to validate multiple instances with
+        the same schema, you likely would prefer using the
+        `jsonschema.protocols.Validator.validate` method directly on a
+        specific validator (e.g. ``Draft202012Validator.validate``).
+    
+    
+        Arguments:
+    
+            instance:
+    
+                The instance to validate
+    
+            schema:
+    
+                The schema to validate with
+    
+            cls (jsonschema.protocols.Validator):
+    
+                The class that will be used to validate the instance.
+    
+        If the ``cls`` argument is not provided, two things will happen
+        in accordance with the specification. First, if the schema has a
+        :kw:`$schema` keyword containing a known meta-schema [#]_ then the
+        proper validator will be used. The specification recommends that
+        all schemas contain :kw:`$schema` properties for this reason. If no
+        :kw:`$schema` property is found, the default validator class is the
+        latest released draft.
+    
+        Any other provided positional and keyword arguments will be passed
+        on when instantiating the ``cls``.
+    
+        Raises:
+    
+            `jsonschema.exceptions.ValidationError`:
+    
+                if the instance is invalid
+    
+            `jsonschema.exceptions.SchemaError`:
+    
+                if the schema itself is invalid
+    
+        .. rubric:: Footnotes
+        .. [#] known by a validator registered with
+            `jsonschema.validators.validates`
+    
+        """
+        if cls is None:
+            cls = validator_for(schema)
+    
+        cls.check_schema(schema)
+        validator = cls(schema, *args, **kwargs)
+        error = exceptions.best_match(validator.iter_errors(instance))
+        if error is not None:
+>           raise error
+E           jsonschema.exceptions.ValidationError: 'audit_category' is not one of ['pricing', 'availability', 'inventory_search', 'specs', 'order_status', 'production', 'documents_billing', 'complaint', 'partnership_supply', 'programmatic_digital', 'spam_irrelevant', 'other']
+E           
+E           Failed validating 'enum' in schema['properties']['inquiry_type']:
+E               {'type': 'string',
+E                'enum': ['pricing',
+E                         'availability',
+E                         'inventory_search',
+E                         'specs',
+E                         'order_status',
+E                         'production',
+E                         'documents_billing',
+E                         'complaint',
+E                         'partnership_supply',
+E                         'programmatic_digital',
+E                         'spam_irrelevant',
+E                         'other']}
+E           
+E           On instance['inquiry_type']:
+E               'audit_category'
+
+.venv/lib/python3.12/site-packages/jsonschema/validators.py:1332: ValidationError
+_______________________ test_city_declension_extraction ________________________
+
+    def test_city_declension_extraction():
+     a=analysis('[client] Нужны щиты в Балашихе и Химках.')
+>    assert set(a['entities']['cities'])=={'Балашиха','Химки'}
+E    AssertionError: assert set() == {'Балашиха', 'Химки'}
+E      
+E      Extra items in the right set:
+E      'Балашиха'
+E      'Химки'
+E      Use -v to get more diff
+
+audit_tests/test_independent.py:73: AssertionError
+=========================== short test summary info ============================
+FAILED audit_tests/test_independent.py::test_normalization[\u0434\u0432\u0430\u0434\u0446\u0430\u0442\u044c \u043f\u044f\u0442\u044c \u0442\u044b\u0441\u044f\u0447 \u0440\u0443\u0431\u043b\u0435\u0439-25 000 \u0440\u0443\u0431.]
+FAILED audit_tests/test_independent.py::test_normalization[\u0442\u0440\u0438\u043d\u0430\u0434\u0446\u0430\u0442\u043e\u0433\u043e \u043e\u043a\u0442\u044f\u0431\u0440\u044f-13 \u043e\u043a\u0442\u044f\u0431\u0440\u044f]
+FAILED audit_tests/test_independent.py::test_normalization[\u043f\u0440\u0438\u0448\u043b\u0438\u0442\u0435 \u0441\u0447\u0435\u0442 \u043d\u0430 \u043e\u043f\u043b\u0430\u0442\u0443-\u043f\u0440\u0438\u0448\u043b\u0438\u0442\u0435 \u0441\u0447\u0435\u0442 \u043d\u0430 \u043e\u043f\u043b\u0430\u0442\u0443]
+FAILED audit_tests/test_independent.py::test_normalization[\u043d\u043e\u043c\u0435\u0440 \u0442\u0435\u043b\u0435\u0444\u043e\u043d\u0430 \u043f\u043b\u044e\u0441 \u0441\u0435\u043c\u044c \u0434\u0435\u0432\u044f\u0442\u044c\u0441\u043e\u0442 \u0434\u0432\u0435\u043d\u0430\u0434\u0446\u0430\u0442\u044c \u0442\u0440\u0438\u0441\u0442\u0430 \u0441\u043e\u0440\u043e\u043a \u043f\u044f\u0442\u044c \u0448\u0435\u0441\u0442\u044c\u0434\u0435\u0441\u044f\u0442 \u0441\u0435\u043c\u044c \u0432\u043e\u0441\u0435\u043c\u044c\u0434\u0435\u0441\u044f\u0442 \u0434\u0435\u0432\u044f\u0442\u044c-\u043d\u043e\u043c\u0435\u0440 \u0442\u0435\u043b\u0435\u0444\u043e\u043d\u0430 +7 912 345 67 89]
+FAILED audit_tests/test_independent.py::test_pii_edge_cases[\u0422\u0435\u043b\u0435\u0444\u043e\u043d 8.912.345.67.89]
+FAILED audit_tests/test_independent.py::test_pii_edge_cases[\u0422\u0435\u043b\u0435\u0444\u043e\u043d \u0432\u043e\u0441\u0435\u043c\u044c \u0434\u0435\u0432\u044f\u0442\u044c\u0441\u043e\u0442 \u0434\u0432\u0435\u043d\u0430\u0434\u0446\u0430\u0442\u044c \u0442\u0440\u0438\u0441\u0442\u0430 \u0441\u043e\u0440\u043e\u043a \u043f\u044f\u0442\u044c \u0448\u0435\u0441\u0442\u044c\u0434\u0435\u0441\u044f\u0442 \u0441\u0435\u043c\u044c \u0432\u043e\u0441\u0435\u043c\u044c\u0434\u0435\u0441\u044f\u0442 \u0434\u0435\u0432\u044f\u0442\u044c]
+FAILED audit_tests/test_independent.py::test_clustering_edges[texts1] - Value...
+FAILED audit_tests/test_independent.py::test_schema_rejects_unexpected_properties
+FAILED audit_tests/test_independent.py::test_taxonomy_config_can_add_category
+FAILED audit_tests/test_independent.py::test_city_declension_extraction - Ass...
+10 failed, 30 passed in 1.69s

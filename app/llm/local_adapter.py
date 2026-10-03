@@ -239,8 +239,15 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
 
         prompt = (
             "Ты — русскоязычный аналитик деловых телефонных звонков (реклама, продажи, услуги, сервис, запись клиентов). "
-            "Проанализируй диалог менеджера и клиента и заполни JSON строго по схеме. "
-            "Все строковые значения должны быть на русском языке.\n\n"
+            "Проанализируй диалог менеджера и клиента и заполни JSON строго по схеме.\n"
+            "ВАЖНО по полям категории и результата:\n"
+            "- inquiry_type ОБЯЗАТЕЛЬНО должен быть одним из английских слагов: "
+            "'pricing', 'availability', 'inventory_search', 'specs', 'order_status', "
+            "'production', 'documents_billing', 'complaint', 'partnership_supply', "
+            "'programmatic_digital', 'spam_irrelevant', 'other'.\n"
+            "- call_result ОБЯЗАТЕЛЬНО должен быть одним из английских слагов: "
+            "'success_deal', 'follow_up_scheduled', 'info_provided', 'client_declined', 'unclear_spam'.\n"
+            "- Текстовые поля (summary, what в agreements, сущности) заполняй на русском языке.\n\n"
             "Критерии чеклиста менеджера (manager_checklist):\n"
             "- greeting: поздоровался, представился или назвал компанию (true/false)\n"
             "- need_identification: выяснил запрос, потребность, услугу, локацию или дату (true/false)\n"
@@ -261,7 +268,7 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                     "messages": [
                         {
                             "role": "system",
-                            "content": "Ты — аналитик деловых звонков. Отвечай только валидным JSON согласно схеме на русском языке.",
+                            "content": "Ты — аналитик деловых звонков. Отвечай только валидным JSON согласно схеме. Поля inquiry_type и call_result заполняй только английскими слагами.",
                         },
                         {"role": "user", "content": prompt},
                     ],
@@ -279,6 +286,56 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
             data = resp.json()
             content = data["choices"][0]["message"]["content"]
             parsed = json.loads(content)
+
+            # Map Russian synonyms to canonical slugs for inquiry_type and call_result
+            inquiry_map = {
+                "продажи": "pricing",
+                "продажа": "pricing",
+                "цена": "pricing",
+                "цены": "pricing",
+                "стоимость": "pricing",
+                "расчет": "pricing",
+                "прайс": "pricing",
+                "наличие": "availability",
+                "свободные слоты": "availability",
+                "поиск": "inventory_search",
+                "подбор": "inventory_search",
+                "характеристики": "specs",
+                "статус": "order_status",
+                "статус заказа": "order_status",
+                "производство": "production",
+                "печать": "production",
+                "документы": "documents_billing",
+                "бухгалтерия": "documents_billing",
+                "счет": "documents_billing",
+                "счета": "documents_billing",
+                "жалоба": "complaint",
+                "претензия": "complaint",
+                "партнерство": "partnership_supply",
+                "сотрудничество": "partnership_supply",
+                "спам": "spam_irrelevant",
+            }
+            if "inquiry_type" in parsed:
+                inq_clean = str(parsed["inquiry_type"]).strip().lower()
+                if inq_clean in inquiry_map:
+                    parsed["inquiry_type"] = inquiry_map[inq_clean]
+
+            call_result_map = {
+                "продажи": "success_deal",
+                "сделка": "success_deal",
+                "успех": "success_deal",
+                "договорились": "success_deal",
+                "следующий шаг": "follow_up_scheduled",
+                "кп": "follow_up_scheduled",
+                "информация": "info_provided",
+                "консультация": "info_provided",
+                "отказ": "client_declined",
+                "спам": "unclear_spam",
+            }
+            if "call_result" in parsed:
+                cr_clean = str(parsed["call_result"]).strip().lower()
+                if cr_clean in call_result_map:
+                    parsed["call_result"] = call_result_map[cr_clean]
 
             # Normalize sentiment and emotions
             if isinstance(parsed.get("sentiment"), dict):
@@ -485,9 +542,20 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
 
         # 2. Extract entities
         cities = []
-        for city in ["Москва", "Балашиха", "Химки", "Мытищи", "Подольск", "Одинцово"]:
-            if city.lower() in text_lower:
-                cities.append(city)
+        city_patterns = {
+            "Москва": r"\bмоскв[аеыуой]?\b",
+            "Балашиха": r"\bбалаших[аеуойи]?\b",
+            "Химки": r"\bхимк[а-я]{1,3}\b",
+            "Мытищи": r"\bмытищ[а-я]{1,3}\b",
+            "Подольск": r"\bподольск[а-я]{0,3}\b",
+            "Одинцово": r"\bодинцов[оае]?\b",
+            "Красногорск": r"\bкрасногорск[а-я]{0,3}\b",
+            "Люберцы": r"\bлюберц[а-я]{1,3}\b",
+            "Королёв": r"\bкорол[её]в[а-я]{0,3}\b",
+        }
+        for city_name, pat in city_patterns.items():
+            if re.search(pat, text_lower):
+                cities.append(city_name)
 
         formats = []
         for fmt in ["3×6", "щит", "суперсайт", "ситиборд", "экран", "медиафасад"]:

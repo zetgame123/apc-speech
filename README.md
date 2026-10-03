@@ -354,10 +354,11 @@ curl -s http://localhost:8000/health | jq .
 Ответ:
 ```json
 {
-  "status": "healthy",
+  "status": "ok",
+  "version": "1.0.0",
+  "profile": "local-full",
   "app_profile": "local-full",
-  "llm_model": "qwen2.5-7b-instruct",
-  "version": "1.0.0"
+  "llm_model": "qwen2.5-7b-instruct"
 }
 ```
 

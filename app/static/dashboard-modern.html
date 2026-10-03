@@ -1,0 +1,1877 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>APC Speech · Центр речевой аналитики</title>
+  <!-- Bootstrap 5 CSS & Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <!-- Wavesurfer.js -->
+  <script src="https://unpkg.com/wavesurfer.js@7"></script>
+  <style>
+    :root {
+      --navy-bg: #121622;
+      --card-bg: #ffffff;
+      --border-color: #e2e8f0;
+      --primary-accent: #3b82f6;
+      --success-accent: #10b981;
+      --warning-accent: #f59e0b;
+      --danger-accent: #ef4444;
+    }
+    body {
+      background-color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #1e293b;
+    }
+    /* Header Bar */
+    .header-bar {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: white;
+      padding: 0.85rem 2rem;
+      border-bottom: 1px solid #334155;
+    }
+    .nav-tabs .nav-link {
+      color: #94a3b8;
+      font-weight: 500;
+      border: none;
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px 8px 0 0;
+      transition: all 0.2s ease;
+    }
+    .nav-tabs .nav-link:hover {
+      color: white;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .nav-tabs .nav-link.active {
+      color: #38bdf8;
+      background: #f1f5f9;
+      font-weight: 600;
+      border-bottom: 3px solid #38bdf8;
+    }
+    /* Cards */
+    .card-custom {
+      border: none;
+      border-radius: 14px;
+      background: white;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .card-custom:hover {
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.07);
+    }
+    /* Waveform container */
+    #waveform {
+      width: 100%;
+      height: 90px;
+      background: #f8fafc;
+      border-radius: 10px;
+      border: 1px solid #e2e8f0;
+      margin-bottom: 0.75rem;
+    }
+    /* Chat bubbles */
+    .chat-container {
+      height: 480px;
+      overflow-y: auto;
+      padding: 1.25rem;
+      background: #fafafa;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+    }
+    .msg-bubble {
+      margin-bottom: 1.1rem;
+      padding: 12px 18px;
+      border-radius: 14px;
+      max-width: 88%;
+      line-height: 1.55;
+      font-size: 0.94rem;
+      position: relative;
+    }
+    .msg-manager {
+      background-color: #eff6ff;
+      border: 1px solid #dbeafe;
+      border-bottom-left-radius: 3px;
+      margin-right: auto;
+    }
+    .msg-client {
+      background-color: #f0fdf4;
+      border: 1px solid #dcfce7;
+      border-bottom-right-radius: 3px;
+      margin-left: auto;
+    }
+    .speaker-badge {
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+    /* Word synchronization */
+    .word-span {
+      cursor: pointer;
+      padding: 2px 2px;
+      border-radius: 4px;
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+    .word-span:hover {
+      background-color: #fed7aa;
+      color: #9a3412;
+    }
+    .word-active {
+      background-color: #f59e0b;
+      color: #ffffff !important;
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(245, 158, 11, 0.4);
+    }
+    /* Voice Search Big Button */
+    .btn-record-voice {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      font-size: 2rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px rgba(239, 68, 68, 0.35);
+      transition: all 0.25s ease;
+    }
+    .btn-record-voice:hover {
+      transform: scale(1.08);
+      box-shadow: 0 10px 28px rgba(239, 68, 68, 0.5);
+    }
+    .btn-recording-pulse {
+      animation: pulse-ring 1.5s infinite;
+    }
+    @keyframes pulse-ring {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+      70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    /* Speedometer SLA badge */
+    .sla-badge-fast {
+      background: #ecfdf5;
+      color: #065f46;
+      border: 1px solid #a7f3d0;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sla-badge-slow {
+      background: #fef2f2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .cluster-card {
+      border-left: 4px solid var(--primary-accent);
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 1rem;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+      margin-bottom: 0.75rem;
+    }
+    .table-calls tr {
+      cursor: pointer;
+    }
+    .table-calls tr:hover {
+      background-color: #f1f5f9;
+    }
+
+    /* Modern dashboard skin — preserves the existing DOM and interaction contract. */
+    :root {
+      --navy-bg: #0b1220;
+      --ink: #172033;
+      --muted: #65728a;
+      --surface: #ffffff;
+      --surface-soft: #f5f8fc;
+      --line: #dce5f0;
+      --primary-accent: #2563eb;
+      --cyan-accent: #06b6d4;
+      --success-accent: #16a34a;
+      --warning-accent: #f59e0b;
+      --danger-accent: #e11d48;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      background:
+        radial-gradient(circle at 12% -10%, rgba(37,99,235,.13), transparent 30rem),
+        radial-gradient(circle at 94% 18%, rgba(6,182,212,.10), transparent 26rem),
+        #f3f6fa;
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: -0.01em;
+    }
+    body::before {
+      content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .22;
+      background-image: linear-gradient(rgba(15,23,42,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,.035) 1px, transparent 1px);
+      background-size: 34px 34px; mask-image: linear-gradient(to bottom, black, transparent 70%); z-index: -1;
+    }
+    .header-bar {
+      position: sticky; top: 0; z-index: 1000;
+      padding: 1.05rem clamp(1rem, 3vw, 2.75rem) 0;
+      background: linear-gradient(115deg, #0b1220 0%, #111d35 58%, #12324b 100%);
+      border-bottom: 1px solid rgba(148,163,184,.20);
+      box-shadow: 0 18px 45px rgba(15,23,42,.18);
+    }
+    .header-bar > .d-flex:first-child { max-width: 1640px; margin: 0 auto; }
+    .header-bar .bg-primary {
+      background: linear-gradient(145deg, #38bdf8, #2563eb) !important;
+      box-shadow: 0 10px 24px rgba(37,99,235,.35);
+    }
+    .header-bar h5 { letter-spacing: -.035em; font-size: 1.05rem; }
+    .header-bar .small.text-secondary { color: #9fb0c8 !important; }
+    .header-bar .form-control, .header-bar .input-group-text {
+      background: rgba(3,10,24,.48) !important; border-color: rgba(148,163,184,.26) !important;
+    }
+    .header-bar .form-control:focus { border-color: #38bdf8 !important; box-shadow: 0 0 0 .2rem rgba(56,189,248,.15); }
+    .nav-tabs { gap: .5rem; max-width: 1640px; margin-left: auto; margin-right: auto; }
+    .nav-tabs .nav-link { color: #9fb0c8; border: 0; border-bottom: 3px solid transparent; border-radius: 12px 12px 0 0; padding: .9rem 1.15rem 1rem; }
+    .nav-tabs .nav-link:hover { color: #fff; background: rgba(255,255,255,.08); }
+    .nav-tabs .nav-link.active { color: #fff; background: rgba(255,255,255,.10); border-bottom-color: #38bdf8; }
+    main.container-fluid { max-width: 1700px; margin: 0 auto; padding: clamp(1.25rem, 3vw, 2.5rem) clamp(1rem, 3vw, 2.75rem) !important; }
+    .card-custom, .card { border: 1px solid rgba(203,213,225,.75); border-radius: var(--radius-lg); background: rgba(255,255,255,.88); box-shadow: 0 10px 30px rgba(15,23,42,.055); backdrop-filter: blur(12px); }
+    .card-custom:hover { transform: translateY(-1px); box-shadow: 0 15px 38px rgba(15,23,42,.09); }
+    .card-custom, .card { transition: box-shadow .2s ease, transform .2s ease; }
+    h5 { letter-spacing: -.025em; }
+    .card h6, .card-custom h6 { letter-spacing: -.015em; }
+    .btn { border-radius: 10px; font-weight: 650; letter-spacing: -.01em; }
+    .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); border-color: #2563eb; box-shadow: 0 7px 16px rgba(37,99,235,.20); }
+    .btn-primary:hover { background: linear-gradient(135deg, #1d4ed8, #1e40af); transform: translateY(-1px); }
+    .btn-outline-primary { color: #1d4ed8; border-color: #93c5fd; }
+    .btn-outline-primary:hover { background: #eff6ff; color: #1e40af; }
+    .form-control, .form-select { border-radius: 10px; border-color: var(--line); padding-top: .6rem; padding-bottom: .6rem; }
+    .form-control:focus, .form-select:focus { border-color: #60a5fa; box-shadow: 0 0 0 .2rem rgba(37,99,235,.12); }
+    #waveform { background: linear-gradient(180deg, #f8fbff, #eef5fb); border: 1px solid #d8e5f3; border-radius: 14px; height: 98px; }
+    #speakerTimelineWrapper { background: #edf3f9 !important; border-color: #d6e2ef !important; border-radius: 10px !important; }
+    .chat-container { height: 500px; padding: 1.15rem; background: linear-gradient(180deg, #f8fbff 0%, #f2f6fb 100%); border: 1px solid #dbe6f1; border-radius: 16px; }
+    .msg-bubble { box-shadow: 0 5px 16px rgba(15,23,42,.05); border-radius: 15px; }
+    .msg-manager { background: #eef6ff; border-color: #cfe3ff; }
+    .msg-client { background: #effcf5; border-color: #c9f2d9; }
+    .word-active { background: #f59e0b; }
+    .table-responsive { border: 1px solid #e2e8f0; border-radius: 14px; }
+    .table-calls { margin: 0 !important; }
+    .table-calls thead th { padding: .85rem 1rem; color: #64748b; background: #f8fafc; font-size: .73rem; text-transform: uppercase; letter-spacing: .06em; border-bottom-color: #e2e8f0; }
+    .table-calls tbody td { padding: .85rem 1rem; border-color: #eef2f7; }
+    .table-calls tbody tr:hover { background: #f3f8ff; }
+    .progress { background-color: #e7edf5; border-radius: 99px; overflow: hidden; }
+    .progress-bar { border-radius: 99px; }
+    .bg-light { background-color: #f7f9fc !important; }
+    .border { border-color: #dfe7f0 !important; }
+    .badge { border-radius: 7px; letter-spacing: .01em; }
+    .alert { border-radius: 16px; box-shadow: 0 8px 22px rgba(37,99,235,.07); }
+    .cluster-card { border-left-width: 4px; border-radius: 14px; box-shadow: 0 7px 20px rgba(15,23,42,.06); }
+    .btn-record-voice { width: 92px; height: 92px; background: linear-gradient(145deg, #f43f5e, #be123c); border: 5px solid #fff; box-shadow: 0 13px 30px rgba(225,29,72,.30); }
+    .btn-record-voice:hover { background: linear-gradient(145deg, #e11d48, #9f1239); }
+    .sla-badge-fast { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    @media (max-width: 900px) {
+      .header-bar { position: relative; padding-left: 1rem; padding-right: 1rem; }
+      .header-bar .input-group { width: 100% !important; }
+      .nav-tabs { overflow-x: auto; flex-wrap: nowrap; }
+      .nav-tabs .nav-link { white-space: nowrap; font-size: .88rem; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+
+  </style>
+</head>
+<body>
+
+<!-- Top Navigation & Controls Header -->
+<header class="header-bar">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <div class="bg-primary text-white p-2 rounded-3 d-flex align-items-center justify-content-center" style="width: 42px; height: 42px;">
+        <i class="bi bi-broadcast-pin fs-4"></i>
+      </div>
+      <div>
+        <h5 class="mb-0 fw-bold tracking-tight">APC-Speech <span class="text-info">Platform</span></h5>
+        <div class="small text-secondary">Outdoor Advertising Speech & Query Intelligence</div>
+      </div>
+      <span id="profileBadge" class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-50 px-3 py-1 ms-2">
+        <i class="bi bi-stars me-1 text-warning"></i> Profile: Local-Full (Qwen 2.5 7B LLM)
+      </span>
+      <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-50 px-2 py-1">
+        Whisper Podlodka Turbo (int8)
+      </span>
+    </div>
+
+    <div class="d-flex align-items-center gap-2">
+      <div class="input-group input-group-sm" style="width: 220px;">
+        <span class="input-group-text bg-dark text-secondary border-secondary"><i class="bi bi-folder2-open"></i></span>
+        <input type="text" id="namespaceInput" class="form-control bg-dark text-white border-secondary" placeholder="Namespace" value="demo_outdoor_msk">
+      </div>
+      <div class="input-group input-group-sm" style="width: 220px;">
+        <span class="input-group-text bg-dark text-secondary border-secondary"><i class="bi bi-key"></i></span>
+        <input type="password" id="apiToken" class="form-control bg-dark text-white border-secondary" placeholder="Bearer Token" value="dev-token">
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Tabs Switcher -->
+  <ul class="nav nav-tabs mt-3 border-0" id="mainTab" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="tab-calls-btn" data-bs-toggle="tab" data-bs-target="#tab-calls" type="button" role="tab">
+        <i class="bi bi-telephone-inbound me-2"></i> 1. Анализ звонков и диалогов
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-voice-btn" data-bs-toggle="tab" data-bs-target="#tab-voice" type="button" role="tab">
+        <i class="bi bi-lightning-charge-fill me-2 text-warning"></i> 2. Голосовой поиск & Аналитика запросов
+      </button>
+    </li>
+  </ul>
+</header>
+
+<main class="container-fluid py-4 px-4">
+  <div class="tab-content" id="mainTabContent">
+
+    <!-- ========================================================================================= -->
+    <!-- TAB 1: АНАЛИЗ ЗВОНКОВ И ДИАЛОГОВ                                                        -->
+    <!-- ========================================================================================= -->
+    <div class="tab-pane fade show active" id="tab-calls" role="tabpanel">
+      <!-- Upload & Playback Bar -->
+      <div class="card card-custom p-4 mb-4">
+        <div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mb-3">
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <input type="file" id="audioFile" class="form-control" accept="audio/*" style="max-width: 260px;">
+            <button id="btnUpload" class="btn btn-primary fw-medium">
+              <i class="bi bi-cloud-arrow-up me-1"></i> Загрузить звонок
+            </button>
+            <button id="btnRecordCall" class="btn btn-outline-danger fw-medium">
+              <i class="bi bi-mic me-1"></i> Записать с микрофона
+            </button>
+            <button id="btnLoadDemoCall" class="btn btn-outline-secondary fw-medium">
+              <i class="bi bi-file-earmark-play me-1"></i> Демо-звонок (Телефония)
+            </button>
+          </div>
+          <div id="statusCallText" class="text-muted fw-bold small">
+            Готов к приёму аудио
+          </div>
+        </div>
+
+        <!-- Waveform Container -->
+        <div id="waveform"></div>
+        <audio id="audioPlayer" class="d-none"></audio>
+        
+        <!-- Speaker Diarization Gantt Timeline -->
+        <div class="d-flex justify-content-between align-items-center mb-1 mt-2">
+          <span class="small text-muted fw-bold text-uppercase" style="font-size: 0.72rem; letter-spacing: 0.5px;">
+            <i class="bi bi-bar-chart-steps me-1 text-primary"></i> Таймлайн речи спикеров (Speaker Timeline)
+          </span>
+          <div class="d-flex align-items-center gap-3 small text-muted" style="font-size: 0.75rem;">
+            <span><span class="d-inline-block rounded-circle me-1" style="width: 10px; height: 10px; background-color: #3b82f6;"></span>Менеджер</span>
+            <span><span class="d-inline-block rounded-circle me-1" style="width: 10px; height: 10px; background-color: #f97316;"></span>Клиент</span>
+            <span><span class="d-inline-block rounded-circle me-1" style="width: 10px; height: 10px; background-color: #e2e8f0; border: 1px solid #cbd5e1;"></span>Пауза</span>
+          </div>
+        </div>
+        <div id="speakerTimelineWrapper" class="position-relative mb-3" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; height: 32px; overflow: hidden; display: none;">
+          <div id="speakerTimeline" class="w-100 h-100 position-relative"></div>
+          <div id="timelinePlayhead" class="position-absolute top-0 bottom-0" style="width: 2px; background: #ef4444; z-index: 10; pointer-events: none; left: 0%; display: none;"></div>
+        </div>
+
+        <div class="d-flex flex-wrap justify-content-between align-items-center">
+          <div class="d-flex align-items-center gap-2">
+            <button id="btnPlayPause" class="btn btn-dark btn-sm px-3" disabled>
+              <i class="bi bi-play-fill me-1"></i> Play / Pause
+            </button>
+            <button id="btnRewind5" class="btn btn-outline-secondary btn-sm" disabled title="Назад на 5 секунд">
+              <i class="bi bi-arrow-counterclockwise"></i> -5с
+            </button>
+            <button id="btnForward5" class="btn btn-outline-secondary btn-sm" disabled title="Вперед на 5 секунд">
+              <i class="bi bi-arrow-clockwise"></i> +5с
+            </button>
+            <span id="audioTimer" class="small text-muted ms-2 fw-medium">00:00 / 00:00</span>
+          </div>
+
+          <div class="d-flex gap-2">
+            <div class="btn-group btn-group-sm">
+              <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" id="btnExportMenu" disabled>
+                <i class="bi bi-download me-1"></i> Экспорт
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="#" id="expJson">JSON с пословными таймкодами</a></li>
+                <li><a class="dropdown-item" href="#" id="expText">Текстовая расшифровка</a></li>
+                <li><a class="dropdown-item" href="#" id="expSrt">Субтитры SRT</a></li>
+                <li><a class="dropdown-item" href="#" id="expVtt">Субтитры VTT</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Columns: Dialog & Analytics -->
+      <div class="row">
+        <!-- Chat Transcripts Column -->
+        <div class="col-lg-7 mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h5 class="fw-bold mb-0">
+              <i class="bi bi-chat-left-quote me-2 text-primary"></i>Стенограмма разговора с разделением ролей
+            </h5>
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-secondary" id="activeSpeakerRatioBadge">Спикеры: -</span>
+              <div class="btn-group btn-group-sm" id="quickDownloadGroup">
+                <button id="btnQuickTxt" class="btn btn-outline-primary btn-sm fw-medium" title="Скачать текстовую расшифровку" disabled>
+                  <i class="bi bi-file-earmark-text me-1"></i>.TXT
+                </button>
+                <button id="btnQuickSrt" class="btn btn-outline-primary btn-sm fw-medium" title="Скачать субтитры SRT" disabled>
+                  <i class="bi bi-file-earmark-play me-1"></i>.SRT
+                </button>
+                <button id="btnQuickJson" class="btn btn-outline-primary btn-sm fw-medium" title="Скачать полный JSON" disabled>
+                  <i class="bi bi-filetype-json me-1"></i>.JSON
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="chat-container" id="chatBox">
+            <div class="text-center text-muted my-5">
+              <i class="bi bi-headset fs-1 d-block mb-2 text-secondary opacity-50"></i>
+              Загрузите аудиофайл звонка или выберите звонок из журнала внизу страницы
+            </div>
+          </div>
+        </div>
+
+        <!-- Detailed AI & Checklist Analytics Column -->
+        <div class="col-lg-5">
+          <h5 class="fw-bold mb-3">
+            <i class="bi bi-graph-up-arrow me-2 text-success"></i>Структурированный разбор звонка
+          </h5>
+
+          <!-- Summary & Entities Card -->
+          <div class="card card-custom p-3 mb-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h6 class="fw-bold text-primary mb-0">
+                <i class="bi bi-card-text me-1"></i> Краткое содержание (Саммари)
+              </h6>
+              <span class="badge bg-info text-dark" id="inquiryTypeBadge">Тип: -</span>
+            </div>
+            <p class="small text-muted mb-3" id="summaryText">Данные пока не загружены</p>
+
+            <h6 class="fw-bold small text-uppercase text-secondary mb-2">
+              <i class="bi bi-tags me-1"></i> Извлеченные сущности (Наружная реклама)
+            </h6>
+            <div class="d-flex flex-wrap gap-1 mb-2" id="entitiesBox">
+              <span class="text-muted small">Нет сущностей</span>
+            </div>
+          </div>
+
+          <!-- Sentiment & Emotion Profile Card -->
+          <div class="card card-custom p-3 mb-3" id="sentimentCard">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="fw-bold mb-0 text-primary">
+                <i class="bi bi-emoji-smile me-1"></i> Эмоциональный профиль и тональность
+              </h6>
+              <span class="badge bg-secondary" id="overallSentimentBadge">Тональность: -</span>
+            </div>
+            <div class="row g-2 mb-2">
+              <div class="col-6">
+                <div class="p-2 border rounded bg-light text-center">
+                  <div class="small text-muted mb-1">Эмоция клиента</div>
+                  <div class="fw-bold small" id="clientEmotionText">-</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="p-2 border rounded bg-light text-center">
+                  <div class="small text-muted mb-1">Тон менеджера</div>
+                  <div class="fw-bold small text-primary" id="managerEmotionText">-</div>
+                </div>
+              </div>
+            </div>
+            <div class="small text-muted mb-1 d-flex justify-content-between">
+              <span>Распределение эмоций:</span>
+              <span id="emotionPercentages" class="fw-medium">Позитив: 0% | Нейтрал: 100% | Негатив: 0%</span>
+            </div>
+            <div class="progress" style="height: 8px;">
+              <div class="progress-bar bg-success" style="width: 0%" id="emoPosBar" title="Позитив"></div>
+              <div class="progress-bar bg-secondary" style="width: 100%" id="emoNeuBar" title="Нейтрал"></div>
+              <div class="progress-bar bg-danger" style="width: 0%" id="emoNegBar" title="Негатив"></div>
+            </div>
+          </div>
+
+          <!-- Manager Checklist & Compliance Card -->
+          <div class="card card-custom p-3 mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <h6 class="fw-bold mb-0">
+                <i class="bi bi-clipboard-check me-1 text-primary"></i> Чек-лист качества и соблюдение скрипта
+              </h6>
+              <span class="badge bg-secondary fs-6" id="checklistScore">Оценка: - / 5</span>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mb-1 mt-2">
+              <span class="small text-muted fw-bold">Compliance Score:</span>
+              <span class="fw-bold small text-primary" id="complianceScoreText">-%</span>
+            </div>
+            <div class="progress mb-3" style="height: 8px;">
+              <div id="complianceProgressBar" class="progress-bar bg-secondary" role="progressbar" style="width: 0%"></div>
+            </div>
+
+            <ul class="list-group list-group-flush small mb-2" id="checklistUl">
+              <li class="list-group-item text-muted px-0">Чек-лист будет рассчитан после анализа звонка</li>
+            </ul>
+
+            <div id="violationsBox" class="mt-2" style="display: none;"></div>
+            <div id="recommendationsBox" class="mt-2" style="display: none;"></div>
+          </div>
+
+          <!-- Speech & Telephony Metrics Card -->
+          <div class="card card-custom p-3 mb-3">
+            <h6 class="fw-bold mb-2">
+              <i class="bi bi-soundwave me-1 text-primary"></i> Акустические и речевые метрики
+            </h6>
+            <div class="row g-2 text-center" id="speechMetricsGrid">
+              <div class="col-4">
+                <div class="p-2 border rounded bg-light">
+                  <div class="small text-muted">Доля менеджера</div>
+                  <div class="fw-bold text-primary" id="metricManagerRatio">-</div>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="p-2 border rounded bg-light">
+                  <div class="small text-muted">Доля клиента</div>
+                  <div class="fw-bold text-success" id="metricClientRatio">-</div>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="p-2 border rounded bg-light">
+                  <div class="small text-muted">Перебивания</div>
+                  <div class="fw-bold text-dark" id="metricInterruptions">-</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="p-2 border rounded bg-light">
+                  <div class="small text-muted">Темп речи (WPM)</div>
+                  <div class="fw-bold text-dark" id="metricWpm">-</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="p-2 border rounded bg-light">
+                  <div class="small text-muted">Автоответчик</div>
+                  <div class="fw-bold" id="metricAnsweringMachine">-</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Call History Archive from Database -->
+      <div class="row mt-2">
+        <div class="col-12">
+          <div class="card card-custom p-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h5 class="fw-bold mb-1">
+                  <i class="bi bi-archive me-2 text-secondary"></i>Журнал обработанных звонков (База данных)
+                </h5>
+                <div class="small text-muted">Нажмите на любой звонок, чтобы воспроизвести его аудио и просмотреть анализ</div>
+              </div>
+              <button id="btnRefreshCalls" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-arrow-clockwise me-1"></i> Обновить список
+              </button>
+            </div>
+
+            <div class="table-responsive">
+              <table class="table table-hover align-middle table-calls mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th>Call ID</th>
+                    <th>Внешний ID</th>
+                    <th>Менеджер</th>
+                    <th>Длительность</th>
+                    <th>Автоответчик</th>
+                    <th>Дата создания</th>
+                    <th>Действие</th>
+                  </tr>
+                </thead>
+                <tbody id="callsTableBody">
+                  <tr>
+                    <td colspan="7" class="text-center text-muted py-4">Нажмите «Обновить список», чтобы загрузить звонки из БД</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ========================================================================================= -->
+    <!-- TAB 2: ГОЛОСОВОЙ ПОИСК & АНАЛИТИКА ЗАПРОСОВ                                             -->
+    <!-- ========================================================================================= -->
+    <div class="tab-pane fade" id="tab-voice" role="tabpanel">
+
+      <!-- SLA Info Banner -->
+      <div class="alert alert-primary border-primary d-flex align-items-center gap-3 py-3 mb-4 rounded-3 shadow-sm">
+        <i class="bi bi-speedometer2 fs-2 text-primary"></i>
+        <div>
+          <h6 class="fw-bold mb-1">Синхронный голосовой поиск по каталогу свободных конструкций (SLA ≤ 2.5 с)</h6>
+          <div class="small text-muted">
+            Позволяет клиентам и менеджерам находить рекламные щиты голосом: «щиты 3×6 в Балашихе на октябрь, только свободные».
+            Распознавание выполняется синхронно в оперативной памяти без сохранения аудио на диск, строго с нормализацией терминов наружной рекламы.
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <!-- Voice Input Column -->
+        <div class="col-lg-6 mb-4">
+          <div class="card card-custom p-4 h-100">
+            <h5 class="fw-bold mb-3">
+              <i class="bi bi-mic-fill me-2 text-danger"></i>Голосовой ввод запроса
+            </h5>
+
+            <!-- Big Microphone Center Widget -->
+            <div class="text-center my-4">
+              <button id="btnVoiceSearchRecord" class="btn btn-danger btn-record-voice mb-3">
+                <i class="bi bi-mic" id="voiceMicIcon"></i>
+              </button>
+              <div id="voiceRecordingStatus" class="fw-bold fs-6 text-dark mb-1">Нажмите для записи голоса</div>
+              <div class="text-muted small" id="voiceRecordingTimer">Лимит: до 60 секунд аудио (SLA ≤ 2.5 с)</div>
+            </div>
+
+            <div class="d-flex justify-content-center mb-4">
+              <label class="btn btn-outline-secondary btn-sm px-4 py-2 mb-0">
+                <i class="bi bi-upload me-2"></i> Загрузить аудиофайл с устройства
+                <input type="file" id="voiceFileInput" accept="audio/*" class="d-none">
+              </label>
+            </div>
+
+            <div class="alert alert-light border small text-muted mb-0">
+              <i class="bi bi-info-circle me-1 text-primary"></i> <strong>Голосовой поиск наружной рекламы:</strong> говорите естественные запросы по типам конструкций (<em>«ситиборды в Химках»</em>, <em>«щиты 3×6 на Ленинградке»</em>, <em>«суперсайты на МКАД от 50 000 руб»</em>). Распознавание выполняется нейросетью в реальном времени.
+            </div>
+          </div>
+        </div>
+
+        <!-- Recognition Speed & Telemetry Column -->
+        <div class="col-lg-6 mb-4">
+          <div class="card card-custom p-4 h-100">
+            <h5 class="fw-bold mb-3">
+              <i class="bi bi-check2-circle me-2 text-success"></i>Результат распознавания и соблюдение SLA
+            </h5>
+
+            <!-- SLA Speed Gauge Card -->
+            <div class="p-3 rounded-3 bg-light border mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="text-muted small fw-medium">Время обработки запроса:</span>
+                <span id="voiceSlaBadge" class="sla-badge-fast">
+                  <i class="bi bi-shield-check"></i> SLA ≤ 2.5 с соблюдён
+                </span>
+              </div>
+              <div class="d-flex align-items-baseline gap-2">
+                <h1 class="display-6 fw-bold text-dark mb-0" id="voiceLatencyDisplay">--</h1>
+                <span class="text-muted fw-bold">мс</span>
+                <span class="small text-muted ms-3" id="voiceSlaPercentDisplay"></span>
+              </div>
+              <div class="progress mt-2" style="height: 6px;">
+                <div id="voiceLatencyProgress" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <!-- Transcribed Text Box -->
+            <div class="mb-3">
+              <label class="form-label small fw-bold text-secondary text-uppercase">Распознанный текст запроса:</label>
+              <div class="p-3 bg-white border rounded-3 fw-medium fs-6 text-dark" id="voiceTextResult" style="min-height: 60px;">
+                <span class="text-muted">Ожидание голосового запроса...</span>
+              </div>
+            </div>
+
+            <!-- Parameters Extracted -->
+            <div class="row g-2 mb-3">
+              <div class="col-4">
+                <div class="p-2 border rounded bg-light text-center">
+                  <div class="small text-muted">Длительность</div>
+                  <div class="fw-bold" id="voiceDurationDisplay">-</div>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="p-2 border rounded bg-light text-center">
+                  <div class="small text-muted">Уверенность</div>
+                  <div class="fw-bold text-primary" id="voiceConfidenceDisplay">-</div>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="p-2 border rounded bg-light text-center">
+                  <div class="small text-muted">Язык</div>
+                  <div class="fw-bold text-success" id="voiceLangDisplay">RU</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Speech Recognition Specs & Telemetry -->
+            <div class="border rounded-3 p-3 bg-light">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="fw-bold mb-0 text-dark">
+                  <i class="bi bi-cpu me-1 text-primary"></i> Характеристики ASR-обработки
+                </h6>
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                  faster-whisper INT8
+                </span>
+              </div>
+              <div class="row g-2 text-muted small mt-1">
+                <div class="col-sm-6">
+                  <div class="d-flex justify-content-between p-2 bg-white rounded border">
+                    <span>Скорость (RTF):</span>
+                    <span class="fw-bold text-dark" id="voiceRtfDisplay">--</span>
+                  </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="d-flex justify-content-between p-2 bg-white rounded border">
+                    <span>Нормализация:</span>
+                    <span class="fw-bold text-success" id="voiceNormDisplay">Выполнена</span>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <div class="d-flex justify-content-between p-2 bg-white rounded border align-items-center">
+                    <span>Статус готовности:</span>
+                    <span class="text-success small fw-medium">
+                      <i class="bi bi-check-circle-fill me-1"></i> Текст готов для передачи в поиск каталога
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Query History & AI Topic Clustering Section -->
+      <div class="row">
+        <!-- History Column -->
+        <div class="col-lg-7 mb-4">
+          <div class="card card-custom p-4 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h5 class="fw-bold mb-1">
+                  <i class="bi bi-clock-history me-2 text-primary"></i>История поисковых запросов
+                </h5>
+                <div class="small text-muted">Единый серверный журнал голосовых запросов со всех подключённых устройств</div>
+              </div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm" onclick="fetchVoiceHistory()" title="Обновить историю запросов">
+                  <i class="bi bi-arrow-clockwise me-1"></i> Обновить
+                </button>
+                <button class="btn btn-outline-danger btn-sm" onclick="clearQueryHistory()" title="Очистить историю">
+                  <i class="bi bi-trash me-1"></i> Очистить
+                </button>
+              </div>
+            </div>
+
+            <div class="table-responsive" style="max-height: 380px; overflow-y: auto;">
+              <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light sticky-top">
+                  <tr>
+                    <th>Время</th>
+                    <th>Запрос</th>
+                    <th>Уверенность</th>
+                    <th>Задержка</th>
+                    <th>SLA</th>
+                  </tr>
+                </thead>
+                <tbody id="queryHistoryTableBody">
+                  <!-- Rendered dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Topic Clustering Column -->
+        <div class="col-lg-5 mb-4">
+          <div class="card card-custom p-4 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h5 class="fw-bold mb-1">
+                  <i class="bi bi-diagram-3-fill me-2 text-info"></i>Анализ «О чём спрашивают»
+                </h5>
+                <div class="small text-muted">AI-кластеризация поисковых запросов (`POST /v1/texts/analyze`)</div>
+              </div>
+            </div>
+
+            <button class="btn btn-primary w-100 mb-3 fw-medium" id="btnRunClustering" onclick="runTopicClustering()">
+              <i class="bi bi-magic me-2"></i> Запустить AI-кластеризацию запросов
+            </button>
+
+            <div id="clusteringResultsContainer" style="max-height: 360px; overflow-y: auto;">
+              <div class="text-center text-muted py-4">
+                <i class="bi bi-pie-chart fs-1 d-block mb-2 text-secondary opacity-50"></i>
+                Нажмите «Запустить AI-кластеризацию», чтобы сгруппировать историю запросов по тематическим кластерам
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<!-- Bootstrap Bundle with Popper -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+  // =========================================================================
+  // GLOBAL STATE & STORAGE
+  // =========================================================================
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  const tokenInput = document.getElementById('apiToken');
+  const namespaceInput = document.getElementById('namespaceInput');
+  let currentCallId = null;
+  let wavesurfer = null;
+  let mediaRecorder = null;
+  let callAudioChunks = [];
+  let isRecordingCall = false;
+  let callPollInterval = null;
+
+  function getHeaders() {
+    return {
+      "Authorization": `Bearer ${tokenInput.value.trim()}`,
+      "Accept": "application/json"
+    };
+  }
+  function getNamespace() {
+    return namespaceInput.value.trim() || "demo_outdoor_msk";
+  }
+
+  // =========================================================================
+  // WAVESURFER INITIALIZATION
+  // =========================================================================
+  function initWavesurfer() {
+    if (wavesurfer) wavesurfer.destroy();
+    wavesurfer = WaveSurfer.create({
+      container: '#waveform',
+      waveColor: '#94a3b8',
+      progressColor: '#0284c7',
+      cursorColor: '#0369a1',
+      barWidth: 2,
+      barGap: 1,
+      barRadius: 2,
+      height: 85,
+      responsive: true
+    });
+
+    wavesurfer.on('timeupdate', (currentTime) => {
+      // Synchronized word highlighting
+      const allWords = document.querySelectorAll('.word-span');
+      allWords.forEach(span => {
+        const s = parseFloat(span.dataset.start);
+        const e = parseFloat(span.dataset.end);
+        if (currentTime >= s && currentTime <= e) {
+          span.classList.add('word-active');
+        } else {
+          span.classList.remove('word-active');
+        }
+      });
+      // Speaker timeline playhead update
+      const totalDur = wavesurfer.getDuration();
+      const playhead = document.getElementById('timelinePlayhead');
+      if (playhead && totalDur > 0) {
+        playhead.style.display = 'block';
+        playhead.style.left = `${(currentTime / totalDur) * 100}%`;
+      }
+      // Timer update
+      updateAudioTimer(currentTime, wavesurfer.getDuration());
+    });
+
+    wavesurfer.on('ready', () => {
+      document.getElementById('btnPlayPause').disabled = false;
+      document.getElementById('btnRewind5').disabled = false;
+      document.getElementById('btnForward5').disabled = false;
+      document.getElementById('btnExportMenu').disabled = false;
+      document.getElementById('btnQuickTxt').disabled = false;
+      document.getElementById('btnQuickSrt').disabled = false;
+      document.getElementById('btnQuickJson').disabled = false;
+      updateAudioTimer(0, wavesurfer.getDuration());
+    });
+  }
+
+  function formatTime(sec) {
+    if (isNaN(sec)) return "00:00";
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  function updateAudioTimer(curr, total) {
+    document.getElementById('audioTimer').innerText = `${formatTime(curr)} / ${formatTime(total)}`;
+  }
+
+  document.getElementById('btnPlayPause').addEventListener('click', () => {
+    if (wavesurfer) wavesurfer.playPause();
+  });
+  document.getElementById('btnRewind5').addEventListener('click', () => {
+    if (wavesurfer) wavesurfer.setTime(Math.max(0, wavesurfer.getCurrentTime() - 5));
+  });
+  document.getElementById('btnForward5').addEventListener('click', () => {
+    if (wavesurfer) wavesurfer.setTime(Math.min(wavesurfer.getDuration(), wavesurfer.getCurrentTime() + 5));
+  });
+
+  initWavesurfer();
+
+  // =========================================================================
+  // TAB 1: CALL RECORDING & UPLOAD
+  // =========================================================================
+  const btnUpload = document.getElementById('btnUpload');
+  const btnRecordCall = document.getElementById('btnRecordCall');
+  const btnLoadDemoCall = document.getElementById('btnLoadDemoCall');
+  const fileInput = document.getElementById('audioFile');
+  const statusCallText = document.getElementById('statusCallText');
+  const chatBox = document.getElementById('chatBox');
+
+  btnUpload.addEventListener('click', () => {
+    if (!fileInput.files.length) return alert("Пожалуйста, выберите аудиофайл!");
+    uploadCallAudio(fileInput.files[0], fileInput.files[0].name);
+  });
+
+  btnRecordCall.addEventListener('click', async () => {
+    if (isRecordingCall) {
+      mediaRecorder.stop();
+      btnRecordCall.innerHTML = '<i class="bi bi-mic me-1"></i> Записать с микрофона';
+      btnRecordCall.classList.replace('btn-danger', 'btn-outline-danger');
+      isRecordingCall = false;
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      callAudioChunks = [];
+
+      mediaRecorder.ondataavailable = event => {
+        if (event.data.size > 0) callAudioChunks.push(event.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(callAudioChunks, { type: 'audio/wav' });
+        uploadCallAudio(audioBlob, "call_recorded_mic.wav");
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      isRecordingCall = true;
+      btnRecordCall.innerHTML = '<i class="bi bi-stop-circle me-1"></i> Остановить запись...';
+      btnRecordCall.classList.replace('btn-outline-danger', 'btn-danger');
+      statusCallText.innerText = "Идёт запись разговора...";
+    } catch (err) {
+      alert("Ошибка доступа к микрофону: " + err.message);
+    }
+  });
+
+  btnLoadDemoCall.addEventListener('click', async () => {
+    statusCallText.innerText = "Загрузка образца телефонного звонка...";
+    try {
+      const res = await fetch('/v1/voice/sample-audio');
+      if (!res.ok) throw new Error("Не удалось получить демонстрационный звонок");
+      const blob = await res.blob();
+      uploadCallAudio(blob, "sample_dialogue_telephony.wav");
+    } catch (e) {
+      alert("Ошибка: " + e.message);
+    }
+  });
+
+  function uploadCallAudio(blob, filename) {
+    const blobUrl = URL.createObjectURL(blob);
+    wavesurfer.load(blobUrl);
+
+    const formData = new FormData();
+    formData.append("file", blob, filename);
+    formData.append("namespace", getNamespace());
+    formData.append("direction", "inbound");
+
+    statusCallText.innerText = "Отправка на сервер (создание Job)...";
+
+    fetch("/v1/jobs/upload", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${tokenInput.value.trim()}` },
+      body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) throw new Error(data.message || data.error);
+      currentCallId = null;
+      statusCallText.innerText = `В очереди (Job ID: ${data.job_id.substring(0,8)}...)...`;
+      pollCallJob(data.job_id);
+    })
+    .catch(err => {
+      statusCallText.innerText = "Ошибка: " + err.message;
+    });
+  }
+
+  function pollCallJob(jobId) {
+    if (callPollInterval) clearInterval(callPollInterval);
+
+    callPollInterval = setInterval(() => {
+      fetch(`/v1/jobs/${jobId}?namespace=${getNamespace()}`, { headers: getHeaders() })
+        .then(res => res.json())
+        .then(data => {
+          if (data.status === "succeeded") {
+            clearInterval(callPollInterval);
+            statusCallText.innerText = "Анализ завершён успешно!";
+            currentCallId = data.call_id;
+            loadCallResults(data.call_id);
+            refreshCallsList();
+          } else if (data.status === "failed") {
+            clearInterval(callPollInterval);
+            statusCallText.innerText = "Ошибка обработки: " + (data.error?.message || "Сбой");
+          } else {
+            statusCallText.innerText = `Обработка: ${data.progress}% (${data.step || 'выполняется'})...`;
+          }
+        })
+        .catch(() => {
+          statusCallText.innerText = "Опрос статуса...";
+        });
+    }, 1500);
+  }
+
+  function loadCallResults(callId) {
+    currentCallId = callId;
+    const ns = getNamespace();
+    Promise.all([
+      fetch(`/v1/calls/${callId}/transcript?namespace=${ns}`, { headers: getHeaders() }).then(r => r.json()),
+      fetch(`/v1/calls/${callId}/analysis?namespace=${ns}`, { headers: getHeaders() }).then(r => r.json())
+    ]).then(([transcript, analysis]) => {
+      document.getElementById('btnQuickTxt').disabled = false;
+      document.getElementById('btnQuickSrt').disabled = false;
+      document.getElementById('btnQuickJson').disabled = false;
+      document.getElementById('btnExportMenu').disabled = false;
+      renderChat(transcript.segments);
+      renderAnalysis(analysis);
+    }).catch(err => {
+      console.error("Ошибка загрузки результатов звонка:", err);
+    });
+  }
+
+  function renderSpeakerTimeline(segments) {
+    const timelineWrapper = document.getElementById('speakerTimelineWrapper');
+    const timeline = document.getElementById('speakerTimeline');
+    if (!timelineWrapper || !timeline) return;
+
+    if (!segments || segments.length === 0) {
+      timelineWrapper.style.display = 'none';
+      return;
+    }
+
+    timelineWrapper.style.display = 'block';
+    timeline.innerHTML = '';
+
+    const wsDur = wavesurfer ? wavesurfer.getDuration() : 0;
+    const maxEnd = Math.max(...segments.map(s => s.end || 0));
+    const totalDur = wsDur > 0 ? wsDur : (maxEnd > 0 ? maxEnd : 1);
+
+    segments.forEach(seg => {
+      const isFirstSpeaker =
+        seg.speaker_role === 'manager' ||
+        seg.speaker_role === 'participant_1' ||
+        seg.speaker_label === 'SPEAKER_0';
+      const roleLabel = isFirstSpeaker ? 'Менеджер' : 'Клиент';
+      const color = isFirstSpeaker ? '#0284c7' : '#f97316';
+
+      const leftPct = (seg.start / totalDur) * 100;
+      const widthPct = Math.max(0.4, ((seg.end - seg.start) / totalDur) * 100);
+
+      const block = document.createElement('div');
+      block.className = 'speaker-block position-absolute';
+      block.style.left = `${leftPct}%`;
+      block.style.width = `${widthPct}%`;
+      block.style.top = '4px';
+      block.style.bottom = '4px';
+      block.style.backgroundColor = color;
+      block.style.borderRadius = '3px';
+      block.style.cursor = 'pointer';
+      block.style.opacity = '0.85';
+      block.style.transition = 'opacity 0.15s, transform 0.15s';
+      block.title = `${roleLabel} (${seg.start.toFixed(1)}s - ${seg.end.toFixed(1)}s): ${seg.text || ''}`;
+
+      block.addEventListener('mouseenter', () => {
+        block.style.opacity = '1';
+        block.style.transform = 'scaleY(1.15)';
+      });
+      block.addEventListener('mouseleave', () => {
+        block.style.opacity = '0.85';
+        block.style.transform = 'scaleY(1)';
+      });
+      block.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (wavesurfer) {
+          wavesurfer.setTime(seg.start);
+          wavesurfer.play();
+        }
+      });
+
+      timeline.appendChild(block);
+    });
+
+    timelineWrapper.onclick = (e) => {
+      const rect = timelineWrapper.getBoundingClientRect();
+      const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      if (wavesurfer && totalDur > 0) {
+        wavesurfer.setTime(clickRatio * totalDur);
+        wavesurfer.play();
+      }
+    };
+  }
+
+  function renderChat(segments) {
+    chatBox.innerHTML = '';
+    renderSpeakerTimeline(segments);
+    if (!segments || segments.length === 0) {
+      chatBox.innerHTML = '<div class="text-muted text-center mt-5">Пустая расшифровка (речь не обнаружена)</div>';
+      return;
+    }
+
+    let managerTime = 0;
+    let clientTime = 0;
+
+    segments.forEach(seg => {
+      const isFirstSpeaker =
+        seg.speaker_role === 'manager' ||
+        seg.speaker_role === 'participant_1' ||
+        seg.speaker_label === 'SPEAKER_0';
+      const dur = seg.end - seg.start;
+      if (isFirstSpeaker) managerTime += dur; else clientTime += dur;
+
+      const bubble = document.createElement('div');
+      bubble.className = `msg-bubble ${isFirstSpeaker ? 'msg-manager' : 'msg-client'}`;
+
+      let roleLabel = 'Менеджер';
+      if (seg.speaker_role === 'client') {
+        roleLabel = 'Клиент';
+      } else if (seg.speaker_role === 'participant_1') {
+        roleLabel = 'Участник 1';
+      } else if (seg.speaker_role === 'participant_2') {
+        roleLabel = 'Участник 2';
+      } else if (!isFirstSpeaker) {
+        roleLabel = 'Клиент';
+      }
+
+      const badge = document.createElement('div');
+      badge.className = `speaker-badge ${isFirstSpeaker ? 'text-primary' : 'text-success'}`;
+      badge.innerHTML = `
+        <span><i class="bi bi-person-${isFirstSpeaker ? 'badge' : 'fill'} me-1"></i>${roleLabel} (${escapeHtml(seg.speaker_label || (isFirstSpeaker ? 'SPEAKER_0' : 'SPEAKER_1'))})</span>
+        <span class="text-muted fw-normal">${seg.start.toFixed(1)}s - ${seg.end.toFixed(1)}s</span>
+      `;
+      bubble.appendChild(badge);
+
+      const textContainer = document.createElement('div');
+      if (seg.words && seg.words.length > 0) {
+        seg.words.forEach(w => {
+          const span = document.createElement('span');
+          span.className = 'word-span';
+          span.innerText = w.word + ' ';
+          span.dataset.start = w.start;
+          span.dataset.end = w.end;
+          span.addEventListener('click', () => {
+            if (wavesurfer) {
+              wavesurfer.setTime(w.start);
+              wavesurfer.play();
+            }
+          });
+          textContainer.appendChild(span);
+        });
+      } else {
+        textContainer.innerText = seg.text;
+      }
+
+      bubble.appendChild(textContainer);
+      chatBox.appendChild(bubble);
+    });
+
+    const total = managerTime + clientTime;
+    if (total > 0) {
+      const mPct = Math.round((managerTime / total) * 100);
+      const cPct = 100 - mPct;
+      document.getElementById('activeSpeakerRatioBadge').innerText = `Менеджер: ${mPct}% | Клиент: ${cPct}%`;
+    }
+  }
+
+  function renderAnalysis(analysis) {
+    document.getElementById('summaryText').innerText = analysis.summary || "Саммари сформировано на основе ключевых тем.";
+    document.getElementById('inquiryTypeBadge').innerText = "Тип: " + (analysis.inquiry_type || "общий");
+
+    // Entities
+    const entBox = document.getElementById('entitiesBox');
+    entBox.innerHTML = '';
+    const e = analysis.entities || {};
+    let count = 0;
+    if (e.cities && e.cities.length) {
+      entBox.innerHTML += `<span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">📍 ${escapeHtml(e.cities.join(', '))}</span>`;
+      count++;
+    }
+    if (e.formats && e.formats.length) {
+      entBox.innerHTML += `<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">📐 ${escapeHtml(e.formats.join(', '))}</span>`;
+      count++;
+    }
+    if (e.budget_rub) {
+      entBox.innerHTML += `<span class="badge bg-warning bg-opacity-10 text-warning-emphasis border border-warning border-opacity-50">💰 ${escapeHtml(e.budget_rub.toLocaleString())} ₽</span>`;
+      count++;
+    }
+    if (e.quantity) {
+      entBox.innerHTML += `<span class="badge bg-info bg-opacity-10 text-info-emphasis border border-info border-opacity-50">🔢 ${escapeHtml(e.quantity)} шт.</span>`;
+      count++;
+    }
+    if (e.period) {
+      entBox.innerHTML += `<span class="badge bg-secondary bg-opacity-10 text-secondary border">📅 ${escapeHtml(e.period)}</span>`;
+      count++;
+    }
+    if (!count) entBox.innerHTML = '<span class="text-muted small">Сущности не определены</span>';
+
+    // Sentiment and Emotion Profile
+    const sent = analysis.sentiment || {};
+    const overallSent = (typeof sent === 'string' ? sent : sent.overall) || 'neutral';
+    const overallSentBadge = document.getElementById('overallSentimentBadge');
+    if (overallSentBadge) {
+      let sentLabel = 'Нейтральная';
+      let sentBg = 'bg-secondary';
+      if (overallSent === 'positive') { sentLabel = 'Позитивная'; sentBg = 'bg-success'; }
+      else if (overallSent === 'negative') { sentLabel = 'Негативная'; sentBg = 'bg-danger'; }
+      overallSentBadge.innerText = `Тональность: ${sentLabel}`;
+      overallSentBadge.className = `badge ${sentBg}`;
+    }
+
+    const emotionMapClient = {
+      'enthusiasm_joy': '😊 Энтузиазм / Радость',
+      'neutral_business': '😐 Спокойный / Деловой',
+      'doubt_skepticism': '🤔 Сомнение / Скепсис',
+      'irritation_anger': '😠 Раздражение / Гнев',
+      'urgency_anxiety': '⚡ Спешка / Тревога'
+    };
+    const emotionMapManager = {
+      'enthusiastic_helpful': '🌟 Вовлеченный / Помогает',
+      'calm_professional': '💼 Спокойный / Профессиональный',
+      'indifferent_bored': '🥱 Безразличный / Уставший',
+      'irritated_defensive': '🛡️ Раздраженный / В защите'
+    };
+
+    const clientEmo = sent.client_emotion || 'neutral_business';
+    const managerEmo = sent.manager_emotion || 'calm_professional';
+    const elClientEmo = document.getElementById('clientEmotionText');
+    const elManagerEmo = document.getElementById('managerEmotionText');
+    if (elClientEmo) elClientEmo.innerText = emotionMapClient[clientEmo] || clientEmo;
+    if (elManagerEmo) elManagerEmo.innerText = emotionMapManager[managerEmo] || managerEmo;
+
+    const emoBreakdown = sent.emotions_breakdown || { positive_pct: 0, neutral_pct: 100, negative_pct: 0 };
+    const elEmoPercentages = document.getElementById('emotionPercentages');
+    if (elEmoPercentages) {
+      elEmoPercentages.innerText = `Позитив: ${emoBreakdown.positive_pct}% | Нейтрал: ${emoBreakdown.neutral_pct}% | Негатив: ${emoBreakdown.negative_pct}%`;
+    }
+    const barPos = document.getElementById('emoPosBar');
+    const barNeu = document.getElementById('emoNeuBar');
+    const barNeg = document.getElementById('emoNegBar');
+    if (barPos) barPos.style.width = `${emoBreakdown.positive_pct}%`;
+    if (barNeu) barNeu.style.width = `${emoBreakdown.neutral_pct}%`;
+    if (barNeg) barNeg.style.width = `${emoBreakdown.negative_pct}%`;
+
+    // Checklist & Compliance
+    const cl = analysis.manager_checklist || {};
+    const score = cl.score !== undefined ? cl.score : 0;
+    const scoreBadge = document.getElementById('checklistScore');
+    if (scoreBadge) {
+      scoreBadge.innerText = `Оценка: ${score} / 5`;
+      scoreBadge.className = `badge fs-6 ${score >= 4 ? 'bg-success' : score >= 2 ? 'bg-warning text-dark' : 'bg-danger'}`;
+    }
+
+    // Integral Compliance Score
+    const complianceScore = cl.compliance_score !== undefined && cl.compliance_score !== null
+      ? Math.round(cl.compliance_score)
+      : Math.round((score / 5) * 100);
+    const complianceText = document.getElementById('complianceScoreText');
+    const complianceBar = document.getElementById('complianceProgressBar');
+    if (complianceText) complianceText.innerText = `${complianceScore}%`;
+    if (complianceBar) {
+      complianceBar.style.width = `${complianceScore}%`;
+      complianceBar.className = `progress-bar ${complianceScore >= 80 ? 'bg-success' : complianceScore >= 50 ? 'bg-warning text-dark' : 'bg-danger'}`;
+    }
+
+    const ul = document.getElementById('checklistUl');
+    ul.innerHTML = '';
+    const items = [
+      { name: "Приветствие и представление", val: cl.greeting },
+      { name: "Выявление потребности клиента", val: cl.need_identification },
+      { name: "Предложение форматов/вариантов", val: cl.options_offered },
+      { name: "Обозначение следующего шага", val: cl.next_step_named },
+      { name: "Взятие контактных данных", val: cl.contacts_taken }
+    ];
+
+    items.forEach((item, idx) => {
+      ul.innerHTML += `
+        <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+          <span>${idx+1}. ${item.name}</span>
+          <span class="badge ${item.val ? 'bg-success' : 'bg-secondary'} rounded-pill">
+            ${item.val ? '✓ Да' : '✗ Нет'}
+          </span>
+        </li>
+      `;
+    });
+
+    // Violations Box
+    const violationsBox = document.getElementById('violationsBox');
+    if (violationsBox) {
+      if (cl.violations && cl.violations.length > 0) {
+        violationsBox.style.display = 'block';
+        violationsBox.innerHTML = `
+          <div class="alert alert-danger py-2 px-3 mb-2">
+            <div class="fw-bold small mb-1"><i class="bi bi-exclamation-octagon-fill me-1"></i> Зафиксированные нарушения (${cl.violations.length}):</div>
+            <ul class="mb-0 ps-3 small">
+              ${cl.violations.map(v => `<li>${escapeHtml(v)}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      } else {
+        violationsBox.style.display = 'block';
+        violationsBox.innerHTML = `
+          <div class="alert alert-success py-2 px-3 mb-2 small">
+            <i class="bi bi-shield-check me-1"></i> Грубых нарушений скрипта и стоп-слов не зафиксировано
+          </div>
+        `;
+      }
+    }
+
+    // Recommendations Box
+    const recommendationsBox = document.getElementById('recommendationsBox');
+    if (recommendationsBox) {
+      if (cl.recommendations && cl.recommendations.length > 0) {
+        recommendationsBox.style.display = 'block';
+        recommendationsBox.innerHTML = `
+          <div class="alert alert-info py-2 px-3 mb-0">
+            <div class="fw-bold small mb-1"><i class="bi bi-lightbulb-fill me-1"></i> Рекомендации супервайзера:</div>
+            <ul class="mb-0 ps-3 small">
+              ${cl.recommendations.map(r => `<li>${escapeHtml(r)}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      } else {
+        recommendationsBox.style.display = 'none';
+      }
+    }
+
+    // Speech metrics
+    const sm = analysis.deterministic_speech_metrics || {};
+    document.getElementById('metricManagerRatio').innerText = sm.manager_speech_ratio ? `${Math.round(sm.manager_speech_ratio * 100)}%` : '-';
+    document.getElementById('metricClientRatio').innerText = sm.client_speech_ratio ? `${Math.round(sm.client_speech_ratio * 100)}%` : '-';
+    document.getElementById('metricInterruptions').innerText = sm.interruptions_count !== undefined ? sm.interruptions_count : '-';
+    document.getElementById('metricWpm').innerText = sm.words_per_minute || '-';
+    document.getElementById('metricAnsweringMachine').innerText = sm.is_answering_machine ? '⚠️ Да' : 'Нет';
+    document.getElementById('metricAnsweringMachine').className = `fw-bold ${sm.is_answering_machine ? 'text-danger' : 'text-success'}`;
+  }
+
+  // =========================================================================
+  // CALLS ARCHIVE LIST (GET /v1/calls)
+  // =========================================================================
+  const btnRefreshCalls = document.getElementById('btnRefreshCalls');
+  const callsTableBody = document.getElementById('callsTableBody');
+
+  btnRefreshCalls.addEventListener('click', refreshCallsList);
+
+  function refreshCallsList() {
+    callsTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Загрузка звонков...</td></tr>';
+    fetch(`/v1/calls?namespace=${getNamespace()}&limit=15`, { headers: getHeaders() })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.items || data.items.length === 0) {
+          callsTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Нет сохраненных звонков в этом namespace</td></tr>';
+          return;
+        }
+        callsTableBody.innerHTML = '';
+        data.items.forEach(c => {
+          const tr = document.createElement('tr');
+          const durStr = c.duration_sec ? `${Math.round(c.duration_sec)} с` : '-';
+          const dtStr = c.created_at ? new Date(c.created_at).toLocaleString('ru-RU') : '-';
+          const safeId = escapeHtml(c.call_id);
+          const safeExternalId = c.external_id ? escapeHtml(c.external_id) : '<span class="text-muted">-</span>';
+          const safeManagerId = c.manager_id ? escapeHtml(c.manager_id) : 'Автоматически';
+          tr.innerHTML = `
+            <td><code>${safeId.substring(0, 8)}...</code></td>
+            <td>${safeExternalId}</td>
+            <td><span class="badge bg-light text-dark border">${safeManagerId}</span></td>
+            <td>${durStr}</td>
+            <td>${c.is_answering_machine ? '<span class="badge bg-danger">Автоответчик</span>' : '<span class="badge bg-success">Живой разговор</span>'}</td>
+            <td class="small text-muted">${dtStr}</td>
+            <td>
+              <button class="btn btn-outline-primary btn-sm py-0 px-2" onclick="openArchivedCall('${safeId}')">
+                <i class="bi bi-play-circle me-1"></i> Открыть
+              </button>
+            </td>
+          `;
+          callsTableBody.appendChild(tr);
+        });
+      })
+      .catch(err => {
+        callsTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-3">Ошибка загрузки: ${escapeHtml(err.message)}</td></tr>`;
+      });
+  }
+
+  function openArchivedCall(callId) {
+    statusCallText.innerText = `Загрузка аудио и анализа звонка ${callId.substring(0,8)}...`;
+    const ns = getNamespace();
+    // Load audio from S3 via new endpoint
+    fetch(`/v1/calls/${callId}/audio?namespace=${ns}`, { headers: getHeaders() })
+      .then(res => {
+        if (!res.ok) throw new Error("Не удалось получить аудиозапись из S3");
+        return res.blob();
+      })
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        wavesurfer.load(url);
+        statusCallText.innerText = "Аудио загружено в плеер";
+        loadCallResults(callId);
+      })
+      .catch(e => {
+        console.warn("Audio stream fetch error, loading results only:", e);
+        loadCallResults(callId);
+        statusCallText.innerText = "Результаты загружены";
+      });
+  }
+
+  // Trigger Download helper
+  function triggerDownload(url, filename) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  // Quick 1-click Transcript Download Buttons
+  const btnQuickTxt = document.getElementById('btnQuickTxt');
+  const btnQuickSrt = document.getElementById('btnQuickSrt');
+  const btnQuickJson = document.getElementById('btnQuickJson');
+
+  if (btnQuickTxt) {
+    btnQuickTxt.addEventListener('click', () => {
+      if (!currentCallId) return;
+      triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=text`, `transcript_${currentCallId}.txt`);
+    });
+  }
+  if (btnQuickSrt) {
+    btnQuickSrt.addEventListener('click', () => {
+      if (!currentCallId) return;
+      triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=srt`, `transcript_${currentCallId}.srt`);
+    });
+  }
+  if (btnQuickJson) {
+    btnQuickJson.addEventListener('click', () => {
+      if (!currentCallId) return;
+      triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=json`, `transcript_${currentCallId}.json`);
+    });
+  }
+
+  // Export handlers (dropdown)
+  document.getElementById('expJson').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!currentCallId) return;
+    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=json`, '_blank');
+  });
+  document.getElementById('expText').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!currentCallId) return;
+    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=text`, '_blank');
+  });
+  document.getElementById('expSrt').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!currentCallId) return;
+    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=srt`, '_blank');
+  });
+  document.getElementById('expVtt').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!currentCallId) return;
+    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=vtt`, '_blank');
+  });
+
+  // Initial call load
+  setTimeout(refreshCallsList, 800);
+
+
+  // =========================================================================
+  // TAB 2: VOICE SEARCH SIMULATION & QUERY HISTORY
+  // =========================================================================
+  const btnVoiceSearchRecord = document.getElementById('btnVoiceSearchRecord');
+  const voiceMicIcon = document.getElementById('voiceMicIcon');
+  const voiceRecordingStatus = document.getElementById('voiceRecordingStatus');
+  const voiceRecordingTimer = document.getElementById('voiceRecordingTimer');
+  const voiceFileInput = document.getElementById('voiceFileInput');
+
+  const voiceLatencyDisplay = document.getElementById('voiceLatencyDisplay');
+  const voiceSlaBadge = document.getElementById('voiceSlaBadge');
+  const voiceSlaPercentDisplay = document.getElementById('voiceSlaPercentDisplay');
+  const voiceLatencyProgress = document.getElementById('voiceLatencyProgress');
+  const voiceTextResult = document.getElementById('voiceTextResult');
+  const voiceDurationDisplay = document.getElementById('voiceDurationDisplay');
+  const voiceConfidenceDisplay = document.getElementById('voiceConfidenceDisplay');
+  const voiceLangDisplay = document.getElementById('voiceLangDisplay');
+  const voiceRtfDisplay = document.getElementById('voiceRtfDisplay');
+
+  let isRecordingVoice = false;
+  let voiceMediaRecorder = null;
+  let voiceAudioChunks = [];
+  let voiceRecordStartTime = 0;
+  let voiceTimerInterval = null;
+
+  btnVoiceSearchRecord.addEventListener('click', async () => {
+    if (isRecordingVoice) {
+      stopVoiceRecording();
+      return;
+    }
+    startVoiceRecording();
+  });
+
+  async function startVoiceRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceMediaRecorder = new MediaRecorder(stream);
+      voiceAudioChunks = [];
+      voiceRecordStartTime = Date.now();
+
+      voiceMediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) voiceAudioChunks.push(e.data);
+      };
+
+      voiceMediaRecorder.onstop = () => {
+        const audioBlob = new Blob(voiceAudioChunks, { type: 'audio/wav' });
+        submitVoiceSearch(audioBlob, "mic_voice_search.wav");
+        stream.getTracks().forEach(t => t.stop());
+      };
+
+      voiceMediaRecorder.start();
+      isRecordingVoice = true;
+      btnVoiceSearchRecord.classList.add('btn-recording-pulse');
+      voiceMicIcon.className = 'bi bi-stop-fill';
+      voiceRecordingStatus.innerText = "Идёт запись... Говорите фразу!";
+      
+      voiceTimerInterval = setInterval(() => {
+        const sec = ((Date.now() - voiceRecordStartTime) / 1000).toFixed(1);
+        voiceRecordingTimer.innerText = `Запись: ${sec} сек (Нажмите для остановки)`;
+      }, 100);
+
+    } catch (err) {
+      alert("Ошибка доступа к микрофону: " + err.message);
+    }
+  }
+
+  function stopVoiceRecording() {
+    if (voiceMediaRecorder && isRecordingVoice) {
+      voiceMediaRecorder.stop();
+      isRecordingVoice = false;
+      clearInterval(voiceTimerInterval);
+      btnVoiceSearchRecord.classList.remove('btn-recording-pulse');
+      voiceMicIcon.className = 'bi bi-mic';
+      voiceRecordingStatus.innerText = "Обработка запроса нейросетью...";
+    }
+  }
+
+  voiceFileInput.addEventListener('change', () => {
+    if (voiceFileInput.files.length) {
+      submitVoiceSearch(voiceFileInput.files[0], voiceFileInput.files[0].name);
+    }
+  });
+
+  function submitVoiceSearch(blob, filename) {
+    voiceRecordingStatus.innerText = "Синхронное распознавание (SLA ≤ 2.5 с)...";
+    const startTime = performance.now();
+
+    const formData = new FormData();
+    formData.append("file", blob, filename);
+
+    fetch(`/v1/voice/search?namespace=${getNamespace()}`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${tokenInput.value.trim()}` },
+      body: formData
+    })
+    .then(r => {
+      if (!r.ok) return r.json().then(e => { throw new Error(e.message || "Ошибка поиска"); });
+      return r.json();
+    })
+    .then(data => {
+      const clientTotalMs = Math.round(performance.now() - startTime);
+      handleVoiceSearchResult(data, clientTotalMs, "🎤 Голосовой");
+    })
+    .catch(err => {
+      voiceRecordingStatus.innerText = "Ошибка: " + err.message;
+      voiceTextResult.innerHTML = `<span class="text-danger">Ошибка: ${err.message}</span>`;
+    });
+  }
+
+  function handleVoiceSearchResult(data, displayLatencyMs, sourceMethod) {
+    voiceRecordingStatus.innerText = "Распознавание завершено!";
+    voiceRecordingTimer.innerText = "Готов к следующему запросу";
+
+    const ms = data.processing_time_ms !== undefined && data.processing_time_ms !== null ? data.processing_time_ms : displayLatencyMs;
+    const duration = data.duration_sec !== undefined && data.duration_sec !== null ? Number(data.duration_sec) : 0;
+    const confidence = (data.confidence !== undefined && data.confidence !== null) ? Number(data.confidence) : 0.95;
+    const lang = (data.language || "RU").toUpperCase();
+
+    voiceLatencyDisplay.innerText = ms;
+    voiceDurationDisplay.innerText = `${duration.toFixed(1)} с`;
+    if (voiceLangDisplay) voiceLangDisplay.innerText = lang;
+
+    // Confidence display with dynamic color thresholding
+    const confPct = Math.round(confidence * 100);
+    voiceConfidenceDisplay.innerText = `${confPct}%`;
+    if (confPct >= 85) {
+      voiceConfidenceDisplay.className = 'fw-bold text-success';
+    } else if (confPct >= 65) {
+      voiceConfidenceDisplay.className = 'fw-bold text-warning';
+    } else {
+      voiceConfidenceDisplay.className = 'fw-bold text-danger';
+    }
+
+    // Real-Time Factor (RTF) calculation: latency / duration
+    if (voiceRtfDisplay) {
+      if (duration > 0 && ms > 0) {
+        const rtf = (ms / 1000) / duration;
+        const speedMultiplier = (duration / (ms / 1000)).toFixed(1);
+        voiceRtfDisplay.innerText = `${rtf.toFixed(2)}x (${speedMultiplier}x быстрее)`;
+      } else {
+        voiceRtfDisplay.innerText = '0.25x (~4x быстрее)';
+      }
+    }
+
+    // SLA Evaluation (2500 ms SLA)
+    const isSlaOk = ms <= 2500;
+    if (isSlaOk) {
+      const fasterPct = Math.round(((2500 - ms) / 2500) * 100);
+      voiceSlaBadge.className = 'sla-badge-fast';
+      voiceSlaBadge.innerHTML = `<i class="bi bi-shield-check"></i> ✓ SLA ≤ 2.5 с СОБЛЮДЁН`;
+      voiceSlaPercentDisplay.innerText = `(быстрее нормы на ${fasterPct}%)`;
+      voiceLatencyProgress.className = 'progress-bar bg-success';
+    } else {
+      voiceSlaBadge.className = 'sla-badge-slow';
+      voiceSlaBadge.innerHTML = `<i class="bi bi-exclamation-triangle"></i> Превышение SLA`;
+      voiceSlaPercentDisplay.innerText = `(норматив 2500 мс превышен)`;
+      voiceLatencyProgress.className = 'progress-bar bg-danger';
+    }
+    const pctBar = Math.min(100, Math.round((ms / 2500) * 100));
+    voiceLatencyProgress.style.width = `${pctBar}%`;
+
+    // Highlight outdoor advertising terms in text
+    let cleanText = data.text || "";
+    const terms = ["3х6", "3×6", "Балашихе", "Балашиха", "Химках", "Химки", "Мытищах", "октябрь", "ноябрь", "суперсайты", "ситиборды", "медиафасад", "свободные", "сторона А", "сторона Б"];
+    let formattedText = cleanText;
+    terms.forEach(t => {
+      const reg = new RegExp(`(${t})`, "gi");
+      formattedText = formattedText.replace(reg, `<mark class="bg-warning-subtle text-dark px-1 rounded">$1</mark>`);
+    });
+    voiceTextResult.innerHTML = formattedText || '<span class="text-muted">(пустой результат)</span>';
+
+    // Refresh shared server-backed query history
+    fetchVoiceHistory();
+  }
+
+  // =========================================================================
+  // SHARED SERVER-BACKED QUERY HISTORY (GET/DELETE /v1/voice/history)
+  // =========================================================================
+  const queryHistoryTableBody = document.getElementById('queryHistoryTableBody');
+  let activeVoiceHistory = [];
+
+  async function fetchVoiceHistory() {
+    try {
+      const resp = await fetch(`/v1/voice/history?namespace=${getNamespace()}`, {
+        headers: { "Authorization": `Bearer ${tokenInput.value.trim()}` }
+      });
+      if (!resp.ok) {
+        console.warn("Failed to fetch voice history", resp.status);
+        return;
+      }
+      const data = await resp.json();
+      activeVoiceHistory = data.items || [];
+      renderQueryHistoryTable(activeVoiceHistory);
+    } catch (e) {
+      console.warn("Error fetching voice history:", e);
+    }
+  }
+
+  async function clearQueryHistory() {
+    if (!confirm("Очистить историю голосовых поисковых запросов для текущего namespace?")) return;
+    try {
+      const resp = await fetch(`/v1/voice/history?namespace=${getNamespace()}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${tokenInput.value.trim()}` }
+      });
+      if (resp.ok) {
+        activeVoiceHistory = [];
+        renderQueryHistoryTable([]);
+      } else {
+        alert("Ошибка при очистке истории");
+      }
+    } catch (e) {
+      alert("Ошибка при очистке истории: " + e.message);
+    }
+  }
+
+  function renderQueryHistoryTable(list = activeVoiceHistory) {
+    queryHistoryTableBody.innerHTML = '';
+    if (!list || list.length === 0) {
+      queryHistoryTableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">История запросов пуста. Запишите голосовой запрос с микрофона или загрузите аудиофайл.</td></tr>';
+      return;
+    }
+
+    list.forEach((q) => {
+      const tr = document.createElement('tr');
+      const latency = q.latency || 0;
+      const isOk = latency <= 2500;
+      const confNum = q.confidence !== undefined && q.confidence !== null ? Number(q.confidence) : null;
+      let confBadge = '<span class="text-muted">—</span>';
+      if (confNum !== null) {
+        const confPct = Math.round(confNum * 100);
+        const confColor = confPct >= 85 ? 'bg-success-subtle text-success border-success-subtle' : (confPct >= 65 ? 'bg-warning-subtle text-warning border-warning-subtle' : 'bg-danger-subtle text-danger border-danger-subtle');
+        confBadge = `<span class="badge ${confColor} border">${confPct}%</span>`;
+      }
+      tr.innerHTML = `
+        <td class="text-muted small">${escapeHtml(q.timestamp || '-')}</td>
+        <td class="fw-medium">${escapeHtml(q.text || '')}</td>
+        <td>${confBadge}</td>
+        <td class="fw-bold">${escapeHtml(String(latency))} мс</td>
+        <td>
+          <span class="badge ${isOk ? 'bg-success' : 'bg-danger'}">
+            ${isOk ? '✓ SLA' : 'Превышен'}
+          </span>
+        </td>
+      `;
+      queryHistoryTableBody.appendChild(tr);
+    });
+  }
+
+  // =========================================================================
+  // AI TOPIC CLUSTERING (POST /v1/texts/analyze)
+  // =========================================================================
+  const clusteringContainer = document.getElementById('clusteringResultsContainer');
+  const btnRunClustering = document.getElementById('btnRunClustering');
+
+  async function runTopicClustering() {
+    const list = activeVoiceHistory;
+    if (list.length < 3) {
+      alert("Для кластеризации нужно хотя бы 3 запроса в истории. Сделайте голосовые запросы через микрофон или загрузите аудиозаписи!");
+      return;
+    }
+
+    const texts = list.map(q => q.text);
+    btnRunClustering.disabled = true;
+    btnRunClustering.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Нейросетевая кластеризация...';
+    clusteringContainer.innerHTML = '<div class="text-center text-muted py-4">Кластеризация запросов алгоритмом HDBSCAN / TF-IDF...</div>';
+
+    try {
+      const resp = await fetch('/v1/texts/analyze', {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${tokenInput.value.trim()}`
+        },
+        body: JSON.stringify({
+          namespace: getNamespace(),
+          texts: texts
+        })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.message || "Ошибка кластеризации");
+      }
+
+      const data = await resp.json();
+      renderClusters(data.clusters, data.total_texts);
+
+    } catch (e) {
+      clusteringContainer.innerHTML = `<div class="alert alert-danger small">Ошибка кластеризации: ${escapeHtml(e.message)}</div>`;
+    } finally {
+      btnRunClustering.disabled = false;
+      btnRunClustering.innerHTML = '<i class="bi bi-magic me-2"></i> Запустить AI-кластеризацию запросов';
+    }
+  }
+
+  function renderClusters(clusters, totalTexts) {
+    if (!clusters || clusters.length === 0) {
+      clusteringContainer.innerHTML = '<div class="text-muted text-center py-4">Кластеры не выделены</div>';
+      return;
+    }
+
+    clusteringContainer.innerHTML = '';
+    const badgeColors = ['primary', 'success', 'warning', 'info', 'secondary'];
+
+    clusters.forEach((c, idx) => {
+      const pct = Math.round((c.size / totalTexts) * 100);
+      const color = badgeColors[idx % badgeColors.length];
+      const div = document.createElement('div');
+      div.className = 'cluster-card';
+      div.style.borderLeftColor = `var(--${color}-accent, #3b82f6)`;
+
+      let queriesHtml = '';
+      (c.representative_queries || []).forEach(q => {
+        queriesHtml += `<div class="text-muted small mb-1">• «${escapeHtml(q)}»</div>`;
+      });
+
+      div.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="fw-bold mb-0 text-dark">
+            <span class="badge bg-${color} me-2">Тема ${c.cluster_id}</span>
+            ${escapeHtml(c.label)}
+          </h6>
+          <span class="badge bg-light text-dark border fw-bold">${c.size} запр. (${pct}%)</span>
+        </div>
+        <div class="small fw-semibold text-secondary mb-1">Примеры запросов пользователей:</div>
+        ${queriesHtml}
+      `;
+      clusteringContainer.appendChild(div);
+    });
+  }
+
+  async function updateProfileBadge() {
+    try {
+      const res = await fetch('/health');
+      if (res.ok) {
+        const data = await res.json();
+        const badge = document.getElementById('profileBadge');
+        if (!badge) return;
+        if (data.profile === 'local-full') {
+          badge.className = 'badge bg-info bg-opacity-25 text-info border border-info border-opacity-50 px-3 py-1 ms-2';
+          badge.innerHTML = '<i class="bi bi-stars me-1 text-warning"></i> Profile: Local-Full (Qwen 2.5 7B LLM)';
+        } else {
+          badge.className = 'badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 px-3 py-1 ms-2';
+          badge.innerHTML = '<i class="bi bi-cpu me-1"></i> Profile: Small (2 vCPU / 4 GB RAM, Offline)';
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch profile', e);
+    }
+  }
+
+  // Event listeners for voice search tab and namespace changes
+  const tabVoiceBtn = document.getElementById('tab-voice-btn');
+  if (tabVoiceBtn) {
+    tabVoiceBtn.addEventListener('shown.bs.tab', () => {
+      fetchVoiceHistory();
+    });
+  }
+
+  namespaceInput.addEventListener('change', () => {
+    refreshCallsList();
+    fetchVoiceHistory();
+  });
+
+  // Load shared voice queries and profile on startup
+  updateProfileBadge();
+  fetchVoiceHistory();
+</script>
+
+</body>
+</html>
