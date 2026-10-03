@@ -191,17 +191,17 @@ async def test_create_job_upload_retry_after_failure(mock_infra):
             )
             await session.commit()
 
-        # 3. Retry upload with identical content
+        # 3. Retry upload with identical content -> returns existing failed job
         resp2 = await ac.post(
             "/v1/jobs/upload",
             files={"file": ("retry_test.wav", wav, "audio/wav")},
             data={"namespace": "test_retry_ns"},
             headers=headers,
         )
-        assert resp2.status_code == 202
+        assert resp2.status_code == 200
         job_id_2 = resp2.json()["job_id"]
-        assert job_id_2 != job_id_1
-        assert resp2.json()["status"] == "queued"
+        assert job_id_2 == job_id_1
+        assert resp2.json()["status"] == "failed"
 
 
 @pytest.mark.asyncio

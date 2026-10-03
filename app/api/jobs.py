@@ -139,46 +139,31 @@ async def create_job_upload(
 
         # Check for existing job with same idempotency key (explicit or content-hash derived)
         # Note on Idempotency semantics:
-        # - When client provides explicit `Idempotency-Key`, idempotency is strict and immutable:
-        #   retries return the exact existing job (even if failed) with HTTP 200.
-        # - When no `Idempotency-Key` is provided (implicit content-hash dedup), queued/processing/completed
-        #   jobs are deduplicated to avoid duplicate compute; but if the prior job failed, re-upload
-        #   allows re-processing by generating a new job.
+        # Strict and immutable: retries always return the exact existing job (including failed) with HTTP 200.
         stmt = select(Job).where(
             Job.namespace == namespace, Job.idempotency_key == effective_idempotency
         )
         existing_job = (await db.execute(stmt)).scalar_one_or_none()
         if existing_job:
-            if existing_job.status == "failed" and not idempotency_key:
-                logger.info(
-                    "retrying_failed_job_without_explicit_idempotency_key",
-                    failed_job_id=existing_job.id,
-                    idempotency_key=effective_idempotency,
+            if (
+                idempotency_key
+                and existing_job.file_hash_sha256
+                and existing_job.file_hash_sha256 != file_hash
+            ):
+                raise AppError(
+                    error="idempotency_conflict",
+                    message="Idempotency key has already been used with different content",
+                    status_code=409,
                 )
-                existing_job.idempotency_key = (
-                    f"{effective_idempotency[:100]}:f:{existing_job.id[:8]}"
-                )
-                await db.flush()
-            else:
-                if (
-                    idempotency_key
-                    and existing_job.file_hash_sha256
-                    and existing_job.file_hash_sha256 != file_hash
-                ):
-                    raise AppError(
-                        error="idempotency_conflict",
-                        message="Idempotency key has already been used with different content",
-                        status_code=409,
-                    )
-                response.status_code = status.HTTP_200_OK
-                return JobAcceptedResponse(
-                    job_id=existing_job.id,
-                    status=existing_job.status,
-                    status_url=f"/v1/jobs/{existing_job.id}?namespace={namespace}",
-                    created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
-                    if existing_job.created_at.tzinfo is None
-                    else existing_job.created_at,
-                )
+            response.status_code = status.HTTP_200_OK
+            return JobAcceptedResponse(
+                job_id=existing_job.id,
+                status=existing_job.status,
+                status_url=f"/v1/jobs/{existing_job.id}?namespace={namespace}",
+                created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
+                if existing_job.created_at.tzinfo is None
+                else existing_job.created_at,
+            )
 
         # Generate IDs
         job_id = str(uuid.uuid4())
@@ -336,24 +321,15 @@ async def create_job_by_url(
     )
     existing_job = (await db.execute(stmt)).scalar_one_or_none()
     if existing_job:
-        if existing_job.status == "failed" and not idempotency_key:
-            logger.info(
-                "retrying_failed_job",
-                failed_job_id=existing_job.id,
-                idempotency_key=effective_idempotency,
-            )
-            existing_job.idempotency_key = f"{effective_idempotency[:100]}:f:{existing_job.id[:8]}"
-            await db.flush()
-        else:
-            response.status_code = status.HTTP_200_OK
-            return JobAcceptedResponse(
-                job_id=existing_job.id,
-                status=existing_job.status,
-                status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
-                created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
-                if existing_job.created_at.tzinfo is None
-                else existing_job.created_at,
-            )
+        response.status_code = status.HTTP_200_OK
+        return JobAcceptedResponse(
+            job_id=existing_job.id,
+            status=existing_job.status,
+            status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
+            created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
+            if existing_job.created_at.tzinfo is None
+            else existing_job.created_at,
+        )
 
     job_id = str(uuid.uuid4())
     call_id = str(uuid.uuid4())
@@ -482,24 +458,15 @@ async def create_job_by_s3(
     )
     existing_job = (await db.execute(stmt)).scalar_one_or_none()
     if existing_job:
-        if existing_job.status == "failed" and not idempotency_key:
-            logger.info(
-                "retrying_failed_job",
-                failed_job_id=existing_job.id,
-                idempotency_key=effective_idempotency,
-            )
-            existing_job.idempotency_key = f"{effective_idempotency[:100]}:f:{existing_job.id[:8]}"
-            await db.flush()
-        else:
-            response.status_code = status.HTTP_200_OK
-            return JobAcceptedResponse(
-                job_id=existing_job.id,
-                status=existing_job.status,
-                status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
-                created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
-                if existing_job.created_at.tzinfo is None
-                else existing_job.created_at,
-            )
+        response.status_code = status.HTTP_200_OK
+        return JobAcceptedResponse(
+            job_id=existing_job.id,
+            status=existing_job.status,
+            status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
+            created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
+            if existing_job.created_at.tzinfo is None
+            else existing_job.created_at,
+        )
 
     job_id = str(uuid.uuid4())
     call_id = str(uuid.uuid4())
