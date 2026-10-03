@@ -13,13 +13,14 @@ services:
       - CMD-SHELL
       - pg_isready -U ${DB_USER:-apc_user} -d apc_speech
       interval: 5s
-      timeout: 3s
-      retries: 5
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     deploy:
       resources:
         limits:
           cpus: '1.0'
-          memory: 512M
+          memory: 1024M
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -33,7 +34,8 @@ services:
       - ping
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+      start_period: 10s
     deploy:
       resources:
         limits:
@@ -55,13 +57,14 @@ services:
       - CMD-SHELL
       - curl -f http://localhost:9000/minio/health/live || exit 1
       interval: 5s
-      timeout: 3s
-      retries: 5
+      timeout: 5s
+      retries: 10
+      start_period: 15s
     deploy:
       resources:
         limits:
           cpus: '0.5'
-          memory: 256M
+          memory: 512M
     ports: []
   alembic-migrate:
     build:
