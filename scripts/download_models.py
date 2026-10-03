@@ -9,9 +9,16 @@ import os
 import sys
 import urllib.request
 
+_opener = urllib.request.build_opener()
+_opener.addheaders = [("User-Agent", "Mozilla/5.0 (compatible; APC-Speech/1.0)")]
+urllib.request.install_opener(_opener)
+
 MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
 
-CAMPPLUS_URL = "https://modelscope.cn/models/iic/speech_campplus_sv_zh-cn_16k-common/resolve/master/campplus.onnx"
+CAMPPLUS_URLS = [
+    "https://huggingface.co/welcomyou/campplus-3dspeaker-200k-onnx/resolve/main/campplus_cn_en_common_200k.onnx",
+    "https://huggingface.co/hb123xyz/campplus_cn_en_common_200k/resolve/main/campplus_cn_en_common_200k.onnx",
+]
 CAMPPLUS_PATH = os.path.join(MODELS_DIR, "campplus.onnx")
 
 QWEN_BASE_URL = "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main"
@@ -21,6 +28,7 @@ QWEN_SHARDS = [
 ]
 QWEN_SHARD_URLS = [f"{QWEN_BASE_URL}/{name}" for name in QWEN_SHARDS]
 QWEN_SHARD_PATHS = [os.path.join(MODELS_DIR, name) for name in QWEN_SHARDS]
+QWEN_GGUF_PATH = os.path.join(MODELS_DIR, "qwen2.5-7b-instruct-q4_k_m.gguf")
 
 
 def _reporthook(block_num, block_size, total_size):
@@ -42,12 +50,26 @@ def download_campplus():
         return
 
     print(f"Downloading CAM++ neural speaker embedding model to {CAMPPLUS_PATH}...")
-    try:
-        urllib.request.urlretrieve(CAMPPLUS_URL, CAMPPLUS_PATH, reporthook=_reporthook)
-        print(f"\n[OK] Downloaded CAM++ successfully ({os.path.getsize(CAMPPLUS_PATH)} bytes)")
-    except Exception as e:
-        print(f"\n[ERROR] Failed to download CAM++: {e}")
-        raise RuntimeError(f"Failed to download CAM++: {e}") from e
+    last_err = None
+    for url in CAMPPLUS_URLS:
+        try:
+            urllib.request.urlretrieve(url, CAMPPLUS_PATH, reporthook=_reporthook)
+            if os.path.exists(CAMPPLUS_PATH) and os.path.getsize(CAMPPLUS_PATH) > 1_000_000:
+                print(
+                    f"\n[OK] Downloaded CAM++ successfully ({os.path.getsize(CAMPPLUS_PATH)} bytes)"
+                )
+                return
+        except Exception as e:
+            last_err = e
+            try:
+                if os.path.exists(CAMPPLUS_PATH):
+                    os.remove(CAMPPLUS_PATH)
+            except OSError:
+                pass
+            print(f"\n[WARN] Failed to download CAM++ from {url}: {e}")
+
+    print(f"\n[ERROR] Failed to download CAM++ from all sources: {last_err}")
+    raise RuntimeError(f"Failed to download CAM++: {last_err}") from last_err
 
 
 def download_whisper(model_name: str = "small", output_name: str | None = None):
@@ -66,14 +88,46 @@ def download_whisper(model_name: str = "small", output_name: str | None = None):
 
         download_model(model_name, output_dir=output_dir)
         print(f"[OK] Downloaded Whisper {model_name} successfully")
+        return
     except Exception as e:
-        print(f"[ERROR] Failed to download Whisper {model_name} via faster-whisper: {e}")
-        raise RuntimeError(f"Failed to download Whisper {model_name}: {e}") from e
+        print(
+            f"[INFO] faster-whisper unavailable or failed ({e}), falling back to direct Hugging Face download..."
+        )
+
+    repo_id = "Systran/faster-whisper-small" if model_name == "small" else model_name
+    files = [
+        "config.json",
+        "model.bin",
+        "tokenizer.json",
+        "vocabulary.json",
+        "vocabulary.txt",
+        "preprocessor_config.json",
+    ]
+    os.makedirs(output_dir, exist_ok=True)
+    for filename in files:
+        url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
+        dest = os.path.join(output_dir, filename)
+        try:
+            urllib.request.urlretrieve(url, dest, reporthook=_reporthook)
+            print(f"\n[OK] Downloaded {filename}")
+        except Exception:
+            if os.path.exists(dest):
+                try:
+                    os.remove(dest)
+                except OSError:
+                    pass
+
+    model_bin = os.path.join(output_dir, "model.bin")
+    if not os.path.exists(model_bin) or os.path.getsize(model_bin) < 10_000_000:
+        raise RuntimeError(
+            f"Failed to download Whisper model {model_name}: model.bin missing or invalid"
+        )
+    print(f"[OK] Downloaded Whisper {model_name} successfully via direct download")
 
 
 def download_qwen():
     os.makedirs(MODELS_DIR, exist_ok=True)
-    mono_path = os.path.join(MODELS_DIR, "qwen2.5-7b-instruct-q4_k_m.gguf")
+    mono_path = QWEN_GGUF_PATH
     if os.path.exists(mono_path) and os.path.getsize(mono_path) > 100_000_000:
         print(f"[OK] Qwen GGUF model already present at {mono_path}")
         return
