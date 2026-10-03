@@ -50,22 +50,25 @@ def download_campplus():
         raise RuntimeError(f"Failed to download CAM++: {e}") from e
 
 
-def download_whisper(model_size: str = "base"):
+def download_whisper(model_name: str = "small", output_name: str | None = None):
     os.makedirs(MODELS_DIR, exist_ok=True)
-    output_dir = os.path.join(MODELS_DIR, f"whisper-{model_size}")
+    folder_name = output_name or (
+        f"whisper-{model_name}" if "/" not in model_name else model_name.split("/")[-1]
+    )
+    output_dir = os.path.join(MODELS_DIR, folder_name)
     if os.path.exists(output_dir) and any(os.scandir(output_dir)):
-        print(f"[OK] Whisper {model_size} model already present at {output_dir}")
+        print(f"[OK] Whisper model ({model_name}) already present at {output_dir}")
         return
 
-    print(f"Downloading faster-whisper '{model_size}' model to {output_dir}...")
+    print(f"Downloading faster-whisper '{model_name}' model to {output_dir}...")
     try:
         from faster_whisper import download_model
 
-        download_model(model_size, output_dir=output_dir)
-        print(f"[OK] Downloaded Whisper {model_size} successfully")
+        download_model(model_name, output_dir=output_dir)
+        print(f"[OK] Downloaded Whisper {model_name} successfully")
     except Exception as e:
-        print(f"[ERROR] Failed to download Whisper {model_size} via faster-whisper: {e}")
-        raise RuntimeError(f"Failed to download Whisper {model_size}: {e}") from e
+        print(f"[ERROR] Failed to download Whisper {model_name} via faster-whisper: {e}")
+        raise RuntimeError(f"Failed to download Whisper {model_name}: {e}") from e
 
 
 def download_qwen():
@@ -110,10 +113,15 @@ def main():
     print(f"=== APC Speech Model Downloader (profile: {args.profile}) ===")
     try:
         download_campplus()
+        # 1. Voice search model (whisper-small)
         download_whisper("small")
+        # 2. Russian-adapted model for long audio processing (whisper-podlodka-turbo-ct2)
+        download_whisper(
+            "bond005/whisper-podlodka-turbo-ct2",
+            output_name="whisper-podlodka-turbo-ct2",
+        )
 
         if args.profile in ("local-full", "all"):
-            download_whisper("medium")
             download_qwen()
     except Exception as e:
         print(f"\n[FATAL] Model download failed: {e}", file=sys.stderr)
