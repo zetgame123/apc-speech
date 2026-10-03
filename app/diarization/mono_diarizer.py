@@ -77,7 +77,7 @@ class MonoDiarizer:
     def __init__(
         self,
         num_speakers: int = 2,
-        min_speaker_distance: float = 0.08,
+        min_speaker_distance: float = 0.20,
         campplus_path: str = "models/campplus.onnx",
     ):
         self.num_speakers = num_speakers
@@ -288,8 +288,8 @@ class MonoDiarizer:
         norms_e = np.linalg.norm(embeddings, axis=1, keepdims=True)
         e_norm = embeddings / np.maximum(norms_e, 1e-6)
 
-        # Centroid separation
-        sep = max(1e-4, 1.0 - float(np.dot(c0, c1)))
+        # Centroid separation (clamp at 0.18 to prevent margin explosion on close centroids)
+        sep = max(0.18, 1.0 - float(np.dot(c0, c1)))
 
         # Cosine similarities to c0 and c1: shape (n, 2)
         sim_c0 = np.dot(e_norm, c0)
@@ -322,13 +322,13 @@ class MonoDiarizer:
 
             if gap_i < 0.25:
                 # Immediate speech continuation (likely same speaker)
-                p_switch = 0.15
+                p_switch = 0.08
             elif gap_i < 0.50:
                 # Slight pause, small turn transition penalty
-                p_switch = 0.35
+                p_switch = 0.22
             else:
                 # Distinct conversational pause (>= 0.5s), natural turn-taking
-                p_switch = 0.50
+                p_switch = 0.38
 
             p_stay = 1.0 - p_switch
             log_stay = np.log(p_stay)
@@ -504,7 +504,7 @@ class MonoDiarizer:
                                 from sklearn.metrics import silhouette_score
 
                                 sil = float(silhouette_score(X_cam, cam_labels, metric="cosine"))
-                                if sil < 0.12 or turn_ratio < 0.08:
+                                if sil < 0.18 or turn_ratio < 0.10:
                                     logger.info(
                                         "monologue_detected_low_silhouette",
                                         silhouette=sil,

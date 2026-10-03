@@ -332,26 +332,117 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                 "отказ": "client_declined",
                 "спам": "unclear_spam",
             }
+            valid_cr = {
+                "success_deal",
+                "follow_up_scheduled",
+                "info_provided",
+                "client_declined",
+                "unclear_spam",
+            }
             if "call_result" in parsed:
                 cr_clean = str(parsed["call_result"]).strip().lower()
                 if cr_clean in call_result_map:
                     parsed["call_result"] = call_result_map[cr_clean]
+                elif parsed["call_result"] not in valid_cr:
+                    parsed["call_result"] = "info_provided"
+            else:
+                parsed["call_result"] = "info_provided"
+
+            # Normalize entities
+            if not isinstance(parsed.get("entities"), dict):
+                parsed["entities"] = {"cities": [], "formats": []}
+            else:
+                if not isinstance(parsed["entities"].get("cities"), list):
+                    parsed["entities"]["cities"] = []
+                if not isinstance(parsed["entities"].get("formats"), list):
+                    parsed["entities"]["formats"] = []
+
+            # Normalize agreements
+            if not isinstance(parsed.get("agreements"), list):
+                parsed["agreements"] = []
+            else:
+                for agr in parsed["agreements"]:
+                    if isinstance(agr, dict):
+                        if agr.get("who") not in ("manager", "client", "both"):
+                            agr["who"] = "manager"
+                        if not agr.get("what"):
+                            agr["what"] = "Договоренность по обращению"
 
             # Normalize sentiment and emotions
-            if isinstance(parsed.get("sentiment"), dict):
-                s = parsed["sentiment"]
-                if "client_overall" not in s and "client" in s:
-                    s["client_overall"] = s.pop("client")
-                if "manager_tone" not in s and "manager" in s:
-                    s["manager_tone"] = s.pop("manager")
-                if "client_emotion" not in s:
-                    emo = compute_emotion_breakdown(
-                        trimmed_transcript,
-                        "",
-                        s.get("client_overall", "neutral"),
-                        s.get("manager_tone", "polite_constructive"),
-                    )
-                    s.update(emo)
+            if not isinstance(parsed.get("sentiment"), dict):
+                parsed["sentiment"] = {
+                    "client_overall": "neutral",
+                    "manager_tone": "polite_constructive",
+                }
+            s = parsed["sentiment"]
+            if "client_overall" not in s and "client" in s:
+                s["client_overall"] = s.pop("client")
+            if "manager_tone" not in s and "manager" in s:
+                s["manager_tone"] = s.pop("manager")
+
+            client_sentiment_map = {
+                "positive": "positive",
+                "позитивный": "positive",
+                "положительный": "positive",
+                "neutral": "neutral",
+                "нейтральный": "neutral",
+                "спокойный": "neutral",
+                "деловой": "neutral",
+                "negative": "negative",
+                "негативный": "negative",
+                "отрицательный": "negative",
+                "conflict": "conflict",
+                "конфликтный": "conflict",
+                "конфликт": "conflict",
+            }
+            if "client_overall" in s:
+                c_clean = str(s["client_overall"]).strip().lower()
+                s["client_overall"] = client_sentiment_map.get(
+                    c_clean,
+                    c_clean
+                    if c_clean in ("positive", "neutral", "negative", "conflict")
+                    else "neutral",
+                )
+            else:
+                s["client_overall"] = "neutral"
+
+            tone_map = {
+                "polite_constructive": "polite_constructive",
+                "вежливый": "polite_constructive",
+                "вежливый_конструктивный": "polite_constructive",
+                "конструктивный": "polite_constructive",
+                "деловой": "polite_constructive",
+                "neutral": "neutral",
+                "нейтральный": "neutral",
+                "спокойный": "neutral",
+                "indifferent": "indifferent",
+                "равнодушный": "indifferent",
+                "безразличный": "indifferent",
+                "пассивный": "indifferent",
+                "rude": "rude",
+                "грубый": "rude",
+                "агрессивный": "rude",
+                "невежливый": "rude",
+            }
+            if "manager_tone" in s:
+                m_clean = str(s["manager_tone"]).strip().lower()
+                s["manager_tone"] = tone_map.get(
+                    m_clean,
+                    m_clean
+                    if m_clean in ("polite_constructive", "indifferent", "rude", "neutral")
+                    else "polite_constructive",
+                )
+            else:
+                s["manager_tone"] = "polite_constructive"
+
+            if "client_emotion" not in s:
+                emo = compute_emotion_breakdown(
+                    trimmed_transcript,
+                    "",
+                    s.get("client_overall", "neutral"),
+                    s.get("manager_tone", "polite_constructive"),
+                )
+                s.update(emo)
 
             # Guarantee manager_checklist normalization, recalculate score, compliance score and violations
             if isinstance(parsed.get("manager_checklist"), dict):
@@ -496,6 +587,28 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                             )
                         updated.append(s_copy)
                     logger.info("llm_role_refinement_by_array_success", count=len(updated))
+                    return updated
+
+                elif (
+                    "manager" in parsed
+                    or "client" in parsed
+                    or (mgr_spk is None and cli_spk is None)
+                ):
+                    # Monologue / single-speaker detection from LLM:
+                    # If both are null/None, or if both map to the same speaker, or only one speaker was identified
+                    detected_role = "manager" if (mgr_spk and not cli_spk) else "client"
+                    logger.info(
+                        "llm_role_refinement_monologue_detected_collapsing",
+                        mgr=mgr_spk,
+                        cli=cli_spk,
+                        assigned_role=detected_role,
+                    )
+                    updated = []
+                    for s in segments:
+                        s_copy = dict(s)
+                        s_copy["speaker_label"] = "SPEAKER_0"
+                        s_copy["speaker_role"] = detected_role
+                        updated.append(s_copy)
                     return updated
 
         except Exception as e:

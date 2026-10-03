@@ -46,7 +46,7 @@ def test_mono_diarizer_separates_distinct_speakers():
         sf.write(temp_wav, total_audio, sr)
 
     try:
-        diarizer = MonoDiarizer(num_speakers=2)
+        diarizer = MonoDiarizer(num_speakers=2, min_speaker_distance=0.10)
         diarized = diarizer.diarize(temp_wav, segments)
 
         assert len(diarized) == 4
@@ -135,3 +135,35 @@ def test_split_segment_into_turns_with_pauses():
     assert "заказ." in turns[1]["text"]
     assert turns[0]["end"] == 1.9
     assert turns[1]["start"] == 2.4
+
+
+def test_mono_diarizer_real_speech_monologue_and_dialogue():
+    """Verify that default MonoDiarizer correctly separates real dialogue and unifies monologue."""
+    dialogue_wav = "data/evaluation_suite/sample_dialogue_01_telephony_8k.wav"
+    monologue_wav = "audit_tests/corpus/voice10.wav"
+
+    if not os.path.exists(dialogue_wav) or not os.path.exists(monologue_wav):
+        return
+
+    diarizer = MonoDiarizer(num_speakers=2)
+
+    # 1. Real dialogue should yield 2 speakers
+    dialogue_segs = [
+        {"start": 0.0, "end": 5.06, "text": "Клиент спрашивает о стоимости"},
+        {"start": 5.56, "end": 11.2, "text": "Менеджер отвечает о стоимости"},
+    ]
+    res_diag = diarizer.diarize(dialogue_wav, dialogue_segs)
+    diag_spks = {s["speaker_label"] for s in res_diag}
+    assert len(diag_spks) == 2
+    assert "SPEAKER_0" in diag_spks and "SPEAKER_1" in diag_spks
+
+    # 2. Real monologue with natural pauses should stay unified under SPEAKER_0
+    mono_segs = [
+        {"start": 0.0, "end": 3.0, "text": "Фраза 1"},
+        {"start": 3.5, "end": 6.5, "text": "Фраза 2"},
+        {"start": 7.0, "end": 9.8, "text": "Фраза 3"},
+    ]
+    res_mono = diarizer.diarize(monologue_wav, mono_segs)
+    mono_spks = {s["speaker_label"] for s in res_mono}
+    assert len(mono_spks) == 1
+    assert "SPEAKER_0" in mono_spks

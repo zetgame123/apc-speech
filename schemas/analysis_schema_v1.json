@@ -56,7 +56,7 @@
       "required": ["client_overall", "manager_tone"],
       "properties": {
         "client_overall": { "type": "string", "enum": ["positive", "neutral", "negative", "conflict"] },
-        "manager_tone": { "type": "string", "enum": ["polite_constructive", "indifferent", "rude"] },
+        "manager_tone": { "type": "string", "enum": ["polite_constructive", "indifferent", "rude", "neutral"] },
         "client_emotion": {
           "type": "string",
           "enum": ["enthusiasm_joy", "neutral_business", "doubt_skepticism", "irritation_anger", "urgency_anxiety"]

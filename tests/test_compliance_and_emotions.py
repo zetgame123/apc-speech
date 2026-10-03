@@ -139,6 +139,75 @@ def test_structured_analysis_schema_validation_with_new_fields():
     assert data["manager_checklist"]["compliance_score"] == 95.0
 
 
+def test_schema_validates_neutral_manager_tone():
+    """Verify that manager_tone='neutral' validates cleanly against JSON schema."""
+    analysis = StructuredAnalysis(
+        summary="Монолог клиента или нейтральный диалог.",
+        inquiry_type="general",
+        call_result="info_provided",
+        entities=Entities(cities=["Москва"], formats=["щит 3х6"]),
+        sentiment=Sentiment(
+            client_overall="neutral",
+            manager_tone="neutral",
+        ),
+        manager_checklist=ManagerChecklist(),
+        deterministic_speech_metrics={
+            "manager_speech_share": 0.0,
+            "client_speech_share": 1.0,
+            "interruptions_count": 0,
+            "silence_duration_sec": 0.0,
+            "manager_wpm": 0.0,
+            "client_wpm": 120.0,
+        },
+    )
+    data = analysis.model_dump()
+    validate_analysis_schema(data)
+    assert data["sentiment"]["manager_tone"] == "neutral"
+
+
+@pytest.mark.asyncio
+async def test_llm_adapter_refine_speaker_roles_monologue_collapse(monkeypatch):
+    """Verify that when LLM returns null speakers (monologue), refine_speaker_roles collapses all segments to SPEAKER_0."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.llm.local_adapter import LocalLlamaCppAdapter
+
+    adapter = LocalLlamaCppAdapter()
+    segments = [
+        {
+            "start": 0.0,
+            "end": 2.0,
+            "text": "Здравствуйте, меня интересует щит.",
+            "speaker_label": "SPEAKER_0",
+        },
+        {
+            "start": 2.5,
+            "end": 5.0,
+            "text": "В районе Балашихи на октябрь.",
+            "speaker_label": "SPEAKER_1",
+        },
+    ]
+
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json = MagicMock(
+        return_value={"choices": [{"message": {"content": '{"manager": null, "client": null}'}}]}
+    )
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    monkeypatch.setattr("httpx.AsyncClient", MagicMock(return_value=mock_client))
+
+    refined = await adapter.refine_speaker_roles(segments)
+    spk_labels = {s["speaker_label"] for s in refined}
+    assert len(spk_labels) == 1
+    assert "SPEAKER_0" in spk_labels
+    assert all(s["speaker_role"] == "client" for s in refined)
+
+
 @pytest.mark.asyncio
 async def test_transcript_download_headers():
     """Verify that GET /v1/calls/{id}/transcript returns Content-Disposition attachment headers."""
