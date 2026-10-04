@@ -105,8 +105,11 @@ services:
     - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
     - REDIS_URL=redis://redis:6379/0
     - S3_ENDPOINT_URL=http://minio:9000
-    - DEV_TOKEN=${DEV_TOKEN:-}
-    - ASR_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
+    - APP_PROFILE=${APP_PROFILE:-small}
+    - APP_ENV=${APP_ENV:-development}
+    - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+    - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
+    - ASR_MODEL_NAME=${ASR_MODEL_NAME:-./models/whisper-podlodka-turbo-ct2}
     - VOICE_SEARCH_MODEL_NAME=./models/whisper-small
     - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-2}
     - ASR_THREADS=2
@@ -115,6 +118,7 @@ services:
     - /home/zet/Projects/apc-speech/app:/app/app:ro
     - /home/zet/Projects/apc-speech/config:/app/config:ro
     - /home/zet/Projects/apc-speech/schemas:/app/schemas:ro
+    - /home/zet/Projects/apc-speech/scripts:/app/scripts:ro
     - /home/zet/Projects/apc-speech/audit_tests:/app/audit_tests:ro
     ports:
     - 127.0.0.1:18000:8000
@@ -153,21 +157,25 @@ services:
     - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
     - REDIS_URL=redis://redis:6379/0
     - S3_ENDPOINT_URL=http://minio:9000
-    - DEV_TOKEN=${DEV_TOKEN:-}
-    - ASR_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
+    - APP_PROFILE=${APP_PROFILE:-small}
+    - APP_ENV=${APP_ENV:-development}
+    - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+    - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
+    - ASR_MODEL_NAME=${ASR_MODEL_NAME:-./models/whisper-podlodka-turbo-ct2}
     - ASR_COMPUTE_TYPE=int8
     volumes:
     - /home/zet/Projects/apc-speech/models:/app/models:ro
     - /home/zet/Projects/apc-speech/app:/app/app:ro
     - /home/zet/Projects/apc-speech/config:/app/config:ro
     - /home/zet/Projects/apc-speech/schemas:/app/schemas:ro
+    - /home/zet/Projects/apc-speech/scripts:/app/scripts:ro
     - /home/zet/Projects/apc-speech/audit_tests:/app/audit_tests:ro
     healthcheck:
       test:
       - CMD
       - python
-      - -c
-      - import sys; sys.exit(0)
+      - /app/scripts/worker_healthcheck.py
+      - long_audio_processor
       interval: 10s
       timeout: 5s
       retries: 3
@@ -194,16 +202,20 @@ services:
     environment:
     - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
     - REDIS_URL=redis://redis:6379/0
-    - DEV_TOKEN=${DEV_TOKEN:-}
+    - APP_PROFILE=${APP_PROFILE:-small}
+    - APP_ENV=${APP_ENV:-development}
+    - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+    - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
     volumes:
     - /home/zet/Projects/apc-speech/app:/app/app:ro
+    - /home/zet/Projects/apc-speech/scripts:/app/scripts:ro
     - /home/zet/Projects/apc-speech/audit_tests:/app/audit_tests:ro
     healthcheck:
       test:
       - CMD
       - python
-      - -c
-      - import sys; sys.exit(0)
+      - /app/scripts/worker_healthcheck.py
+      - callback_dispatcher
       interval: 10s
       timeout: 5s
       retries: 3
@@ -227,16 +239,19 @@ services:
     - /home/zet/Projects/apc-speech/audit_tests/audit.env
     environment:
     - REDIS_URL=redis://redis:6379/0
-    - DEV_TOKEN=${DEV_TOKEN:-}
+    - APP_PROFILE=${APP_PROFILE:-small}
+    - APP_ENV=${APP_ENV:-development}
+    - DEV_TOKEN=${DEV_TOKEN:-dev-token}
     volumes:
     - /home/zet/Projects/apc-speech/models:/app/models:ro
     - /home/zet/Projects/apc-speech/app:/app/app:ro
+    - /home/zet/Projects/apc-speech/scripts:/app/scripts:ro
     healthcheck:
       test:
       - CMD
       - python
-      - -c
-      - import sys; sys.exit(0)
+      - /app/scripts/worker_healthcheck.py
+      - fast_voice_search
       interval: 10s
       timeout: 5s
       retries: 3
@@ -244,16 +259,57 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 512M
+          memory: 1024M
+  cleanup-retention:
+    build:
+      context: /home/zet/Projects/apc-speech
+      dockerfile: Dockerfile
+    command: python scripts/retention_loop.py
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      alembic-migrate:
+        condition: service_completed_successfully
+    env_file:
+    - /home/zet/Projects/apc-speech/audit_tests/audit.env
+    environment:
+    - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
+    - S3_ENDPOINT_URL=http://minio:9000
+    - APP_PROFILE=${APP_PROFILE:-small}
+    - APP_ENV=${APP_ENV:-development}
+    volumes:
+    - /home/zet/Projects/apc-speech/app:/app/app:ro
+    - /home/zet/Projects/apc-speech/scripts:/app/scripts:ro
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - /app/scripts/worker_healthcheck.py
+      - retention_loop
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 64M
   llm-runtime:
     image: ghcr.io/ggml-org/llama.cpp:server-b3900
     restart: unless-stopped
     profiles:
     - local-full
-    command: '-m /models/qwen2.5-7b-instruct-q4_k_m.gguf --alias qwen2.5-7b-instruct
-      --host 0.0.0.0 --port 8080 -c 4096 --n-gpu-layers 0
-
-      '
+    entrypoint:
+    - /bin/sh
+    - -c
+    command: "\"if [ -f /models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf ];\
+      \ then\n   MODEL=/models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf;\n else\n\
+      \   MODEL=/models/qwen2.5-7b-instruct-q4_k_m.gguf;\n fi;\n exec /app/llama-server\
+      \ -m $$MODEL --alias qwen2.5-7b-instruct --host 0.0.0.0 --port 8080 -c 4096\
+      \ --n-gpu-layers 0\"\n"
     volumes:
     - /home/zet/Projects/apc-speech/models:/models:ro
     ports:
