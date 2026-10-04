@@ -460,6 +460,10 @@ class RussianTextNormalizer:
                 lambda m: "Раз-раз" if m.group(0)[0].isupper() else "раз-раз",
             ),
             (
+                re.compile(r"\bрасслаз\b", re.IGNORECASE),
+                lambda m: "Раз-раз" if m.group(0)[0].isupper() else "раз-раз",
+            ),
+            (
                 re.compile(
                     r"\bсчет(а|ов|ам|ами|ах)?\s+(3×6|6×3|5×12|4×12|ситиборд|билборд|экран|призматрон|суперсайт)",
                     re.IGNORECASE,

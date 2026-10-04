@@ -172,6 +172,7 @@ class AsrEngine:
             else (DEFAULT_CONVERSATION_PROMPT if resolved_lang == "ru" else None)
         )
         applied_hotwords = hotwords.strip() if (hotwords and hotwords.strip()) else None
+        temperature = kwargs.pop("temperature", 0.0)
 
         default_vad = dict(
             threshold=0.35,
@@ -185,6 +186,7 @@ class AsrEngine:
             audio,
             language=resolved_lang,
             beam_size=beam_size,
+            temperature=temperature,
             initial_prompt=prompt,
             hotwords=applied_hotwords,
             vad_filter=vad_filter,

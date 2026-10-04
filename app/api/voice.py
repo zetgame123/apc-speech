@@ -25,6 +25,7 @@ logger = get_logger("voice_search_api")
 _voice_search_semaphore = asyncio.Semaphore(4)
 
 VOICE_SEARCH_INITIAL_PROMPT = (
+    "Раз-раз, проверка связи. "
     "Поиск и аренда наружной рекламы в Москве и Московской области: "
     "свободные рекламные щиты 3×6, ситиборды, сити-формат, билборды, суперсайты 5×12, медиафасады, digital-экраны. "
     "Периоды размещения: на октябрь, на ноябрь, на декабрь, на январь, на весну, на месяц, на полгода. "
@@ -32,6 +33,7 @@ VOICE_SEARCH_INITIAL_PROMPT = (
     "Балашиха, Химки, Мытищи, Подольск, Красногорск, Одинцово, Люберцы, Королёв, МКАД, ТТК, шоссе, проспект, метро."
 )
 VOICE_SEARCH_HOTWORDS = (
+    "раз-раз проверка связь "
     "ситиборд ситиборды ситиборда ситибордов билборд билборды суперсайт сити-формат медиафасад "
     "Бутово Бутове Южное Северное Митино Строгино Марьино Чертаново Люблино "
     "Балашиха Химки Мытищи Подольск Красногорск Одинцово Люберцы "
@@ -128,11 +130,12 @@ async def voice_search(
         eng = get_voice_search_engine()
         stream = io.BytesIO(clean_bytes)
         cfg = get_settings()
-        beam_size = max(1, cfg.voice_search_beam_size)
+        beam_size = max(2, cfg.voice_search_beam_size)
         segs, metadata = eng.transcribe(
             stream,
             language=lang,
             beam_size=beam_size,
+            temperature=0.0,
             initial_prompt=VOICE_SEARCH_INITIAL_PROMPT,
             hotwords=VOICE_SEARCH_HOTWORDS,
             vad_filter=True,

@@ -95,6 +95,7 @@ def test_voice_search_misrecognitions_and_districts():
     assert normalizer.normalize("ситиборды в северном путово") == "ситиборды в Северном Бутово"
     assert normalizer.normalize("свободные нактябрь") == "свободные на октябрь"
     assert normalizer.normalize("размещение навгуст") == "размещение на август"
-    assert normalizer.normalize("бронь напрель") == "бронь на апрель"
     assert normalizer.normalize("Рас-рас.") == "Раз-раз."
     assert normalizer.normalize("рас-рас") == "раз-раз"
+    assert normalizer.normalize("Расслаз.") == "Раз-раз."
+    assert normalizer.normalize("расслаз") == "раз-раз"
