@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     # Application Profile
     app_profile: str = Field(default="small", alias="APP_PROFILE")
-    app_env: str = Field(default="production", alias="APP_ENV")
+    app_env: str = Field(default="development", alias="APP_ENV")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     debug: bool = Field(default=False, alias="DEBUG")
 
@@ -21,8 +21,10 @@ class Settings(BaseSettings):
     # Auth & Security
     # Format: token:scope:namespace (comma-separated), or plain tokens in dev mode
     api_tokens_hashed: str = Field(default="", alias="API_TOKENS_HASHED")
-    dev_token: str | None = Field(default=None, alias="DEV_TOKEN")
-    callback_signing_secret: str = Field(default="", alias="CALLBACK_SIGNING_SECRET")
+    dev_token: str | None = Field(default="dev-token", alias="DEV_TOKEN")
+    callback_signing_secret: str = Field(
+        default="dev-secret-change-me-in-production-32chars!!", alias="CALLBACK_SIGNING_SECRET"
+    )
 
     # CORS — comma-separated list of allowed origins, "*" allows all (dev only)
     cors_allowed_origins: str = Field(

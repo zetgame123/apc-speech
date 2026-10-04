@@ -7,6 +7,7 @@ import sys
 
 def main() -> int:
     expected = sys.argv[1] if len(sys.argv) == 2 else ""
+    my_pid = os.getpid()
     pids = [1]
     try:
         pids.extend(int(p) for p in os.listdir("/proc") if p.isdigit() and int(p) != 1)
@@ -14,6 +15,8 @@ def main() -> int:
         pass
 
     for pid in pids:
+        if pid == my_pid:
+            continue
         try:
             with open(f"/proc/{pid}/cmdline", "rb") as stream:
                 command = stream.read().replace(b"\0", b" ").decode(errors="replace")

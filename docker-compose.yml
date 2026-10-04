@@ -97,7 +97,10 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
-      - DEV_TOKEN=${DEV_TOKEN:-}
+      - APP_PROFILE=${APP_PROFILE:-small}
+      - APP_ENV=${APP_ENV:-development}
+      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
       - ASR_MODEL_NAME=${ASR_MODEL_NAME:-./models/whisper-podlodka-turbo-ct2}
       - VOICE_SEARCH_MODEL_NAME=./models/whisper-small
       - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-2}
@@ -107,6 +110,7 @@ services:
       - ./app:/app/app:ro
       - ./config:/app/config:ro
       - ./schemas:/app/schemas:ro
+      - ./scripts:/app/scripts:ro
     ports:
       - "8000:8000"
     healthcheck:
@@ -138,7 +142,10 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
-      - DEV_TOKEN=${DEV_TOKEN:-}
+      - APP_PROFILE=${APP_PROFILE:-small}
+      - APP_ENV=${APP_ENV:-development}
+      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
       - ASR_MODEL_NAME=${ASR_MODEL_NAME:-./models/whisper-podlodka-turbo-ct2}
       - ASR_COMPUTE_TYPE=int8
     volumes:
@@ -174,7 +181,10 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
-      - DEV_TOKEN=${DEV_TOKEN:-}
+      - APP_PROFILE=${APP_PROFILE:-small}
+      - APP_ENV=${APP_ENV:-development}
+      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
     volumes:
       - ./app:/app/app:ro
       - ./scripts:/app/scripts:ro
@@ -203,7 +213,9 @@ services:
         required: false
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - DEV_TOKEN=${DEV_TOKEN:-}
+      - APP_PROFILE=${APP_PROFILE:-small}
+      - APP_ENV=${APP_ENV:-development}
+      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
     volumes:
       - ./models:/app/models:ro
       - ./app:/app/app:ro
@@ -235,9 +247,16 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
       - S3_ENDPOINT_URL=http://minio:9000
+      - APP_PROFILE=${APP_PROFILE:-small}
+      - APP_ENV=${APP_ENV:-development}
     volumes:
       - ./app:/app/app:ro
       - ./scripts:/app/scripts:ro
+    healthcheck:
+      test: ["CMD", "python", "/app/scripts/worker_healthcheck.py", "retention_loop"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     deploy:
       resources:
         limits:
