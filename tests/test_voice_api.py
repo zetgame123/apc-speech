@@ -225,3 +225,13 @@ async def test_voice_sample_audio_endpoint():
         assert res.status_code in (200, 404)
         if res.status_code == 200:
             assert res.headers.get("content-type") == "audio/wav"
+
+
+def test_asr_engine_transcribe_signature_accepts_vad_parameters():
+    """AsrEngine.transcribe must accept vad_parameters without raising TypeError."""
+    import inspect
+
+    from app.asr.engine import AsrEngine
+
+    sig = inspect.signature(AsrEngine.transcribe)
+    assert "vad_parameters" in sig.parameters

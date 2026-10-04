@@ -130,6 +130,8 @@ class AsrEngine:
         vad_filter: bool = True,
         hotwords: str | None = None,
         word_timestamps: bool = True,
+        vad_parameters: dict[str, Any] | None = None,
+        **kwargs: Any,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """
         Transcribes audio with faster-whisper.
@@ -143,6 +145,14 @@ class AsrEngine:
         )
         applied_hotwords = hotwords.strip() if (hotwords and hotwords.strip()) else None
 
+        default_vad = dict(
+            threshold=0.35,
+            min_silence_duration_ms=450,
+            speech_pad_ms=300,
+        )
+        if vad_parameters:
+            default_vad.update(vad_parameters)
+
         segments_iter, info = self.model.transcribe(
             audio,
             language=resolved_lang,
@@ -150,16 +160,13 @@ class AsrEngine:
             initial_prompt=prompt,
             hotwords=applied_hotwords,
             vad_filter=vad_filter,
-            vad_parameters=dict(
-                threshold=0.35,
-                min_silence_duration_ms=450,
-                speech_pad_ms=300,
-            ),
+            vad_parameters=default_vad,
             word_timestamps=word_timestamps,
             condition_on_previous_text=False,  # CRITICAL: prevents repeating loops
             no_speech_threshold=0.6,
             compression_ratio_threshold=2.4,
             log_prob_threshold=-1.0,
+            **kwargs,
         )
 
         segments = []
