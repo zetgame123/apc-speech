@@ -121,6 +121,34 @@ class AsrEngine:
             logger.error("asr_model_load_error", error=str(e))
             raise
 
+    def warmup(self) -> None:
+        """
+        Executes a minimal dummy forward pass to warm up CTranslate2 kernels,
+        thread pools, memory allocations, and Silero VAD ONNX session.
+        Eliminates cold-start latency for subsequent user queries.
+        """
+        self.load_model()
+        try:
+            import numpy as np
+
+            # 0.5s dummy audio at 16kHz with small sine tone
+            dummy_pcm = np.zeros(8000, dtype=np.float32)
+            dummy_pcm[1000:7000] = 0.02 * np.sin(
+                np.linspace(0, 400 * np.pi, 6000, dtype=np.float32)
+            )
+            list(
+                self.model.transcribe(
+                    dummy_pcm,
+                    language="ru",
+                    beam_size=1,
+                    vad_filter=True,
+                    word_timestamps=False,
+                )[0]
+            )
+            logger.info("asr_engine_warmup_completed", model=self.model_name)
+        except Exception as e:
+            logger.warning("asr_engine_warmup_warning", error=str(e))
+
     def transcribe(
         self,
         audio: Any,

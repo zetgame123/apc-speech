@@ -454,6 +454,11 @@ class RussianTextNormalizer:
 
         # Domain acoustic homophones
         self.homophone_patterns = [
+            # Devoiced "раз-раз" (microphone test phrase acoustic artifact)
+            (
+                re.compile(r"\bрас[- ]рас\b", re.IGNORECASE),
+                lambda m: "Раз-раз" if m.group(0)[0].isupper() else "раз-раз",
+            ),
             (
                 re.compile(
                     r"\bсчет(а|ов|ам|ами|ах)?\s+(3×6|6×3|5×12|4×12|ситиборд|билборд|экран|призматрон|суперсайт)",

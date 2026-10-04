@@ -95,7 +95,7 @@ async def lifespan(app: FastAPI):
         from app.asr.engine import get_voice_search_engine
 
         engine = get_voice_search_engine()
-        engine.load_model()
+        engine.warmup()
         logger.info("voice_search_engine_warmed_up")
     except Exception as e:
         logger.warning("voice_search_warmup_failed", error=str(e))
