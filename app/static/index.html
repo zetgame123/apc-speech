@@ -1587,16 +1587,28 @@
       voiceRecordingStatus.innerText = "Идёт запись... Говорите фразу!";
       
       voiceTimerInterval = setInterval(() => {
-        const sec = ((Date.now() - voiceRecordStartTime) / 1000).toFixed(1);
-        voiceRecordingTimer.innerText = `Запись: ${sec} сек (Нажмите для остановки)`;
+        const elapsed = (Date.now() - voiceRecordStartTime) / 1000;
+        const remain = Math.max(0, 6.0 - elapsed).toFixed(0);
+        voiceRecordingTimer.innerText = `Запись: ${elapsed.toFixed(1)} с (Кликните для отправки или авто-стоп через ${remain} с)`;
       }, 100);
+
+      if (voiceAutoStopTimeout) clearTimeout(voiceAutoStopTimeout);
+      voiceAutoStopTimeout = setTimeout(() => {
+        if (isRecordingVoice) stopVoiceRecording();
+      }, 6000);
 
     } catch (err) {
       alert("Ошибка доступа к микрофону: " + err.message);
     }
   }
 
+  let voiceAutoStopTimeout = null;
+
   function stopVoiceRecording() {
+    if (voiceAutoStopTimeout) {
+      clearTimeout(voiceAutoStopTimeout);
+      voiceAutoStopTimeout = null;
+    }
     if (voiceMediaRecorder && isRecordingVoice) {
       voiceMediaRecorder.stop();
       isRecordingVoice = false;

@@ -103,8 +103,11 @@ services:
       - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
       - ASR_MODEL_NAME=${ASR_MODEL_NAME:-./models/whisper-podlodka-turbo-ct2}
       - VOICE_SEARCH_MODEL_NAME=./models/whisper-small
-      - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-2}
+      - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-1}
       - ASR_THREADS=2
+      - OMP_NUM_THREADS=2
+      - OPENBLAS_NUM_THREADS=2
+      - MKL_NUM_THREADS=2
     volumes:
       - ./models:/app/models:ro
       - ./app:/app/app:ro
@@ -122,8 +125,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2.0'
-          memory: 1280M
+          cpus: '3.0'
+          memory: 1536M
 
   worker-long:
     build:

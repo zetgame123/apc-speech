@@ -128,7 +128,7 @@ async def voice_search(
         eng = get_voice_search_engine()
         stream = io.BytesIO(clean_bytes)
         cfg = get_settings()
-        beam_size = max(2, cfg.voice_search_beam_size)
+        beam_size = max(1, cfg.voice_search_beam_size)
         segs, metadata = eng.transcribe(
             stream,
             language=lang,
