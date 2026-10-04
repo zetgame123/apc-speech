@@ -60,6 +60,7 @@
     .card-custom:hover {
       box-shadow: 0 6px 20px rgba(0, 0, 0, 0.07);
     }
+    .dropdown-menu { z-index: 1060 !important; }
     /* Waveform container */
     #waveform {
       width: 100%;
@@ -244,7 +245,7 @@
     <!-- ========================================================================================= -->
     <div class="tab-pane fade show active" id="tab-calls" role="tabpanel">
       <!-- Upload & Playback Bar -->
-      <div class="card card-custom p-4 mb-4">
+      <div class="card card-custom p-4 mb-4" style="position: relative; z-index: 30;">
         <div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mb-3">
           <div class="d-flex flex-wrap gap-2 align-items-center">
             <input type="file" id="audioFile" class="form-control" accept="audio/*" style="max-width: 260px;">
@@ -298,15 +299,19 @@
           </div>
 
           <div class="d-flex gap-2">
-            <div class="btn-group btn-group-sm">
-              <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" id="btnExportMenu" disabled>
+            <div class="btn-group btn-group-sm dropdown" style="position: relative; z-index: 1050;">
+              <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-display="static" id="btnExportMenu" disabled>
                 <i class="bi bi-download me-1"></i> Экспорт
               </button>
-              <ul class="dropdown-menu dropdown-menu-end">
-                <li><a class="dropdown-item" href="#" id="expJson">JSON с пословными таймкодами</a></li>
-                <li><a class="dropdown-item" href="#" id="expText">Текстовая расшифровка</a></li>
-                <li><a class="dropdown-item" href="#" id="expSrt">Субтитры SRT</a></li>
-                <li><a class="dropdown-item" href="#" id="expVtt">Субтитры VTT</a></li>
+              <ul class="dropdown-menu dropdown-menu-end shadow-lg" style="z-index: 1060; min-width: 260px;">
+                <li><h6 class="dropdown-header text-uppercase small text-muted">Стенограмма</h6></li>
+                <li><a class="dropdown-item py-2" href="#" id="expJson"><i class="bi bi-filetype-json me-2 text-primary"></i>JSON с пословными таймкодами</a></li>
+                <li><a class="dropdown-item py-2" href="#" id="expText"><i class="bi bi-file-text me-2 text-secondary"></i>Текстовая расшифровка (.txt)</a></li>
+                <li><a class="dropdown-item py-2" href="#" id="expSrt"><i class="bi bi-file-earmark-play me-2 text-warning"></i>Субтитры SRT (.srt)</a></li>
+                <li><a class="dropdown-item py-2" href="#" id="expVtt"><i class="bi bi-badge-cc me-2 text-info"></i>Субтитры VTT (.vtt)</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><h6 class="dropdown-header text-uppercase small text-muted">Аналитика</h6></li>
+                <li><a class="dropdown-item py-2" href="#" id="expAnalysis"><i class="bi bi-bar-chart-line me-2 text-success"></i>Полный JSON анализа звонка</a></li>
               </ul>
             </div>
           </div>
@@ -1346,14 +1351,28 @@
       });
   }
 
-  // Trigger Download helper
-  function triggerDownload(url, filename) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  // Trigger Download helper with Authorization header
+  async function triggerDownload(url, filename) {
+    try {
+      const res = await fetch(url, { headers: getHeaders() });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: res.statusText }));
+        alert("Ошибка скачивания: " + (err.message || res.statusText));
+        return;
+      }
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch (e) {
+      console.error("Ошибка при скачивании файла:", e);
+      alert("Ошибка при скачивании: " + e.message);
+    }
   }
 
   // Quick 1-click Transcript Download Buttons
@@ -1384,23 +1403,31 @@
   document.getElementById('expJson').addEventListener('click', (e) => {
     e.preventDefault();
     if (!currentCallId) return;
-    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=json`, '_blank');
+    triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=json`, `transcript_${currentCallId}.json`);
   });
   document.getElementById('expText').addEventListener('click', (e) => {
     e.preventDefault();
     if (!currentCallId) return;
-    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=text`, '_blank');
+    triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=text`, `transcript_${currentCallId}.txt`);
   });
   document.getElementById('expSrt').addEventListener('click', (e) => {
     e.preventDefault();
     if (!currentCallId) return;
-    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=srt`, '_blank');
+    triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=srt`, `transcript_${currentCallId}.srt`);
   });
   document.getElementById('expVtt').addEventListener('click', (e) => {
     e.preventDefault();
     if (!currentCallId) return;
-    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=vtt`, '_blank');
+    triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=vtt`, `transcript_${currentCallId}.vtt`);
   });
+  const expAnalysis = document.getElementById('expAnalysis');
+  if (expAnalysis) {
+    expAnalysis.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (!currentCallId) return;
+      triggerDownload(`/v1/calls/${currentCallId}/analysis?namespace=${getNamespace()}`, `analysis_${currentCallId}.json`);
+    });
+  }
 
   // Initial call load
   setTimeout(refreshCallsList, 800);

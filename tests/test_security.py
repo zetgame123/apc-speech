@@ -36,9 +36,11 @@ async def test_auth_dev_token_in_dev(monkeypatch):
         resp = await client.get(
             "/v1/calls?namespace=test_msk", headers={"Authorization": "Bearer dev-token-xyz"}
         )
-        assert (
-            resp.status_code == 200
-        )  # assuming this route exists and returns 200 or at least doesn't return 401
+        assert resp.status_code == 200
+
+        # Query parameter fallback (for browser downloads)
+        resp_query = await client.get("/v1/calls?namespace=test_msk&token=dev-token-xyz")
+        assert resp_query.status_code == 200
 
 
 @pytest.mark.asyncio

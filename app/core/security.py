@@ -7,7 +7,7 @@ import time
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from fastapi import Security, status
+from fastapi import Query, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import get_settings
@@ -103,17 +103,24 @@ def authenticate_token(token: str) -> AuthContext:
 
 async def verify_auth(
     credentials: HTTPAuthorizationCredentials | None = Security(security_bearer),
+    token: str | None = Query(None, description="Токен авторизации через query-параметр"),
 ) -> AuthContext:
-    if not credentials:
+    raw_token = None
+    if credentials and credentials.credentials:
+        raw_token = credentials.credentials
+    elif token:
+        raw_token = token
+
+    if not raw_token:
         raise AppError(
             error="unauthorized",
             message="Отсутствует заголовок Authorization: Bearer <token>",
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
-    auth_ctx = authenticate_token(credentials.credentials)
+    auth_ctx = authenticate_token(raw_token)
 
     # Check shared revocation in Redis (multi-worker synchronization)
-    token_hash = hash_token(credentials.credentials)
+    token_hash = hash_token(raw_token)
     try:
         from app.queue.redis_streams import get_queue
 
