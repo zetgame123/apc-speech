@@ -292,7 +292,10 @@ async def process_job(job_id: str, data: dict):
             # Use local audio-based diarization
             from app.diarization.mono_diarizer import MonoDiarizer
 
-            mono_diarizer = MonoDiarizer(num_speakers=2)
+            mono_diarizer = MonoDiarizer(
+                num_speakers=2,
+                min_speaker_distance=settings.diarization_min_speaker_distance,
+            )
             raw_segments = mono_diarizer.diarize(mono_pcm, raw_segments)
 
             final_segments, role_conf = role_classifier.classify_mono_speakers(raw_segments)

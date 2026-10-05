@@ -77,7 +77,7 @@ class MonoDiarizer:
     def __init__(
         self,
         num_speakers: int = 2,
-        min_speaker_distance: float = 0.20,
+        min_speaker_distance: float = 0.18,
         campplus_path: str = "models/campplus.onnx",
     ):
         self.num_speakers = num_speakers
@@ -235,12 +235,15 @@ class MonoDiarizer:
         anchor_a = cand_X[row_idx]
         anchor_b = cand_X[col_idx]
 
-        # Group all candidate anchors around the two poles
+        # Group candidate anchors around the two poles with a margin
+        # to avoid contaminating one pole with the other speaker's turns in asymmetric dialogues.
         sim_a = np.dot(cand_X, anchor_a)
         sim_b = np.dot(cand_X, anchor_b)
 
-        group_a = cand_X[sim_a >= sim_b]
-        group_b = cand_X[sim_b > sim_a]
+        margin = sim_a - sim_b
+        conf_margin = 0.05 * max_dist
+        group_a = cand_X[margin >= conf_margin]
+        group_b = cand_X[margin <= -conf_margin]
 
         if len(group_a) == 0 or len(group_b) == 0:
             c0 = anchor_a
@@ -256,6 +259,16 @@ class MonoDiarizer:
 
         final_sep = 1.0 - float(np.dot(c0, c1))
         if final_sep < self.min_speaker_distance:
+            # If centroid averaging reduced separation due to high class imbalance,
+            # but the raw anchor separation is strong (>= 0.30 or >= 1.5 * min_speaker_distance),
+            # fall back to the raw anchor vectors directly.
+            if max_dist >= max(0.30, self.min_speaker_distance * 1.5):
+                logger.info(
+                    "using_raw_anchor_poles_for_asymmetric_dialogue",
+                    max_dist=max_dist,
+                    averaged_sep=final_sep,
+                )
+                return np.array([anchor_a, anchor_b])
             return None
 
         return np.array([c0, c1])
@@ -490,9 +503,7 @@ class MonoDiarizer:
                         turn_ratio = min_turns / max(1, len(cam_labels))
 
                         is_monologue = False
-                        if final_cluster_sep < self.min_speaker_distance or (
-                            len(cam_labels) >= 8 and turn_ratio < 0.08
-                        ):
+                        if final_cluster_sep < self.min_speaker_distance:
                             logger.info(
                                 "monologue_detected_low_cluster_separation",
                                 sep=final_cluster_sep,
@@ -504,7 +515,7 @@ class MonoDiarizer:
                                 from sklearn.metrics import silhouette_score
 
                                 sil = float(silhouette_score(X_cam, cam_labels, metric="cosine"))
-                                if sil < 0.18 or turn_ratio < 0.10:
+                                if sil < 0.12 or (sil < 0.18 and turn_ratio < 0.05):
                                     logger.info(
                                         "monologue_detected_low_silhouette",
                                         silhouette=sil,

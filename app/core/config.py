@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     voice_search_model_name: str = Field(default="base", alias="VOICE_SEARCH_MODEL_NAME")
     voice_search_beam_size: int = Field(default=2, alias="VOICE_SEARCH_BEAM_SIZE")
 
+    # Diarization
+    diarization_min_speaker_distance: float = Field(
+        default=0.18, alias="DIARIZATION_MIN_SPEAKER_DISTANCE"
+    )
+
     # LLM
     local_llm_url: str = Field(default="http://localhost:8080/v1", alias="LOCAL_LLM_URL")
     local_llm_model: str = Field(default="qwen2.5-7b-instruct", alias="LOCAL_LLM_MODEL")

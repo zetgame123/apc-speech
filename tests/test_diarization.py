@@ -167,3 +167,55 @@ def test_mono_diarizer_real_speech_monologue_and_dialogue():
     mono_spks = {s["speaker_label"] for s in res_mono}
     assert len(mono_spks) == 1
     assert "SPEAKER_0" in mono_spks
+
+
+def test_mono_diarizer_asymmetric_dialogue():
+    """Verify that an asymmetric dialogue (one speaker dominates speech) is correctly separated."""
+    sr = 16000
+    dur = 2.0
+    t = np.linspace(0, dur, int(sr * dur), endpoint=False)
+
+    spk1_audio = (
+        0.5 * np.sin(2 * np.pi * 120 * t)
+        + 0.3 * np.sin(2 * np.pi * 240 * t)
+        + 0.2 * np.sin(2 * np.pi * 360 * t)
+    )
+    spk2_audio = (
+        0.5 * np.sin(2 * np.pi * 240 * t)
+        + 0.3 * np.sin(2 * np.pi * 480 * t)
+        + 0.2 * np.sin(2 * np.pi * 720 * t)
+    )
+
+    # Spk1 speaks 5 segments, Spk2 speaks only 1 segment
+    total_audio = np.zeros(int(sr * 15.0), dtype=np.float32)
+    total_audio[int(sr * 0.0) : int(sr * 2.0)] = spk1_audio
+    total_audio[int(sr * 2.5) : int(sr * 4.5)] = spk1_audio
+    total_audio[int(sr * 5.0) : int(sr * 7.0)] = spk1_audio
+    total_audio[int(sr * 7.5) : int(sr * 9.5)] = spk1_audio
+    total_audio[int(sr * 10.0) : int(sr * 12.0)] = spk2_audio  # Only 1 segment of Spk2
+    total_audio[int(sr * 12.5) : int(sr * 14.5)] = spk1_audio
+
+    segments = [
+        {"start": 0.0, "end": 2.0, "text": "Приветствие компании"},
+        {"start": 2.5, "end": 4.5, "text": "Рассказ об условиях программы"},
+        {"start": 5.0, "end": 7.0, "text": "Подробности о пассивном доходе"},
+        {"start": 7.5, "end": 9.5, "text": "Вопрос клиенту о заинтересованности"},
+        {"start": 10.0, "end": 12.0, "text": "Вышлите мне на почту подробности"},
+        {"start": 12.5, "end": 14.5, "text": "Хорошо специалист свяжется с вами"},
+    ]
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        temp_wav = f.name
+        sf.write(temp_wav, total_audio, sr)
+
+    try:
+        diarizer = MonoDiarizer(num_speakers=2, min_speaker_distance=0.10)
+        diarized = diarizer.diarize(temp_wav, segments)
+
+        spks = {s["speaker_label"] for s in diarized}
+        assert len(spks) == 2, f"Expected 2 speakers in asymmetric dialogue, got {spks}"
+        # Segment 4 (spk2) should have a different speaker label than segment 0 (spk1)
+        assert diarized[4]["speaker_label"] != diarized[0]["speaker_label"]
+    finally:
+        if os.path.exists(temp_wav):
+            os.remove(temp_wav)
