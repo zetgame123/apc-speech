@@ -113,6 +113,10 @@ async def test_bitrix24_webhook_endpoint():
     with (
         patch("app.api.integrations.get_queue") as mock_get_queue,
         patch("app.api.integrations.get_db") as mock_get_db,
+        patch(
+            "app.api.integrations.validate_ssrf_url",
+            return_value="https://pub.telephony.bitrix24.ru/records/001.mp3",
+        ),
     ):
         mock_queue = AsyncMock()
         mock_get_queue.return_value = mock_queue

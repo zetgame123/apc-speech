@@ -108,6 +108,8 @@ services:
       - OMP_NUM_THREADS=${ASR_THREADS:-4}
       - OPENBLAS_NUM_THREADS=${ASR_THREADS:-4}
       - MKL_NUM_THREADS=${ASR_THREADS:-4}
+      - RATE_LIMIT_REQUESTS_PER_WINDOW=${RATE_LIMIT_REQUESTS_PER_WINDOW:-30}
+      - RATE_LIMIT_WINDOW_SEC=${RATE_LIMIT_WINDOW_SEC:-10}
     volumes:
       - ./models:/app/models:ro
       - ./app:/app/app:ro

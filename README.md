@@ -48,14 +48,16 @@ flowchart TD
     API -->|Загрузка аудио| MinIO
     API -->|Создание записи Call/Job| PG
     API -->|XADD jobs_long| Redis
-    API -->|Голосовой поиск <= 2.5с| WF["Worker-Fast"]
+    API -->|Голосовой поиск <= 2.5с (in-process)| VS["Whisper Small (in-memory threadpool)"]
 
     subgraph Workers ["Фоновые исполнители"]
         WL["Worker-Long (Обработка звонков)"]
         WC["Worker-Callback (Доставка вебхуков)"]
+        CR["Cleanup-Retention (Плановая очистка данных)"]
+        WF["Worker-Fast (Опциональный масштабируемый воркер)"]
     end
 
-    subgraph LLM_Runtime ["Локальный LLM-рантайм"]
+    subgraph LLM_Runtime ["Локальный LLM-рантайм (профиль local-full)"]
         LLM["llama.cpp server (порт 8080)\nQwen 2.5 7B Instruct (GGUF Q4_K_M)"]
     end
 
@@ -69,6 +71,8 @@ flowchart TD
     WL -->|XADD callbacks| Redis
 
     WC -->|HMAC-SHA256 Callback| Client
+    CR -->|Retention: удаление аудио >14д| MinIO
+    CR -->|Retention: удаление текста >365д| PG
     API -.->|Мониторинг и дашборд| PG
 ```
 
@@ -78,27 +82,30 @@ flowchart TD
    * REST API endpoints, валидация входящих запросов, проверка токенов (Bearer / Dev-Token) с синхронизацией отозванных токенов через Redis.
    * Потоковая загрузка аудиофайлов напрямую во временные файлы без дублирования в оперативной памяти (защита от OOM).
    * Защита от SSRF при скачивании аудио по URL (валидация каждого редиректа, блокировка loopback, RFC1918, link-local, облачных metadata-сервисов и потоковое ограничение размера).
-   * Синхронная обработка голосового поиска с ограничением параллельности (`asyncio.Semaphore(4)`).
+   * Сверхбыстрый синхронный голосовой поиск через изолированный пул потоков с прогретой моделью (`faster-whisper small`) и семафором параллельности (`asyncio.Semaphore(4)`), гарантирующий SLA $\le 2{,}5$ с (см. ADR-007).
    * Раздача веб-дашборда с интерактивным аудиоплеером и караоке-таймкодами.
-   * Health/Readiness пробы (`/health`, `/ready`).
+   * Health/Readiness пробы (`/health`, `/ready`) и Prometheus метрики (`/metrics`).
 2. **`worker-long` (Python Async Worker)**:
    * Читает очередь `jobs_long` через Redis Streams (с поддержкой Consumer Groups, Pending Entries List и очереди недоставленных сообщений DLQ `jobs:audio:dlq`).
    * Проверяет жесткие лимиты длительности аудио (`MAX_AUDIO_DURATION_HOURS`) и выполняет экспоненциальный retry при временных сбоях.
    * Выполняет полный конвейер: чанкинг, ASR (Whisper), CAM++ диаризацию, марковское сглаживание, LLM-доразметку ролей, расчет акустических метрик, PII-маскирование и строгую валидацию JSON-схемы анализа.
-3. **`worker-fast` (Python Async Worker, опциональный профиль `worker-fast`)**:
-   * Выделенный микро-воркер для асинхронного голосового поиска при масштабировании на отдельный пул инстансов (`docker compose --profile worker-fast up`). По умолчанию в компактном профиле голосовой поиск обрабатывается API-шлюзом.
-4. **`worker-callback` (Python Async Worker)**:
-   * Гарантированная доставка вебхуков с результатами анализа в вызывающие системы с расчетом HMAC-SHA256 подписи в заголовке `X-Signature-SHA256` и экспоненциальным backoff (до 5 попыток). Блокировка редиректов для защиты от SSRF.
-5. **`llm-runtime` (llama.cpp server)**:
+3. **`worker-callback` (Python Async Worker)**:
+   * Гарантированная доставка вебхуков с результатами анализа в вызывающие системы с расчетом HMAC-SHA256 подписи в заголовке `X-Apc-Signature` (формат `sha256=HMAC(...)`), `X-Apc-Timestamp` и экспоненциальным backoff (5 попыток: 5с, 15с, 60с, 300с, 900с). Блокировка редиректов и приватных сетей для защиты от SSRF.
+4. **`cleanup-retention` (Python Background Loop Worker)**:
+   * Автономный фоновый сервис соблюдения раздельных политик хранения (GDPR/152-ФЗ): ежедневно удаляет аудиозаписи из MinIO старше `RETENTION_AUDIO_DAYS` (по умолчанию 14 дней) и текстовые транскрипты/анализы из PostgreSQL старше `RETENTION_TEXT_DAYS` (по умолчанию 365 дней).
+5. **`worker-fast` (Python Async Worker, опциональный профиль `worker-fast`)**:
+   * Выделенный микро-воркер для асинхронного голосового поиска при горизонтальном масштабировании на отдельный пул инстансов (`docker compose --profile worker-fast up`). По умолчанию в компактном профиле голосовой поиск обрабатывается API-шлюзом с ультранизкой задержкой.
+6. **`llm-runtime` (llama.cpp server, профиль `local-full`)**:
    * Контейнер на базе `ghcr.io/ggml-org/llama.cpp:server`.
-   * Обслуживает локальную квантованную модель `Qwen 2.5 7B Instruct` (`qwen2.5-7b-instruct-q4_k_m.gguf`, 4.4 ГБ).
+   * Обслуживает локальную квантованную модель `Qwen 2.5 7B Instruct` (`qwen2.5-7b-instruct-q4_k_m.gguf` или шарды, 4.4 ГБ).
    * Предоставляет OpenAI-совместимый эндпоинт `/v1/chat/completions` со строгим форсированием JSON-схем (`json_schema`).
-6. **`postgres` (PostgreSQL 16 + pgvector)**:
+7. **`postgres` (PostgreSQL 16 + pgvector)**:
    * Хранит звонки (`calls`), задачи (`jobs`), порепличные сегменты (`transcript_segments`), структурированные анализы (`analyses`), историю вебхуков (`callback_logs`) и эмбеддинги фраз (`embeddings`).
-7. **`redis` (Redis 7 Alpine)**:
+8. **`redis` (Redis 7 Alpine)**:
    * Персистентные потоки задач Redis Streams, rate limiting (Sliding Window), кэширование токенов.
-8. **`minio` (S3-совместимое объектное хранилище)**:
+9. **`minio` (S3-совместимое объектное хранилище)**:
    * Хранение исходных и обработанных аудиозаписей с presigned URL доступом и поддержкой жизненного цикла (retention policy).
+
 
 ---
 
@@ -323,23 +330,32 @@ cp .env.example .env
 * Для режима с локальной нейросетью Qwen 2.5 7B: `APP_PROFILE=local-full`
 * Задайте `DEV_TOKEN=my-secure-token` и `CALLBACK_SIGNING_SECRET`.
 
-### 2. Загрузка моделей
+### 2. Загрузка моделей (обязательно перед запуском контейнеров)
+
+Перед первым запуском необходимо загрузить локальные веса моделей в папку `./models/`, которая монтируется в контейнеры как read-only volume:
+
 ```bash
-# Загрузка весов Whisper, CAM++ ONNX и Qwen GGUF
-python3 scripts/download_models.py
+# Для профиля small (модель поиска whisper-small + модель длинного ASR whisper-podlodka-turbo-ct2 + CAM++ ONNX):
+uv run python scripts/download_models.py --profile small
+
+# Для профиля local-full (дополнительно загружает Qwen 2.5 7B Instruct GGUF, ~4.4 ГБ):
+uv run python scripts/download_models.py --profile local-full
 ```
-Файлы будут сохранены в каталог `./models/`:
-* `models/campplus.onnx` (~28 МБ)
-* `models/whisper-podlodka-turbo-ct2/` (~1.6 ГБ)
-* `models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf` (или монолитный `qwen2.5-7b-instruct-q4_k_m.gguf`, ~4.4 ГБ суммарно, для `local-full`)
+
+Загруженные файлы сохраняются в `./models/`:
+* `models/campplus.onnx` (~28 МБ) — эмбеддинги спикеров для моно-диаризации;
+* `models/whisper-small/` (~960 МБ) — ультрабыстрое распознавание короткого голосового поиска;
+* `models/whisper-podlodka-turbo-ct2/` (~1.6 ГБ) — оптимизированная модель для длинных русскоязычных звонков;
+* `models/qwen2.5-7b-instruct-q4_k_m-*.gguf` (~4.4 ГБ, только для `local-full`) — локальная LLM для семантического анализа.
 
 ### 3. Запуск контейнеров
 
 ```bash
-# Для профиля small (без LLM, 4 ГБ ОЗУ)
+# 1. Запуск базового профиля small (2 vCPU / 4 ГБ RAM, без LLM):
+# Поднимает Postgres, Redis, MinIO, миграции Alembic, API, worker-long, worker-callback, cleanup-retention
 docker compose up -d --build
 
-# Для профиля local-full (с Qwen 2.5 7B, 8+ ГБ ОЗУ)
+# 2. Запуск полного локального профиля local-full (с локальным LLM-рантаймом Qwen 2.5 7B):
 docker compose --profile local-full up -d --build
 ```
 
@@ -750,7 +766,13 @@ curl -X POST "http://localhost:8000/v1/admin/tokens/revoke" \
 ### 14. Служебные эндпоинты
 * `GET /health`: статус `{"status": "ok", "version": "1.0.0", "profile": "local-full"}`.
 * `GET /ready`: проверка доступности зависимостей (PostgreSQL, Redis, MinIO S3). Возвращает `200` или `503`.
-* `GET /metrics`: метрики сервиса в текстовом формате Prometheus (счётчики запросов, сборщик мусора, длительность).
+* `GET /metrics`: кастомные и системные метрики сервиса в текстовом формате Prometheus:
+  * `apc_http_requests_total` — счетчик обработанных HTTP-запросов (по методу, эндпоинту и статус-коду);
+  * `apc_http_request_duration_seconds` — гистограмма задержек HTTP-запросов;
+  * `apc_jobs_total` — счетчик обработанных фоновых заданий (по статусу и namespace);
+  * `apc_voice_search_duration_seconds` — гистограмма длительности распознавания голосового поиска;
+  * `apc_queue_size` — глубина очередей задач в Redis Streams.
+
 
 ---
 
@@ -836,17 +858,18 @@ curl -X POST "http://localhost:8000/v1/admin/tokens/revoke" \
 ├── docs/
 │   ├── architecture.md         # Архитектурный дизайн (включая протокол WebSocket-стриминга)
 │   ├── benchmark-report.md     # Отчёт о замерах производительности (WER, DER, RTF, Latency)
-│   ├── decisions.md            # Принятые архитектурные решения (ADR-001 — ADR-010)
+│   ├── decisions.md            # Принятые архитектурные решения (ADR-001 — ADR-007)
 │   ├── known-issues.md         # Известные ограничения и технический долг
 │   ├── questions.md            # Вопросы и согласования с заказчиком
 │   └── runbook.md              # Инструкции по эксплуатации и инцидентам
 ├── evaluation/                 # Оценочный стенд (wer_cer.py, der.py, run.py)
-├── models/                     # Локальные модели (Whisper, CAM++ ONNX, Qwen 2.5 7B GGUF)
+├── models/                     # Локальные модели (Whisper Small, Whisper Podlodka Turbo, CAM++ ONNX, Qwen 2.5 7B GGUF)
 ├── schemas/                    # JSON-схема анализа (analysis_schema_v1.json)
-├── scripts/                    # S3 Inbox watcher, скрипты замеров и бенчмарков
-├── tests/                      # Полный набор тестов (unit, integration, contract) — 97 тестов
+├── scripts/                    # Загрузчик моделей, retention-цикл, хелсчеки воркеров, S3 watcher, бенчмарки
+├── tests/                      # Полный набор штатных тестов (unit, integration, contract) — 104 теста
+├── audit_tests/                # Независимый набор аудиторских тестов на соответствие ТЗ — 40 тестов
 ├── Dockerfile                  # Multi-stage Dockerfile без root-прав (пользователь apcuser)
-├── docker-compose.yml          # Оркестрация полного стека (8 контейнеров с healthcheck)
+├── docker-compose.yml          # Оркестрация стека (Postgres, Redis, MinIO, миграции, API, воркеры, retention loop, LLM)
 └── openapi.yaml                # Спецификация OpenAPI 3.1
 ```
 
@@ -854,23 +877,33 @@ curl -X POST "http://localhost:8000/v1/admin/tokens/revoke" \
 
 ## Тестирование и контроль качества
 
-Проект покрыт автоматическими тестами на базе `pytest` (**97 тестов**):
+Проект полностью покрыт автоматическими тестами (**104 штатных теста + 40 независимых аудиторских тестов**):
 * **Контрактные тесты API**: соответствие схеме OpenAPI 3.1, ответы `/health`, `/ready`, `/metrics`, экспорт CSV, прямое скачивание расшифровок (`Content-Disposition: attachment`).
 * **Тесты приёма аудио**: потоковая загрузка multipart, URL (потоковая передача с жестким лимитом байт и защита от SSRF с пошаговой валидацией редиректов), объекты S3/MinIO.
 * **Акустические тесты диаризации**: CAM++ ONNX, сплит стерео, классификация ролей «менеджер/клиент», устойчивость к монологам.
 * **Тесты детерминированных метрик**: корректность расчета WPM, интервалов пауз и перебиваний.
 * **Тесты контроля качества и эмоций**: расчет интегрального Compliance Score (0–100%), аудит нарушений скрипта и стоп-слов, распределение эмоций (позитив/нейтрал/негатив), валидация по схеме JSON Schema Draft 2020-12.
 * **Тесты безопасности и аудита**: защита от SSRF (блокировка локальных адресов и редиректов), разграничение областей токенов (`admin`, `write`, `read`), горячий отзыв токенов с синхронизацией через Redis, жесткие лимиты длительности аудио (`MAX_AUDIO_DURATION_HOURS`).
-* **Тесты PII-маскирования**: сокрытие телефонов, карт, паспортов и e-mail (включая маскирование в истории голосового поиска).
+* **Тесты PII-маскирования**: сокрытие телефонов (включая сложные формы и прописные числительные), карт, паспортов и e-mail (включая маскирование в истории голосового поиска).
 * **Тесты чанкинга и очередей**: адаптивный VAD-чанкинг без обрезки слов, дедупликация перекрытий, обработка сбоев с экспоненциальным backoff и отправкой в DLQ (`jobs:audio:dlq`).
-* **Тесты кластеризации**: кластеризация запросов наружной рекламы на базе TF-IDF + HDBSCAN.
+* **Тесты кластеризации**: кластеризация запросов наружной рекламы на базе TF-IDF + HDBSCAN, обработка краевых случаев с короткими векторами.
 * **Тесты голосового поиска и истории**: акустическая нормализация терминов наружной рекламы («ситиборд»), соблюдение SLA/latency, персистентность, TTL и очистка общей истории запросов в Redis при GDPR-запросах.
 
 ### Запуск тестов:
 ```bash
-uv run pytest
+# 1. Запуск штатного набора тестов:
+uv run pytest tests/ -v
+# Результат: 104 passed
+
+# 2. Запуск независимых аудиторских тестов:
+uv run pytest audit_tests/test_independent.py -v
+# Результат: 40 passed
+
+# 3. Проверка линтером и форматтером Ruff:
+uv run ruff check .
+uv run ruff format --check .
 ```
-Все **97 тестов** проходят успешно (`97 passed`).
+Все **144 теста** проходят успешно (`144 passed`).
 
 ---
 

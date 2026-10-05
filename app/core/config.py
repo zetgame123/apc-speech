@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     retention_audio_days: int = Field(default=14, alias="RETENTION_AUDIO_DAYS")
     retention_text_days: int = Field(default=365, alias="RETENTION_TEXT_DAYS")
 
+    # Rate Limiting
+    rate_limit_requests_per_window: int = Field(default=5, alias="RATE_LIMIT_REQUESTS_PER_WINDOW")
+    rate_limit_window_sec: int = Field(default=10, alias="RATE_LIMIT_WINDOW_SEC")
+
 
 @lru_cache
 def get_settings() -> Settings:

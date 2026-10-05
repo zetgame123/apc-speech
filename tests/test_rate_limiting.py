@@ -58,6 +58,12 @@ def mock_rate_limit_deps(monkeypatch):
     """Mock ASR, preprocessor, and rate limiter with shared FakeRedis."""
     fake_redis = FakeRedis()
 
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("RATE_LIMIT_REQUESTS_PER_WINDOW", "5")
+    monkeypatch.setenv("RATE_LIMIT_WINDOW_SEC", "10")
+    get_settings.cache_clear()
+
     mock_queue = MagicMock()
     mock_queue.get_client = AsyncMock(return_value=fake_redis)
     monkeypatch.setattr("app.api.rate_limit.get_queue", lambda: mock_queue)
