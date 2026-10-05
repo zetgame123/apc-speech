@@ -1,5 +1,0 @@
-Static OpenAPI VALID
-Analysis JSON Schema VALID
-/v1/jobs/upload static response codes ['202', '400', '401', '413', '429'] runtime response codes ['202', '422']
-/v1/texts/analyze static response codes ['200'] runtime response codes ['200', '422']
-/v1/voice/search static response codes ['200', '400', '401', '413', '429', '500'] runtime response codes ['200', '422']

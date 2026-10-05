@@ -1,2 +1,0 @@
-worker-long-1  | {"event": "sigterm_received_stopping_gracefully", "timestamp": "2026-10-03T19:01:52.999333Z", "logger": "long_worker", "level": "info"}
-worker-long-1  | {"group": "group:workers", "event": "long_audio_processor_worker_started", "timestamp": "2026-10-03T19:01:55.229111Z", "logger": "long_worker", "level": "info"}

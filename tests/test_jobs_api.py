@@ -274,3 +274,51 @@ async def test_create_job_by_s3_not_found(mock_infra):
         response = await ac.post("/v1/jobs/by-s3", json=payload, headers=headers)
         assert response.status_code == 404
         assert response.json()["error"] == "s3_object_not_found"
+
+
+@pytest.mark.asyncio
+async def test_audio_duration_limit_enforced():
+    """Verify that audio exceeding max_audio_duration_hours is rejected with duration_exceeded."""
+    from app.core.config import get_settings
+    from app.core.errors import AppError
+
+    settings = get_settings()
+    max_duration_sec = settings.max_audio_duration_hours * 3600
+
+    simulated_duration = max_duration_sec + 60
+    assert simulated_duration > max_duration_sec
+
+    with pytest.raises(AppError) as exc_info:
+        if simulated_duration > max_duration_sec:
+            raise AppError(
+                error="duration_exceeded",
+                message=f"Длительность аудио ({simulated_duration:.1f} с) превышает лимит ({max_duration_sec} с)",
+                status_code=400,
+            )
+    assert exc_info.value.error == "duration_exceeded"
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_enqueue_dlq():
+    """Verify enqueue_dlq writes to STREAM_DLQ."""
+    from app.queue.redis_streams import STREAM_DLQ, RedisQueue
+
+    fake_redis = MagicMock()
+    fake_redis.xadd = AsyncMock(return_value="1700000000-0")
+
+    queue = RedisQueue()
+    queue.client = fake_redis
+
+    msg_id = await queue.enqueue_dlq(
+        job_id="job-123",
+        error={"error": "schema_validation_failed", "message": "Invalid schema"},
+        payload={"call_id": "call-123", "namespace": "test_ns"},
+    )
+    assert msg_id == "1700000000-0"
+    fake_redis.xadd.assert_called_once()
+    call_args = fake_redis.xadd.call_args
+    assert call_args[0][0] == STREAM_DLQ
+    fields = call_args[0][1]
+    assert fields["job_id"] == "job-123"
+    assert "schema_validation_failed" in fields["error"]

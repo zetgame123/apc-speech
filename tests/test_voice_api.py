@@ -235,3 +235,18 @@ def test_asr_engine_transcribe_signature_accepts_vad_parameters():
 
     sig = inspect.signature(AsrEngine.transcribe)
     assert "vad_parameters" in sig.parameters
+
+
+def test_asr_model_missing_local_fallback(monkeypatch):
+    """Verify load_model falls back to 'small' if local model folder is missing."""
+    from unittest.mock import MagicMock, patch
+
+    from app.asr.engine import AsrEngine
+
+    engine = AsrEngine(model_name="./models/nonexistent-model-folder-xyz")
+    with patch("faster_whisper.WhisperModel") as mock_whisper:
+        mock_whisper.return_value = MagicMock()
+        engine.load_model()
+        mock_whisper.assert_called_once()
+        args, kwargs = mock_whisper.call_args
+        assert args[0] == "small"

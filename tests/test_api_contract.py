@@ -72,3 +72,15 @@ async def test_analytics_export_csv_endpoints():
         resp2 = await client.get("/v1/analytics/export.csv?namespace=test_msk", headers=headers)
         assert resp2.status_code == 200
         assert "call_id,external_id" in resp2.text
+
+
+def test_schema_validation_strict_error():
+    """Verify that invalid analysis schema raises ValidationError."""
+    from app.llm.port import validate_analysis_schema
+
+    invalid_data = {
+        "schema_version": "v1.0",
+        # Missing required fields like summary, call_result, sentiment, etc.
+    }
+    with pytest.raises(Exception):
+        validate_analysis_schema(invalid_data)

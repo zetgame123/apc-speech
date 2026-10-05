@@ -140,7 +140,7 @@ def test_split_segment_into_turns_with_pauses():
 def test_mono_diarizer_real_speech_monologue_and_dialogue():
     """Verify that default MonoDiarizer correctly separates real dialogue and unifies monologue."""
     dialogue_wav = "data/evaluation_suite/sample_dialogue_01_telephony_8k.wav"
-    monologue_wav = "audit_tests/corpus/voice10.wav"
+    monologue_wav = "data/evaluation_suite/voice10_monologue.wav"
 
     if not os.path.exists(dialogue_wav) or not os.path.exists(monologue_wav):
         return

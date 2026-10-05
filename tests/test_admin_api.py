@@ -71,3 +71,23 @@ async def test_list_revoked_tokens_endpoint():
         data = response.json()
         assert "revoked_hashes" in data
         assert isinstance(data["revoked_hashes"], list)
+
+
+@pytest.mark.asyncio
+async def test_admin_gdpr_deletes_voice_history():
+    """Verify delete_data endpoint cleans up voice history in Redis for namespace."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    fake_redis = MagicMock()
+    fake_redis.delete = AsyncMock(return_value=1)
+    mock_queue = MagicMock()
+    mock_queue.get_client = AsyncMock(return_value=fake_redis)
+
+    with patch("app.queue.redis_streams.get_queue", return_value=mock_queue):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            headers = {"Authorization": "Bearer dev-token"}
+            res = await ac.delete("/v1/data/delete?namespace=test_gdpr_ns", headers=headers)
+            assert res.status_code == 200
+            data = res.json()
+            assert "deleted_voice_queries" in data
+            fake_redis.delete.assert_called_with("voice:history:test_gdpr_ns")

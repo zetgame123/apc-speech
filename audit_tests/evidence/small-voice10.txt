@@ -1,9 +1,0 @@
-HTTP/1.1 200 OK
-date: Sat, 03 Oct 2026 14:35:10 GMT
-server: uvicorn
-content-length: 190
-content-type: application/json
-vary: Origin
-x-request-id: eadeec7a-0da4-49b2-8951-6440e6e68436
-
-{"text":"Здравствуйте, агентство Нарожной Рекламы, слушаю вас.","language":"ru","confidence":0.665,"duration_sec":10.0,"processing_time_ms":2841}

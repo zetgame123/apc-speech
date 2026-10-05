@@ -1,4 +1,0 @@
-Worker state: ['State:\tT (stopped)']
-Healthcheck exit while worker SIGSTOP: 0
-Healthcheck output:  
-Worker resumed
