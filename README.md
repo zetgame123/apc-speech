@@ -37,7 +37,7 @@
 
 ```mermaid
 flowchart TD
-    Client(["Клиент / CRM / Браузер"]) -->|HTTP / Webhook| API["FastAPI API Gateway (порт 8000)"]
+    Client(["Клиент / CRM / Браузер"]) -->|"HTTP / Webhook"| API["FastAPI API Gateway (порт 8000)"]
     
     subgraph Storage ["Хранилища и очереди"]
         PG[("PostgreSQL 16 + pgvector")]
@@ -45,35 +45,35 @@ flowchart TD
         MinIO[("MinIO S3 (Аудиофайлы)")]
     end
 
-    API -->|Загрузка аудио| MinIO
-    API -->|Создание записи Call/Job| PG
-    API -->|XADD jobs_long| Redis
-    API -->|Голосовой поиск <= 2.5с (in-process)| VS["Whisper Small (in-memory threadpool)"]
+    API -->|"Загрузка аудио"| MinIO
+    API -->|"Создание записи Call/Job"| PG
+    API -->|"XADD jobs_long"| Redis
+    API -->|"Голосовой поиск до 2.5с in-process"| VS["Whisper Small (in-memory threadpool)"]
 
     subgraph Workers ["Фоновые исполнители"]
         WL["Worker-Long (Обработка звонков)"]
         WC["Worker-Callback (Доставка вебхуков)"]
         CR["Cleanup-Retention (Плановая очистка данных)"]
-        WF["Worker-Fast (Опциональный масштабируемый воркер)"]
+        WF["Worker-Fast (Опциональный воркер)"]
     end
 
     subgraph LLM_Runtime ["Локальный LLM-рантайм (профиль local-full)"]
-        LLM["llama.cpp server (порт 8080)\nQwen 2.5 7B Instruct (GGUF Q4_K_M)"]
+        LLM["llama.cpp server (порт 8080)<br/>Qwen 2.5 7B Instruct (GGUF Q4_K_M)"]
     end
 
-    Redis -->|XREADGROUP jobs_long| WL
-    Redis -->|XREADGROUP callbacks| WC
+    Redis -->|"XREADGROUP jobs_long"| WL
+    Redis -->|"XREADGROUP callbacks"| WC
 
-    WL -->|Чтение аудио| MinIO
-    WL -->|Whisper CT2 + CAM++ ONNX| WL
-    WL -->|Семантическая доразметка ролей & Анализ| LLM
-    WL -->|Сохранение сегментов и аналитики| PG
-    WL -->|XADD callbacks| Redis
+    WL -->|"Чтение аудио"| MinIO
+    WL -->|"Whisper CT2 + CAM++ ONNX"| WL
+    WL -->|"Семантическая доразметка ролей и Анализ"| LLM
+    WL -->|"Сохранение сегментов и аналитики"| PG
+    WL -->|"XADD callbacks"| Redis
 
-    WC -->|HMAC-SHA256 Callback| Client
-    CR -->|Retention: удаление аудио >14д| MinIO
-    CR -->|Retention: удаление текста >365д| PG
-    API -.->|Мониторинг и дашборд| PG
+    WC -->|"HMAC-SHA256 Callback"| Client
+    CR -->|"Retention: удаление аудио старше 14 дней"| MinIO
+    CR -->|"Retention: удаление текста старше 365 дней"| PG
+    API -.->|"Мониторинг и дашборд"| PG
 ```
 
 ### Основные компоненты комплекса:
