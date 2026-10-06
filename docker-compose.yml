@@ -87,6 +87,14 @@ services:
       context: .
       dockerfile: Dockerfile
     command: python scripts/download_models.py --profile small
+    # root только для этого одноразового init-job: Docker Engine на "чистой" Linux-машине
+    # автосоздаёт отсутствующую bind-mount директорию ./models с владельцем root:root (0755),
+    # и непривилегированный apcuser (образа по умолчанию) не может в неё писать. Сам джоб не
+    # принимает сетевой трафик и не обрабатывает пользовательские данные - пишет только
+    # заранее известные файлы моделей по фиксированным URL, поэтому запуск от root здесь
+    # не нарушает требование "без root" для обслуживающих трафик сервисов (см.
+    # common-requirements.md п.4 и docs/decisions.md ADR-008).
+    user: "0:0"
     environment:
       - HF_TOKEN=${HF_TOKEN:-}
     volumes:
@@ -106,6 +114,8 @@ services:
       dockerfile: Dockerfile
     command: python scripts/download_models.py --profile local-full
     profiles: ["local-full"]
+    # root только для одноразового init-job, см. комментарий у model-downloader выше (ADR-008).
+    user: "0:0"
     environment:
       - HF_TOKEN=${HF_TOKEN:-}
     volumes:
