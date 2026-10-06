@@ -44,6 +44,7 @@ class FakeRedis:
 
     def __init__(self):
         self._store: dict[str, int] = {}
+        self._lists: dict[str, list[str]] = {}
 
     async def incr(self, key: str) -> int:
         self._store[key] = self._store.get(key, 0) + 1
@@ -51,6 +52,15 @@ class FakeRedis:
 
     async def expire(self, key: str, ttl: int) -> None:
         pass
+
+    async def lpush(self, key: str, value: str) -> None:
+        self._lists.setdefault(key, []).insert(0, value)
+
+    async def ltrim(self, key: str, start: int, end: int) -> None:
+        pass
+
+    async def sismember(self, key: str, value: str) -> bool:
+        return False
 
 
 @pytest.fixture
@@ -63,10 +73,18 @@ def mock_rate_limit_deps(monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_REQUESTS_PER_WINDOW", "5")
     monkeypatch.setenv("RATE_LIMIT_WINDOW_SEC", "10")
     get_settings.cache_clear()
+    get_settings().voice_search_use_worker = False
 
     mock_queue = MagicMock()
     mock_queue.get_client = AsyncMock(return_value=fake_redis)
     monkeypatch.setattr("app.api.rate_limit.get_queue", lambda: mock_queue)
+    # The voice-search endpoint also persists history to Redis via a background task;
+    # mock it with the same in-memory fake so tests don't hit a real/unreachable Redis.
+    monkeypatch.setattr("app.api.voice.get_queue", lambda: mock_queue)
+    # verify_auth() checks token revocation in Redis on every request; mock it too,
+    # otherwise each request pays a real connection-timeout penalty against an
+    # unreachable Redis, which was silently inflating per-request latency in tests.
+    monkeypatch.setattr("app.core.security.get_queue", lambda: mock_queue)
 
     # Mock ASR engine
     mock_engine = MagicMock()

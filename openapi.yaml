@@ -76,6 +76,8 @@ paths:
           $ref: '#/components/responses/PayloadTooLarge'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -199,6 +201,10 @@ paths:
                   type: string
                 client_id:
                   type: string
+                call_created_at:
+                  type: string
+                  format: date-time
+                  description: Время звонка в ISO 8601 с указанием часового пояса
                 channel_manager:
                   type: integer
                   description: Номер канала менеджера в стерео (0 или 1)
@@ -352,6 +358,7 @@ paths:
             default: json
         - in: query
           name: masked
+          description: Немаскированный текст доступен только токену со scope admin.
           schema:
             type: boolean
             default: true
@@ -523,13 +530,11 @@ paths:
             type: string
         - in: query
           name: date_from
-          required: true
           schema:
             type: string
             format: date-time
         - in: query
           name: date_to
-          required: true
           schema:
             type: string
             format: date-time
@@ -537,6 +542,11 @@ paths:
           name: manager_id
           schema:
             type: string
+        - in: query
+          name: inquiry_type
+          schema:
+            type: string
+          description: Известные значения определены в config/taxonomy.yaml; новые значения допустимы.
       responses:
         '200':
           description: Агрегированные метрики, тренды и распределение тем
@@ -572,7 +582,7 @@ paths:
                   items:
                     type: string
                   minItems: 1
-                  maxItems: 5000
+                  maxItems: 500
       responses:
         '200':
           description: Результаты кластеризации и распределение тем
@@ -686,14 +696,35 @@ paths:
           schema:
             type: string
         - in: query
+          name: participant_id
+          schema:
+            type: string
+          description: Непрозрачный ID участника; совпадает с manager_id или client_id.
+        - in: query
           name: client_id
           schema:
             type: string
         - in: query
-          name: date_before
+          name: manager_id
+          schema:
+            type: string
+        - in: query
+          name: date_from
           schema:
             type: string
             format: date-time
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: date_before
+          deprecated: true
+          schema:
+            type: string
+            format: date-time
+          description: Устаревший алиас date_to.
       responses:
         '200':
           description: Отчет об удаленных сущностях
@@ -1202,8 +1233,9 @@ components:
               summary:
                 type: string
         next_cursor:
-          type: string
-          nullable: true
+          type:
+            - string
+            - "null"
 
     AnalyticsSummaryResponse:
       type: object
@@ -1325,6 +1357,16 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     TooManyRequests:
       description: Превышен лимит запросов (Rate Limit)
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ServiceUnavailable:
+      description: Сервис или очередь временно недоступны
       headers:
         Retry-After:
           schema:

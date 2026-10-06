@@ -38,9 +38,9 @@ async def test_auth_dev_token_in_dev(monkeypatch):
         )
         assert resp.status_code == 200
 
-        # Query parameter fallback (for browser downloads)
+        # Токены в URL запрещены: они попадают в access-логи и историю браузера.
         resp_query = await client.get("/v1/calls?namespace=test_msk&token=dev-token-xyz")
-        assert resp_query.status_code == 200
+        assert resp_query.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -122,7 +122,7 @@ async def test_token_revocation_redis_sync(monkeypatch):
 
     mock_queue = MagicMock()
     mock_queue.get_client = AsyncMock(return_value=fake_redis)
-    monkeypatch.setattr("app.queue.redis_streams.get_queue", lambda: mock_queue)
+    monkeypatch.setattr("app.core.security.get_queue", lambda: mock_queue)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         try:

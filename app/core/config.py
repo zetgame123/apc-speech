@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     app_env: str = Field(default="development", alias="APP_ENV")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     debug: bool = Field(default=False, alias="DEBUG")
+    build_version: str = Field(default="0.1.0", alias="BUILD_VERSION")
 
     # HTTP Server
     host: str = Field(default="0.0.0.0", alias="HOST")
@@ -64,6 +65,12 @@ class Settings(BaseSettings):
     voice_search_max_duration_sec: int = Field(default=60, alias="VOICE_SEARCH_MAX_DURATION_SEC")
     voice_search_model_name: str = Field(default="base", alias="VOICE_SEARCH_MODEL_NAME")
     voice_search_beam_size: int = Field(default=2, alias="VOICE_SEARCH_BEAM_SIZE")
+    voice_search_max_concurrency: int = Field(default=1, alias="VOICE_SEARCH_MAX_CONCURRENCY")
+    voice_search_queue_wait_sec: float = Field(default=0.1, alias="VOICE_SEARCH_QUEUE_WAIT_SEC")
+    voice_search_use_worker: bool = Field(default=True, alias="VOICE_SEARCH_USE_WORKER")
+    voice_search_result_timeout_sec: float = Field(
+        default=2.4, alias="VOICE_SEARCH_RESULT_TIMEOUT_SEC"
+    )
 
     # Diarization
     diarization_min_speaker_distance: float = Field(

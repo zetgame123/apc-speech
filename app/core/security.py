@@ -7,11 +7,12 @@ import time
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from fastapi import Query, Security, status
+from fastapi import Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import get_settings
 from app.core.errors import AppError
+from app.queue.redis_streams import get_queue
 
 security_bearer = HTTPBearer(auto_error=False)
 
@@ -103,13 +104,8 @@ def authenticate_token(token: str) -> AuthContext:
 
 async def verify_auth(
     credentials: HTTPAuthorizationCredentials | None = Security(security_bearer),
-    token: str | None = Query(None, description="Токен авторизации через query-параметр"),
 ) -> AuthContext:
-    raw_token = None
-    if credentials and credentials.credentials:
-        raw_token = credentials.credentials
-    elif token:
-        raw_token = token
+    raw_token = credentials.credentials if credentials and credentials.credentials else None
 
     if not raw_token:
         raise AppError(
@@ -122,8 +118,6 @@ async def verify_auth(
     # Check shared revocation in Redis (multi-worker synchronization)
     token_hash = hash_token(raw_token)
     try:
-        from app.queue.redis_streams import get_queue
-
         client = await get_queue().get_client()
         if await client.sismember("revoked_tokens", token_hash):
             _revoked_token_hashes.add(token_hash)

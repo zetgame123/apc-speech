@@ -1,4 +1,7 @@
+from pathlib import Path
+
 import pytest
+import yaml
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
@@ -11,7 +14,36 @@ async def test_health_check_endpoint():
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
-        assert data["version"] == "1.0.0"
+        assert data["version"] == "0.1.0"
+
+
+def test_static_openapi_covers_runtime_routes_and_key_constraints():
+    spec = yaml.safe_load(Path("openapi.yaml").read_text(encoding="utf-8"))
+    documented = {
+        (method.upper(), path)
+        for path, path_item in spec["paths"].items()
+        for method in path_item
+        if method.lower() in {"get", "post", "put", "patch", "delete"}
+    }
+    framework_routes = {"/openapi.json", "/docs", "/docs/oauth2-redirect"}
+    runtime = {
+        (method, route.path)
+        for route in app.routes
+        for method in getattr(route, "methods", set())
+        if route.path not in framework_routes and method != "HEAD"
+    }
+    assert runtime <= documented
+
+    summary_params = {
+        item["name"]: item for item in spec["paths"]["/v1/analytics/summary"]["get"]["parameters"]
+    }
+    assert "required" not in summary_params["date_from"]
+    assert "required" not in summary_params["date_to"]
+    assert "inquiry_type" in summary_params
+
+    texts = spec["paths"]["/v1/texts/analyze"]["post"]["requestBody"]["content"]
+    texts_schema = texts["application/json"]["schema"]["properties"]["texts"]
+    assert texts_schema["maxItems"] == 500
 
 
 @pytest.mark.asyncio

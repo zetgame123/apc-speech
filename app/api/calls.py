@@ -58,6 +58,8 @@ async def get_transcript(
 ):
     auth.require_scope("read")
     auth.verify_namespace(namespace)
+    if not masked:
+        auth.require_scope("admin")
 
     # Verify call exists
     call_stmt = select(Call).where(Call.id == call_id, Call.namespace == namespace)

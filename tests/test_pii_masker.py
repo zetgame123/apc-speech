@@ -54,3 +54,58 @@ def test_assert_no_leaked_pii():
     unsafe_text_passport = "Вот паспорт 4510 123456"
     with pytest.raises(ValueError, match="PII Leak"):
         masker.assert_no_leaked_pii(unsafe_text_passport)
+
+
+def test_mask_person_names():
+    masker = PiiMasker()
+    text = "Звонил Иван Петров, уточнял смету для Анна Смирнова"
+    masked = masker.mask_text(text)
+
+    assert "Иван Петров" not in masked
+    assert "Анна Смирнова" not in masked
+    assert "[ИМЯ_1]" in masked
+    assert "[ИМЯ_2]" in masked
+
+
+def test_mask_person_names_consistent_numbering():
+    masker = PiiMasker()
+    text = "Иван Петров позвонил, потом снова Иван Петров уточнил детали"
+    masked = masker.mask_text(text)
+
+    # Same name mentioned twice must reuse the same placeholder number
+    assert masked.count("[ИМЯ_1]") == 2
+    assert "[ИМЯ_2]" not in masked
+
+
+def test_assert_no_leaked_pii_detects_unmasked_name():
+    masker = PiiMasker()
+    unsafe_text_name = "Меня зовут Анна Смирнова, хочу записаться на завтра"
+    with pytest.raises(ValueError, match="PII Leak"):
+        masker.assert_no_leaked_pii(unsafe_text_name)
+
+    # A text already masked by mask_text() must pass the safety check
+    safe_text = masker.mask_text(unsafe_text_name)
+    assert masker.assert_no_leaked_pii(safe_text) is True
+
+
+def test_mask_person_names_does_not_mask_domain_terms():
+    """
+    Regression test: Natasha's NewsNERTagger (trained on a news corpus) tags
+    capitalized domain terms / toponyms from the outdoor-advertising vocabulary
+    (config/vocabulary_hints.yaml) as PER, e.g. "Ситиборды" at the start of a
+    sentence. These must be preserved, not replaced with [ИМЯ_N].
+    """
+    masker = PiiMasker()
+    text = "Ситиборды на павелетском вокзале до 500 000 руб."
+    masked = masker.mask_text(text)
+
+    assert masked == text
+    assert "[ИМЯ_" not in masked
+
+    masker2 = PiiMasker()
+    text2 = "Билборды в Балашихе свободны на январь"
+    masked2 = masker2.mask_text(text2)
+    assert "[ИМЯ_" not in masked2
+
+    # Domain terms must not trigger assert_no_leaked_pii() either
+    assert masker.assert_no_leaked_pii(text) is True

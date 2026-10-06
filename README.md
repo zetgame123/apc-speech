@@ -23,7 +23,7 @@
 7. [Контракт API и примеры вызовов](#контракт-api-и-примеры-вызовов)
    * [Синхронный голосовой поиск (`/v1/voice/search`)](#7-сверхбыстрый-синхронный-голосовой-поиск-post-v1voicesearch)
    * [Общая история запросов (`/v1/voice/history`)](#8-общая-серверная-история-голосовых-запросов-get--delete-v1voicehistory)
-8. [Интеграции с CRM (Битрикс24, amoCRM)](#интеграция-с-телефонией-crm-битрикс24)
+8. [Интеграция с телефонией CRM (Битрикс24)](#интеграция-с-телефонией-crm-битрикс24)
 9. [Веб-дашборд (Аналитика звонков и Голосовой поиск)](#веб-дашборд)
 10. [Структура репозитория](#структура-репозитория)
 11. [Тестирование и контроль качества](#тестирование-и-контроль-качества)
@@ -48,7 +48,8 @@ flowchart TD
     API -->|"Загрузка аудио"| MinIO
     API -->|"Создание записи Call/Job"| PG
     API -->|"XADD jobs_long"| Redis
-    API -->|"Голосовой поиск до 2.5с in-process"| VS["Whisper Small (in-memory threadpool)"]
+    API -->|"Redis Stream jobs:audio:fast"| WF
+    WF -->|"результат до таймаута 2.4с"| API
 
     subgraph Workers ["Фоновые исполнители"]
         WL["Worker-Long (Обработка звонков)"]
@@ -82,7 +83,7 @@ flowchart TD
    * REST API endpoints, валидация входящих запросов, проверка токенов (Bearer / Dev-Token) с синхронизацией отозванных токенов через Redis.
    * Потоковая загрузка аудиофайлов напрямую во временные файлы без дублирования в оперативной памяти (защита от OOM).
    * Защита от SSRF при скачивании аудио по URL (валидация каждого редиректа, блокировка loopback, RFC1918, link-local, облачных metadata-сервисов и потоковое ограничение размера).
-   * Сверхбыстрый синхронный голосовой поиск через изолированный пул потоков с прогретой моделью (`faster-whisper small`) и семафором параллельности (`asyncio.Semaphore(4)`), гарантирующий SLA $\le 2{,}5$ с (см. ADR-007).
+   * Синхронный голосовой поиск: API ставит запрос в отдельную Redis-очередь (`jobs:audio:fast`) и ждёт результат от `worker-fast` не дольше `VOICE_SEARCH_RESULT_TIMEOUT_SEC`; при недоступности очереди предусмотрен explicit in-process fallback через пул потоков с семафором (`VOICE_SEARCH_MAX_CONCURRENCY`, по умолчанию 1) для локальной разработки и тестов. Фактическая задержка зависит от CPU-инструкций и доступной квоты; текущие замеры и ограничения приведены в `docs/benchmark-report.md`.
    * Раздача веб-дашборда с интерактивным аудиоплеером и караоке-таймкодами.
    * Health/Readiness пробы (`/health`, `/ready`) и Prometheus метрики (`/metrics`).
 2. **`worker-long` (Python Async Worker)**:
@@ -93,8 +94,8 @@ flowchart TD
    * Гарантированная доставка вебхуков с результатами анализа в вызывающие системы с расчетом HMAC-SHA256 подписи в заголовке `X-Apc-Signature` (формат `sha256=HMAC(...)`), `X-Apc-Timestamp` и экспоненциальным backoff (5 попыток: 5с, 15с, 60с, 300с, 900с). Блокировка редиректов и приватных сетей для защиты от SSRF.
 4. **`cleanup-retention` (Python Background Loop Worker)**:
    * Автономный фоновый сервис соблюдения раздельных политик хранения (GDPR/152-ФЗ): ежедневно удаляет аудиозаписи из MinIO старше `RETENTION_AUDIO_DAYS` (по умолчанию 14 дней) и текстовые транскрипты/анализы из PostgreSQL старше `RETENTION_TEXT_DAYS` (по умолчанию 365 дней).
-5. **`worker-fast` (Python Async Worker, опциональный профиль `worker-fast`)**:
-   * Выделенный микро-воркер для асинхронного голосового поиска при горизонтальном масштабировании на отдельный пул инстансов (`docker compose --profile worker-fast up`). По умолчанию в компактном профиле голосовой поиск обрабатывается API-шлюзом с ультранизкой задержкой.
+5. **`worker-fast` (Python Async Worker)**:
+   * Обязательный выделенный воркер синхронного голосового поиска. API помещает запрос в отдельный Redis Stream `jobs:audio:fast`, ожидает результат не дольше `VOICE_SEARCH_RESULT_TIMEOUT_SEC` и при перегрузке/таймауте возвращает `503` с `Retry-After`.
 6. **`llm-runtime` (llama.cpp server, профиль `local-full`)**:
    * Контейнер на базе `ghcr.io/ggml-org/llama.cpp:server`.
    * Обслуживает локальную квантованную модель `Qwen 2.5 7B Instruct` (`qwen2.5-7b-instruct-q4_k_m.gguf` или шарды, 4.4 ГБ).
@@ -115,14 +116,14 @@ flowchart TD
 
 | Параметр | Профиль `small` (по умолчанию) | Профиль `local-full` |
 | :--- | :--- | :--- |
-| **Целевое железо** | Слабые CPU-серверы (2–4 vCPU, 4 ГБ RAM) | Серверы с запасом CPU или GPU (4–8 vCPU, 8–16 ГБ RAM) |
-| **Контейнер LLM** | Не запускается (0 МБ ОЗУ) | Запущен `llm-runtime` (занимает ~3.3–4.0 ГБ ОЗУ) |
+| **Целевое железо** | 2 vCPU, 4 ГБ RAM, без GPU (п. «Ограничения» brief.md) | 8 vCPU, 32 ГБ RAM или GPU от 12 ГБ (п. «Ограничения» brief.md) |
+| **Контейнер LLM** | Не запускается (0 МБ ОЗУ) | Запущен `llm-runtime` (лимит 10240 МБ ОЗУ, фактическое использование ~3.3–4.0 ГБ) |
 | **Распознавание речи** | `faster-whisper` (int8 на CPU) | `faster-whisper` (int8 на CPU) |
 | **Акустическая диаризация** | CAM++ ONNX + Якоря + HMM Витерби | CAM++ ONNX + Якоря + HMM Витерби |
 | **Семантическая доразметка ролей** | Регулярные выражения и эвристики | **Qwen 2.5 7B** (семантическая проверка реплик) |
 | **Анализ звонка и чек-лист** | Детерминированный rule-based анализатор | **Qwen 2.5 7B** (глубокий анализ по JSON-схеме) |
 | **Саммари звонка** | Шаблонное резюме по ключевым словам | Живой человекочитаемый смысловой пересказ |
-| **Запуск** | `docker compose up -d` | `docker compose --profile local-full up -d` |
+| **Запуск** | `APP_PROFILE=small docker compose up -d` | `APP_PROFILE=local-full docker compose --profile local-full up -d` |
 
 ---
 
@@ -162,7 +163,7 @@ flowchart TD
    └── В профиле small: Rule-based анализатор (taxonomy.yaml, checklist.yaml)
             │
             ▼ (Шаг 9: Доставка вебхуков)
-  Worker-Callback отправляет HMAC-подписанный JSON в CRM (Битрикс24 / amoCRM)
+  Worker-Callback отправляет HMAC-подписанный JSON клиенту (callback_url) и в CRM Битрикс24
 ```
 
 ---
@@ -278,7 +279,7 @@ flowchart TD
    * Итоговый скоринг менеджера от 0 до 5.
 
    > [!NOTE]
-   > Чек-лист разработан строго под оценку коммерческих переговоров в сфере продаж наружной рекламы. Если запись не содержит этапов коммерческой сделки (например, чтение художественной литературы/басен, спам-звонок или отвлеченный разговор без продажи рекламы), критерии чек-листа обоснованно получают значение `false`, а итоговый скоринг равен 0.
+   > Чек-лист разработан строго под оценку коммерческих переговоров в сфере продаж наружной рекламы. Если запись не содержит этапов коммерческой сделки, критерии чек-листа обоснованно получают значение `false`, а итоговый скоринг равен 0.
 
 ---
 
@@ -315,8 +316,8 @@ flowchart TD
 * **ОС**: Linux (Ubuntu 22.04+, Debian 12, Arch Linux, RHEL 9).
 * **Docker & Docker Compose**: Docker Engine 24+ с поддержкой Docker Compose v2.
 * **Ресурсы**:
-  * Профиль `small`: от 2 vCPU, от 4 ГБ RAM, 10 ГБ на диске.
-  * Профиль `local-full`: от 4–8 vCPU, от 8–16 ГБ RAM, 20 ГБ на диске.
+  * Профиль `small`: 2 vCPU, 4 ГБ RAM, без GPU, 10 ГБ на диске (п. «Ограничения» brief.md).
+  * Профиль `local-full`: 8 vCPU, 32 ГБ RAM или GPU от 12 ГБ, 20 ГБ на диске (п. «Ограничения» brief.md).
 
 ### 1. Клонирование и настройка окружения
 ```bash
@@ -328,11 +329,76 @@ cp .env.example .env
 Отредактируйте `.env`:
 * Для базового легковесного режима: `APP_PROFILE=small`
 * Для режима с локальной нейросетью Qwen 2.5 7B: `APP_PROFILE=local-full`
-* Задайте `DEV_TOKEN=my-secure-token` и `CALLBACK_SIGNING_SECRET`.
 
-### 2. Загрузка моделей (обязательно перед запуском контейнеров)
+Дальше выбирайте **один** из двух режимов авторизации — они переключаются переменной `APP_ENV`
+и взаимоисключающие (см. `authenticate_token()` в `app/core/security.py`):
 
-Перед первым запуском необходимо загрузить локальные веса моделей в папку `./models/`, которая монтируется в контейнеры как read-only volume:
+#### Вариант 1 — тестовый стенд (локальная разработка, демо, CI)
+```env
+APP_ENV=development
+DEV_TOKEN=my-dev-secret-123
+```
+При `APP_ENV` ≠ `production` сервис принимает значение `DEV_TOKEN` как есть, без хэширования —
+во всех запросах просто передавайте `Authorization: Bearer my-dev-secret-123`. Токен даёт полный
+доступ (`admin`+`write`+`read`) без привязки к `namespace`. Удобно для быстрого старта, но
+**использовать в production запрещено** — токен хранится в `.env` в открытом виде.
+
+#### Вариант 2 — production
+```env
+APP_ENV=production
+DEV_TOKEN=
+API_TOKENS_HASHED="<sha256_hash>:<scopes>:<namespace>"
+```
+При `APP_ENV=production` проверка `DEV_TOKEN` полностью отключается в коде (независимо от того,
+задано ли значение) — попытка использовать его вернёт `401 invalid_token`. Единственный способ
+авторизации — список хэшированных токенов в `API_TOKENS_HASHED`.
+
+Формат одной записи: `sha256_hash_токена:scope1+scope2:namespace` (несколько записей — через
+запятую; `namespace` можно не указывать — тогда токен работает для любого namespace).
+
+Как выпустить токен:
+```bash
+# 1. Сгенерировать случайный токен
+TOKEN=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+echo "Выдайте этот токен клиенту: $TOKEN"
+
+# 2. Посчитать его SHA-256 — именно хэш идёт в .env, исходный токен на сервере не хранится
+python3 -c "import hashlib; print(hashlib.sha256('$TOKEN'.encode()).hexdigest())"
+```
+Результат впишите в `.env`, например:
+```env
+API_TOKENS_HASHED="a1b2c3...:admin+write+read:outdoor_msk"
+```
+Клиент при этом использует **не хэш, а исходный `$TOKEN`** в заголовке `Authorization: Bearer`.
+
+#### Общее для обоих вариантов
+Независимо от режима авторизации, обязательно задайте:
+```env
+CALLBACK_SIGNING_SECRET=$(openssl rand -base64 32)
+```
+Секрет минимум 32 символа, используется для HMAC-подписи исходящих callback-запросов
+(`sign_callback_payload()` в `app/core/security.py`). Для production также смените пароли
+`DB_PASSWORD` и `MINIO_ROOT_PASSWORD`/`S3_SECRET_KEY` (должны совпадать между собой — `DB_PASSWORD`
+используется и в `DATABASE_URL`, `MINIO_ROOT_PASSWORD` — в `S3_SECRET_KEY`, см. полный список
+переменных в `.env.example`) и ограничьте `CORS_ALLOWED_ORIGINS` конкретными доменами фронтенда
+вместо `*`.
+
+> После любого изменения `.env` перечитать его смогут только пересозданные контейнеры:
+> `docker compose up -d --force-recreate api worker-long worker-callback` (простой `restart` не
+> подхватит новые переменные, если контейнер уже был создан с другими).
+
+### 2. Загрузка моделей
+
+Загрузка весов моделей **интегрирована в `docker-compose.yml`** и выполняется автоматически
+одноразовым сервисом `model-downloader` (CAM++ + whisper-small + whisper-podlodka-turbo-ct2) перед
+стартом `api`/воркеров, и `model-downloader-llm` (Qwen2.5-7B GGUF, ~4.4 ГБ) перед стартом
+`llm-runtime` в профиле `local-full`. Ручной запуск не требуется — `docker compose up` сам всё
+скачает при первом старте. Для полного режима обязательно передайте `APP_PROFILE=local-full`,
+как показано ниже: сам флаг Compose-профиля не меняет переменные окружения API. Скрипт
+идемпотентен: при повторных запусках уже скачанные файлы не
+перекачиваются.
+
+Ручной запуск (например, для прогрева кэша перед сборкой образов) всё ещё доступен:
 
 ```bash
 # Для профиля small (модель поиска whisper-small + модель длинного ASR whisper-podlodka-turbo-ct2 + CAM++ ONNX):
@@ -353,10 +419,10 @@ uv run python scripts/download_models.py --profile local-full
 ```bash
 # 1. Запуск базового профиля small (2 vCPU / 4 ГБ RAM, без LLM):
 # Поднимает Postgres, Redis, MinIO, миграции Alembic, API, worker-long, worker-callback, cleanup-retention
-docker compose up -d --build
+APP_PROFILE=small docker compose up -d --build
 
 # 2. Запуск полного локального профиля local-full (с локальным LLM-рантаймом Qwen 2.5 7B):
-docker compose --profile local-full up -d --build
+APP_PROFILE=local-full docker compose --profile local-full up -d --build
 ```
 
 ### 4. Проверка состояния
@@ -608,7 +674,7 @@ curl -X POST "http://localhost:8000/v1/voice/search?namespace=outdoor_msk&langua
   -H "Content-Type: audio/wav" \
   --data-binary "@query_voice.wav"
 ```
-**Ответ за $\le 2.5$ секунды (фактически 1.2–1.4 с)**:
+**Целевое время ответа — $\le 2.5$ секунды; текущие фактические результаты приведены в `docs/benchmark-report.md`.**
 ```json
 {
   "text": "щиты 3×6 на Кутузовском проспекте свободен ноябрь",
@@ -866,7 +932,7 @@ curl -X POST "http://localhost:8000/v1/admin/tokens/revoke" \
 ├── models/                     # Локальные модели (Whisper Small, Whisper Podlodka Turbo, CAM++ ONNX, Qwen 2.5 7B GGUF)
 ├── schemas/                    # JSON-схема анализа (analysis_schema_v1.json)
 ├── scripts/                    # Загрузчик моделей, retention-цикл, хелсчеки воркеров, S3 watcher, бенчмарки
-├── tests/                      # Полный набор штатных тестов (unit, integration, contract) — 104 теста
+├── tests/                      # Набор unit-, API- и contract-тестов; актуальное число показывает pytest
 ├── Dockerfile                  # Multi-stage Dockerfile без root-прав (пользователь apcuser)
 ├── docker-compose.yml          # Оркестрация стека (Postgres, Redis, MinIO, миграции, API, воркеры, retention loop, LLM)
 └── openapi.yaml                # Спецификация OpenAPI 3.1
@@ -898,7 +964,7 @@ uv run pytest tests/ -v
 uv run ruff check .
 uv run ruff format --check .
 ```
-Все **104 теста** проходят успешно (`104 passed`).
+Актуальное число пройденных тестов фиксируется выводом команды и CI; README намеренно не дублирует изменяющийся счётчик.
 
 ---
 
@@ -914,9 +980,9 @@ uv run python -m evaluation.run
 * **WER на телефонии (8 кГц, G.711)**: **18.7%** (норматив ТЗ $\le 25\%$).
 * **Точность терминов с подсказками**: **94.2%** (норматив ТЗ $\ge 90\%$).
 * **Diarization Error Rate (DER)**: **1.2%** (стерео) / **14.5%** (моно).
-* **Голосовой поиск (10 с аудио)**: **1 250 мс** (норматив ТЗ $\le 2 500$ мс).
-* **Скорость часовой записи (RTF)**: **0.42** (25 минут на 1 час аудио при нормативе $\le 1$ часа).
-* **Потребление памяти на `small`**: **2 650 МБ RSS** (в пределах лимита 4096 МБ).
+* **Голосовой поиск**: текущий замер на имеющемся CPU не проходит ориентир $\le 2 500$ мс; см. `docs/benchmark-report.md`.
+* **Скорость часовой записи (RTF)**: актуальный воспроизводимый замер пока отсутствует; см. `docs/benchmark-report.md`.
+* **Потребление памяти на `small`**: **2 650 МБ RSS** на процесс `api`/`worker-long` (из них ~2.0 ГБ — прогретая модель ASR); суммарный лимит `docker-compose.yml` для всех контейнеров профиля `small` (`postgres`+`redis`+`minio`+`api`+`worker-long`+`worker-callback`+`cleanup-retention`) — **4032 МБ**, в пределах бюджета 4096 МБ (п. «Ограничения» brief.md).
 
 ---
 

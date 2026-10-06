@@ -10,9 +10,11 @@ from app.core.logging import get_logger
 logger = get_logger("redis_queue")
 
 STREAM_LONG_JOBS = "jobs:audio:long"
+STREAM_FAST_JOBS = "jobs:audio:fast"
 STREAM_CALLBACKS = "jobs:callbacks"
 STREAM_DLQ = "jobs:audio:dlq"
 GROUP_WORKERS = "group:workers"
+GROUP_FAST_WORKERS = "group:fast-workers"
 GROUP_CALLBACKS = "group:callbacks"
 
 
@@ -35,6 +37,7 @@ class RedisQueue:
         client = await self.get_client()
         for stream, group in [
             (STREAM_LONG_JOBS, GROUP_WORKERS),
+            (STREAM_FAST_JOBS, GROUP_FAST_WORKERS),
             (STREAM_CALLBACKS, GROUP_CALLBACKS),
         ]:
             try:
@@ -53,6 +56,31 @@ class RedisQueue:
         msg_id = await client.xadd(STREAM_LONG_JOBS, payload)
         logger.info("job_enqueued", job_id=job_id, stream=STREAM_LONG_JOBS, msg_id=msg_id)
         return msg_id
+
+    async def enqueue_fast_job(self, request_id: str, data: dict[str, Any]) -> str:
+        client = await self.get_client()
+        return await client.xadd(
+            STREAM_FAST_JOBS,
+            {"job_id": request_id, "data": json.dumps(data, ensure_ascii=False)},
+        )
+
+    async def wait_fast_result(self, request_id: str, timeout_sec: float) -> dict[str, Any] | None:
+        client = await self.get_client()
+        key = f"voice:result:{request_id}"
+        result = await client.blpop(key, timeout=max(1, int(timeout_sec + 0.999)))
+        if not result:
+            return None
+        raw = result[1]
+        await client.delete(key)
+        return json.loads(raw)
+
+    async def publish_fast_result(
+        self, request_id: str, result: dict[str, Any], ttl_sec: int = 30
+    ) -> None:
+        client = await self.get_client()
+        key = f"voice:result:{request_id}"
+        await client.rpush(key, json.dumps(result, ensure_ascii=False))
+        await client.expire(key, ttl_sec)
 
     async def enqueue_callback(
         self, job_id: str, callback_url: str, payload: dict[str, Any]

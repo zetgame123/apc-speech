@@ -30,14 +30,20 @@ async def get_analytics_summary(
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     manager_id: str | None = Query(None),
+    inquiry_type: str | None = Query(None),
     auth: AuthContext = Depends(verify_auth),
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("read")
     auth.verify_namespace(namespace)
 
-    # Base query for calls in namespace
+    # Base query for calls in namespace. Filtering by inquiry type requires
+    # joining the structured analysis produced for each call.
     call_query = select(Call).where(Call.namespace == namespace)
+    if inquiry_type:
+        call_query = call_query.join(Analysis, Analysis.call_id == Call.id).where(
+            Analysis.inquiry_type == inquiry_type
+        )
     if manager_id:
         call_query = call_query.where(Call.manager_id == manager_id)
     if date_from:
@@ -198,6 +204,7 @@ async def export_analytics_csv(
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     manager_id: str | None = Query(None),
+    inquiry_type: str | None = Query(None),
     auth: AuthContext = Depends(verify_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -211,6 +218,8 @@ async def export_analytics_csv(
     )
     if manager_id:
         call_query = call_query.where(Call.manager_id == manager_id)
+    if inquiry_type:
+        call_query = call_query.where(Analysis.inquiry_type == inquiry_type)
     if date_from:
         call_query = call_query.where(Call.created_at >= date_from)
     if date_to:

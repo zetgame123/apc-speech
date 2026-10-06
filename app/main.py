@@ -90,16 +90,8 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("revoked_tokens_sync_failed", error=str(e))
 
-    # 4. Warm up Voice Search ASR engine to eliminate cold-start latency
-    try:
-        from app.asr.engine import get_voice_search_engine
-
-        engine = get_voice_search_engine()
-        engine.warmup()
-        logger.info("voice_search_engine_warmed_up")
-    except Exception as e:
-        logger.warning("voice_search_warmup_failed", error=str(e))
-
+    # Voice-search ASR is prewarmed by the dedicated worker-fast service.
+    # API processes remain lightweight and do not compete with long-audio ASR for model memory.
     yield
 
     logger.info("service_shutdown_completed")
@@ -107,10 +99,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="apc-speech Service",
-    version="1.0.0",
+    version=settings.build_version,
     description="Autonomous local speech recognition, diarization, and semantic analysis service",
     lifespan=lifespan,
-    docs_url="/docs" if settings.debug else None,
+    docs_url="/docs" if settings.debug or settings.app_env != "production" else None,
     redoc_url=None,
 )
 
@@ -177,6 +169,13 @@ async def request_id_and_logging_middleware(request: Request, call_next):
         method=request.method, endpoint=endpoint, status=response.status_code
     ).inc()
     HTTP_REQUEST_DURATION_SECONDS.labels(method=request.method, endpoint=endpoint).observe(duration)
+    logger.info(
+        "request_completed",
+        method=request.method,
+        path=endpoint,
+        status_code=response.status_code,
+        duration_ms=round(duration * 1000, 2),
+    )
 
     return response
 

@@ -49,6 +49,15 @@ async def rate_limit(request: Request):
             )
     except AppError:
         raise
-    except Exception:
-        # If redis is down, we don't want to block the app completely, just log and pass
-        pass
+    except Exception as exc:
+        # В production дорогие ручки fail-closed; локальная разработка и unit-тесты
+        # не должны зависеть от запущенного Redis.
+        if settings.app_env != "production":
+            return
+        raise AppError(
+            error="rate_limiter_unavailable",
+            message="Сервис ограничения нагрузки временно недоступен",
+            status_code=503,
+            details={"reason": type(exc).__name__},
+            headers={"Retry-After": "5"},
+        ) from exc

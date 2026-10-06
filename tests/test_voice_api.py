@@ -89,10 +89,13 @@ def mock_voice_deps(monkeypatch):
     fake_redis.ltrim = AsyncMock(side_effect=fake_ltrim)
     fake_redis.lrange = AsyncMock(side_effect=fake_lrange)
     fake_redis.delete = AsyncMock(side_effect=fake_delete)
+    fake_redis.sismember = AsyncMock(return_value=False)
 
     mock_queue = MagicMock()
     mock_queue.get_client = AsyncMock(return_value=fake_redis)
     monkeypatch.setattr("app.api.rate_limit.get_queue", lambda: mock_queue)
+    monkeypatch.setattr("app.api.voice.get_queue", lambda: mock_queue)
+    monkeypatch.setattr("app.core.security.get_queue", lambda: mock_queue)
     monkeypatch.setattr("app.queue.redis_streams.get_queue", lambda: mock_queue)
 
     return mock_engine

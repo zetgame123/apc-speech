@@ -33,11 +33,13 @@ async def setup_db():
     orig_env = settings.app_env
     orig_dev_token = settings.dev_token
     orig_debug = settings.debug
+    orig_voice_search_use_worker = settings.voice_search_use_worker
 
     # Default to development mode with dev-token for test suite
     settings.app_env = "development"
     settings.dev_token = "dev-token"
     settings.debug = True
+    settings.voice_search_use_worker = False
 
     yield
 
@@ -45,6 +47,7 @@ async def setup_db():
     settings.app_env = orig_env
     settings.dev_token = orig_dev_token
     settings.debug = orig_debug
+    settings.voice_search_use_worker = orig_voice_search_use_worker
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)

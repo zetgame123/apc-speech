@@ -17,8 +17,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 1024M
+          cpus: '0.3'
+          memory: 384M
 
   redis:
     image: redis:7-alpine
@@ -35,8 +35,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 256M
+          cpus: '0.2'
+          memory: 160M
 
   minio:
     image: ${MINIO_IMAGE:-elestio/minio:latest}
@@ -58,8 +58,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 512M
+          cpus: '0.2'
+          memory: 224M
 
   alembic-migrate:
     build:
@@ -79,6 +79,44 @@ services:
           cpus: '0.5'
           memory: 256M
 
+  # Скачивает модели CAM++ (диаризация) и Whisper (voice-search + long-audio ASR).
+  # Выполняется один раз перед стартом api/воркеров; при повторном запуске
+  # скрипт идемпотентен и пропускает уже скачанные файлы.
+  model-downloader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python scripts/download_models.py --profile small
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - ./models:/app/models:rw
+      - ./scripts:/app/scripts:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # Скачивает веса Qwen2.5-7B-Instruct GGUF (~4.4 ГБ) для профиля local-full.
+  # Активен только при `docker compose --profile local-full up`.
+  model-downloader-llm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python scripts/download_models.py --profile local-full
+    profiles: ["local-full"]
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - ./models:/app/models:rw
+      - ./scripts:/app/scripts:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
   api:
     build:
       context: .
@@ -90,6 +128,7 @@ services:
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }
       alembic-migrate: { condition: service_completed_successfully }
+      model-downloader: { condition: service_completed_successfully }
     env_file:
       - path: .env
         required: false
@@ -104,6 +143,8 @@ services:
       - ASR_MODEL_NAME=${ASR_MODEL_NAME:-./models/whisper-podlodka-turbo-ct2}
       - VOICE_SEARCH_MODEL_NAME=./models/whisper-small
       - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-2}
+      - VOICE_SEARCH_USE_WORKER=true
+      - VOICE_SEARCH_RESULT_TIMEOUT_SEC=${VOICE_SEARCH_RESULT_TIMEOUT_SEC:-2.4}
       - ASR_THREADS=${ASR_THREADS:-4}
       - OMP_NUM_THREADS=${ASR_THREADS:-4}
       - OPENBLAS_NUM_THREADS=${ASR_THREADS:-4}
@@ -127,7 +168,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1536M
+          cpus: '0.4'
+          memory: 320M
 
   worker-long:
     build:
@@ -140,6 +182,7 @@ services:
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }
       alembic-migrate: { condition: service_completed_successfully }
+      model-downloader: { condition: service_completed_successfully }
     env_file:
       - path: .env
         required: false
@@ -167,7 +210,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.5'
+          cpus: '0.6'
           memory: 1792M
 
   worker-callback:
@@ -210,9 +253,9 @@ services:
       dockerfile: Dockerfile
     command: python -m app.workers.fast_voice_search
     restart: unless-stopped
-    profiles: ["worker-fast"]
     depends_on:
       redis: { condition: service_healthy }
+      model-downloader: { condition: service_completed_successfully }
     env_file:
       - path: .env
         required: false
@@ -221,6 +264,8 @@ services:
       - APP_PROFILE=${APP_PROFILE:-small}
       - APP_ENV=${APP_ENV:-development}
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - VOICE_SEARCH_MODEL_NAME=./models/whisper-small
+      - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-2}
     volumes:
       - ./models:/app/models:ro
       - ./app:/app/app:ro
@@ -234,7 +279,7 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 1024M
+          memory: 960M
 
   cleanup-retention:
     build:
@@ -269,10 +314,13 @@ services:
           memory: 64M
 
   # Активируется только для профиля local-full: docker compose --profile local-full up
+  # Профиль по brief.md: 8 vCPU / 32 ГБ RAM или GPU >= 12 ГБ.
   llm-runtime:
-    image: ghcr.io/ggml-org/llama.cpp:server-b3900
+    image: ghcr.io/ggml-org/llama.cpp:server
     restart: unless-stopped
     profiles: ["local-full"]
+    depends_on:
+      model-downloader-llm: { condition: service_completed_successfully }
     entrypoint: ["/bin/sh", "-c"]
     command: >
       "if [ -f /models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf ]; then
@@ -288,8 +336,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '4.0'
-          memory: 8192M
+          cpus: '6.0'
+          memory: 10240M
 
 volumes:
   pgdata:

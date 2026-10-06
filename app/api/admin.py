@@ -71,8 +71,12 @@ async def list_revoked_tokens_endpoint(
 async def delete_data(
     namespace: str = Query(...),
     call_id: str | None = Query(None),
+    participant_id: str | None = Query(None),
     client_id: str | None = Query(None),
-    date_before: datetime | None = Query(None),
+    manager_id: str | None = Query(None),
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    date_before: datetime | None = Query(None, deprecated=True),
     auth: AuthContext = Depends(verify_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -83,8 +87,18 @@ async def delete_data(
     query = select(Call).where(Call.namespace == namespace)
     if call_id:
         query = query.where(Call.id == call_id)
+    if participant_id:
+        query = query.where(
+            (Call.client_id == participant_id) | (Call.manager_id == participant_id)
+        )
     if client_id:
         query = query.where(Call.client_id == client_id)
+    if manager_id:
+        query = query.where(Call.manager_id == manager_id)
+    if date_from:
+        query = query.where(Call.created_at >= date_from)
+    if date_to:
+        query = query.where(Call.created_at <= date_to)
     if date_before:
         query = query.where(Call.created_at <= date_before)
 
@@ -93,12 +107,13 @@ async def delete_data(
 
     # Clean up voice query history from Redis for GDPR compliance
     deleted_voice_queries = 0
-    if not call_id and not client_id:
+    if not call_id and not participant_id and not client_id and not manager_id:
         try:
             from app.queue.redis_streams import get_queue
 
             client = await get_queue().get_client()
-            if not date_before:
+            effective_date_to = date_to or date_before
+            if not date_from and not effective_date_to:
                 deleted_voice_queries = await client.delete(f"voice:history:{namespace}")
             else:
                 raw_items = await client.lrange(f"voice:history:{namespace}", 0, -1)
@@ -108,12 +123,15 @@ async def delete_data(
                         decoded = raw.decode("utf-8") if isinstance(raw, bytes) else raw
                         item = json.loads(decoded)
                         item_dt = datetime.fromisoformat(item.get("created_at"))
-                        if item_dt > date_before:
-                            to_keep.append(raw)
-                        else:
+                        in_range = (date_from is None or item_dt >= date_from) and (
+                            effective_date_to is None or item_dt <= effective_date_to
+                        )
+                        if in_range:
                             deleted_voice_queries += 1
+                        else:
+                            to_keep.append(raw)
                     except Exception:
-                        pass
+                        to_keep.append(raw)
                 await client.delete(f"voice:history:{namespace}")
                 if to_keep:
                     await client.rpush(f"voice:history:{namespace}", *to_keep)
@@ -140,7 +158,7 @@ async def delete_data(
             step="cancelled_by_deletion",
             error_details={
                 "error": "cancelled_by_deletion",
-                "message": "Call data deleted by admin",
+                "message": "Данные звонка удалены администратором",
             },
         )
     )
