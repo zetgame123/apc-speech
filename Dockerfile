@@ -26,6 +26,12 @@ FROM python:3.12-slim AS runtime
 
 WORKDIR /app
 
+# Отключаем буферизацию stdout/stderr: без TTY (как в docker compose logs) Python по умолчанию
+# блочно буферизует print() - если процесс когда-либо завершится по сигналу (OOM, таймаут
+# оркестратора), последние строки лога теряются, что затрудняет диагностику сбоев init-job'ов
+# (model-downloader и т.п.) и воркеров.
+ENV PYTHONUNBUFFERED=1
+
 # Install runtime system packages: FFmpeg and curl for healthchecks
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \

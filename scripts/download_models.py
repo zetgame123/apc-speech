@@ -189,17 +189,13 @@ def download_whisper(model_name: str = "small", output_name: str | None = None):
         return
 
     print(f"Downloading faster-whisper '{model_name}' model to {output_dir}...")
-    try:
-        from faster_whisper import download_model
-
-        download_model(model_name, output_dir=output_dir)
-        print(f"[OK] Downloaded Whisper {model_name} successfully")
-        return
-    except Exception as e:
-        print(
-            f"[INFO] faster-whisper unavailable or failed ({e}), falling back to direct Hugging Face download..."
-        )
-
+    # Используем собственный download_file() с гарантированным per-attempt timeout и retry,
+    # а не faster_whisper.download_model() (huggingface_hub.snapshot_download): на сетях с
+    # обрывающимися/подвисающими соединениями (DPI, нестабильный аплинк) он может повиснуть
+    # без исключения на неопределённое время, т.к. не ограничен сопоставимым таймаутом сокета -
+    # try/except вокруг него в таком случае никогда не сработает (воспроизведено на реальном
+    # Linux-хосте: три идентичных запуска молча зависали на этом шаге без единой [WARN]/[FATAL]
+    # строки в логе).
     repo_id = "Systran/faster-whisper-small" if model_name == "small" else model_name
     files = [
         ("config.json", True, 100),
