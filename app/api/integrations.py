@@ -2,12 +2,12 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.audio_ingest import fetch_url_to_s3
+from app.api.audio_ingest import ingest_url_job
 from app.api.rate_limit import rate_limit
 from app.core.config import get_settings
 from app.core.errors import AppError
@@ -16,10 +16,9 @@ from app.core.security import (
     AuthContext,
     validate_ssrf_url,
 )
-from app.db.models import AudioObject, Call, Job
+from app.db.models import Call, Job
 from app.db.session import get_db
 from app.integrations.bitrix24 import parse_bitrix24_webhook
-from app.queue.redis_streams import get_queue
 
 router = APIRouter(prefix="/v1/integrations", tags=["integrations"])
 logger = get_logger("integrations_api")
@@ -70,6 +69,7 @@ async def verify_integration_auth(
 async def bitrix24_telephony_webhook(
     request: Request,
     response: Response,
+    background: BackgroundTasks,
     namespace: str = Query("default", description="Namespace изоляции данных"),
     bitrix_rest_url: str | None = Query(
         None,
@@ -148,17 +148,6 @@ async def bitrix24_telephony_webhook(
     call_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    # B9: worker-long живёт в сети без egress, поэтому скачиваем запись здесь,
-    # в api (у него есть egress), с той же SSRF-защитой. Ошибка скачивания —
-    # сразу 4xx ответ, записей в БД не создаём.
-    max_bytes = settings.max_upload_size_mb * 1024 * 1024
-    s3_key, file_hash, file_size = await fetch_url_to_s3(
-        url=safe_url,
-        namespace=namespace,
-        call_id=call_id,
-        max_bytes=max_bytes,
-    )
-
     call = Call(
         id=call_id,
         namespace=namespace,
@@ -172,28 +161,14 @@ async def bitrix24_telephony_webhook(
     )
     db.add(call)
 
-    # Аудио уже скачано в S3 (см. выше): фиксируем объект, как в /upload.
-    audio_obj = AudioObject(
-        call_id=call_id,
-        namespace=namespace,
-        s3_bucket=settings.s3_bucket_audio,
-        s3_key=s3_key,
-        mime_type="application/octet-stream",
-        file_size_bytes=file_size,
-        created_at=now,
-        expires_at=now + timedelta(days=settings.retention_audio_days),
-    )
-    db.add(audio_obj)
-
     job = Job(
         id=job_id,
         namespace=namespace,
         call_id=call_id,
         status="queued",
         progress=0,
-        step="downloaded",
+        step="pending_download",
         idempotency_key=effective_idempotency,
-        file_hash_sha256=file_hash,
         callback_url=callback_url,
         created_at=now,
     )
@@ -205,17 +180,16 @@ async def bitrix24_telephony_webhook(
     if not timeline_webhook and parsed.get("portal_domain") and parsed.get("auth_token"):
         timeline_webhook = f"https://{parsed['portal_domain']}/rest/{parsed.get('manager_id', '1')}/{parsed['auth_token']}/"
 
-    # Enqueue in Redis
-    queue = get_queue()
-    payload = {
-        "job_id": job_id,
-        "call_id": call_id,
-        "namespace": namespace,
-        "s3_bucket": settings.s3_bucket_audio,
-        "s3_key": s3_key,
-        "callback_url": callback_url,
-        "language": language,
-        "metadata": {
+    # B9: скачивание — в фоне после немедленного 202 (см. create_job_by_url).
+    background.add_task(
+        ingest_url_job,
+        job_id=job_id,
+        call_id=call_id,
+        namespace=namespace,
+        url=safe_url,
+        callback_url=callback_url,
+        language=language,
+        metadata={
             "source": "bitrix24",
             "external_id": parsed["external_id"],
             "manager_id": parsed["manager_id"],
@@ -229,11 +203,12 @@ async def bitrix24_telephony_webhook(
                 "webhook_url": timeline_webhook,
             },
         },
-        "options": {
-            "language": language,
-        },
-    }
-    await queue.enqueue_long_job(job_id, payload)
+        options={"language": language},
+        channel_manager=None,
+        vocabulary_hints=None,
+        max_bytes=settings.max_upload_size_mb * 1024 * 1024,
+        source="bitrix24",
+    )
 
     logger.info(
         "bitrix24_call_enqueued",

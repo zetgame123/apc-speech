@@ -52,5 +52,13 @@
 * **Статус**: Принято
 * **Контекст**: По B9 воркеры распознавания (`worker-long`, `worker-fast`) изолированы в сети compose `backend` с `internal: true` — у них нет выхода в интернет, аудио и модели полностью локальны. Но `POST /v1/jobs/by-url` и вебхук Битрикс24 (`RECORD_URL`) раньше скачивали внешнее аудио внутри `worker-long` (`source_url` в payload). После изоляции сети этот путь сломался бы, а приём по ссылке — обязательный пункт ТЗ (C1).
 * **Решение**: Скачивание выполняет `api` (у него есть egress через сеть `frontend`) в новом helper `app/api/audio_ingest.py::fetch_url_to_s3`: SSRF-защита та же (`download_file_ssrf_safe` — по hop'ам, редиректы ≤3, лимиты размера, таймауты), файл стримится во временный файл и затем в MinIO, в БД создаются `Call`/`AudioObject`/`Job`, воркеру уходит payload с готовым `s3_key` (поле `source_url` удалено из обоих хендлеров и воркера). Топология сетей: `backend` (internal) — postgres, redis, minio, api, worker-long, worker-fast, worker-callback, llm-runtime, миграции, retention; `frontend` (default) — api, worker-callback, model-downloader. Воркерам добавлен `HF_HUB_OFFLINE=1`, чтобы рантайм не пытался тянуть веса/телеметрию из сети.
-* **Последствия**: Плюс — B9 выполнен без потери C1; `by-url`/Bitrix покрыты тестами на `s3_key`-payload (`test_jobs_api.py`, `test_integrations.py`), топология — тестом `tests/test_compose_network.py`. Минус — `POST /v1/jobs/by-url` и вебхук Битрикс24 больше не мгновенные: ответ `202` приходит после скачивания файла (до 500 МБ, timeout 60 с); при обрыве скачивания записей не создаётся и клиент сразу получает 4xx вместо failed-задания в статусе. Альтернатива (отдельный downloader-воркер с egress) отклонена как лишний сервис ради одной операции.
+* **Последствия**: Плюс — B9 выполнен без потери C1; клиент сразу получает `202`
+  (скачивание до 500 МБ идёт в фоне через `BackgroundTasks`, прогресс виден в
+  `GET /v1/jobs/{id}`: `pending_download` → `downloaded`, при обрыве — `failed`
+  + failure-callback как при падении воркера); топология покрыта
+  `tests/test_compose_network.py`, фоновый ingest — `tests/test_audio_ingest.py`,
+  быстрый 202 — тестами хендлеров. Минус — задание появляется в очереди воркера
+  только после скачивания (задержка постановки = время скачивания + заливки в S3).
+  Альтернатива (отдельный downloader-воркер с egress) отклонена как лишний сервис
+  ради одной операции.
 

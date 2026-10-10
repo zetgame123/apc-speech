@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -21,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.audio_ingest import fetch_url_to_s3
+from app.api.audio_ingest import ingest_url_job
 from app.api.rate_limit import rate_limit
 from app.core.config import get_settings
 from app.core.errors import AppError
@@ -297,6 +298,7 @@ async def create_job_upload(
 async def create_job_by_url(
     req: CreateJobByUrlRequest,
     response: Response,
+    background: BackgroundTasks,
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     x_request_id: str | None = Header(None, alias="X-Request-Id"),
     auth: AuthContext = Depends(verify_auth),
@@ -336,17 +338,6 @@ async def create_job_by_url(
     call_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    # B9: worker-long живёт в сети без egress, поэтому скачиваем аудио здесь,
-    # в api (у него есть egress), с той же SSRF-защитой. Ошибка скачивания —
-    # сразу 4xx ответ, записей в БД не создаём.
-    max_bytes = settings.max_upload_size_mb * 1024 * 1024
-    s3_key, file_hash, file_size = await fetch_url_to_s3(
-        url=safe_url,
-        namespace=req.namespace,
-        call_id=call_id,
-        max_bytes=max_bytes,
-    )
-
     call_created_at_dt = None
     if meta.get("call_created_at"):
         try:
@@ -369,28 +360,14 @@ async def create_job_by_url(
     )
     db.add(call)
 
-    # Аудио уже скачано в S3 (см. выше): фиксируем объект, как в /upload.
-    audio_obj = AudioObject(
-        call_id=call_id,
-        namespace=req.namespace,
-        s3_bucket=settings.s3_bucket_audio,
-        s3_key=s3_key,
-        mime_type="application/octet-stream",
-        file_size_bytes=file_size,
-        created_at=now,
-        expires_at=now + timedelta(days=settings.retention_audio_days),
-    )
-    db.add(audio_obj)
-
     job = Job(
         id=job_id,
         namespace=req.namespace,
         call_id=call_id,
         status="queued",
         progress=0,
-        step="downloaded",
+        step="pending_download",
         idempotency_key=effective_idempotency,
-        file_hash_sha256=file_hash,
         callback_url=req.callback_url,
         created_at=now,
     )
@@ -413,21 +390,23 @@ async def create_job_by_url(
             )
         raise
 
-    queue = get_queue()
-    payload = {
-        "job_id": job_id,
-        "call_id": call_id,
-        "namespace": req.namespace,
-        "s3_bucket": settings.s3_bucket_audio,
-        "s3_key": s3_key,
-        "callback_url": req.callback_url,
-        "language": req.language or "ru",
-        "metadata": meta,
-        "options": options,
-        "channel_manager": options.get("channel_manager") or meta.get("channel_manager"),
-        "vocabulary_hints": options.get("vocabulary_hints") or meta.get("vocabulary_hints"),
-    }
-    await queue.enqueue_long_job(job_id, payload)
+    # B9: скачивание — в фоне после немедленного 202 (файл может быть большим,
+    # клиент не ждёт). Worker-long без egress получает готовый s3_key.
+    background.add_task(
+        ingest_url_job,
+        job_id=job_id,
+        call_id=call_id,
+        namespace=req.namespace,
+        url=safe_url,
+        callback_url=req.callback_url,
+        language=req.language or "ru",
+        metadata=meta,
+        options=options,
+        channel_manager=options.get("channel_manager") or meta.get("channel_manager"),
+        vocabulary_hints=options.get("vocabulary_hints") or meta.get("vocabulary_hints"),
+        max_bytes=settings.max_upload_size_mb * 1024 * 1024,
+        source="by-url",
+    )
 
     return JobAcceptedResponse(
         job_id=job_id,

@@ -110,22 +110,18 @@ def test_s3_presigned_url_generation():
 
 @pytest.mark.asyncio
 async def test_bitrix24_webhook_endpoint():
+    """Пункт 3: быстрый 202, скачивание записи запланировано в фоне."""
+    from fastapi import BackgroundTasks
+
     with (
-        patch("app.api.integrations.get_queue") as mock_get_queue,
         patch("app.api.integrations.get_db") as mock_get_db,
         patch(
             "app.api.integrations.validate_ssrf_url",
             return_value="https://pub.telephony.bitrix24.ru/records/001.mp3",
         ),
-        # B9: скачивание выполняет api (у воркера нет egress).
-        patch(
-            "app.api.integrations.fetch_url_to_s3",
-            return_value=("outdoor_msk/2026/01/01/call-1/original_from_url", "filehash123", 12345),
-        ) as mock_fetch,
+        patch.object(BackgroundTasks, "add_task") as mock_add_task,
+        patch("app.api.audio_ingest.fetch_url_to_s3") as mock_fetch,
     ):
-        mock_queue = AsyncMock()
-        mock_get_queue.return_value = mock_queue
-
         mock_db = AsyncMock()
         mock_get_db.return_value = mock_db
         # Mock scalar_one_or_none to return None (no duplicate job)
@@ -157,11 +153,10 @@ async def test_bitrix24_webhook_endpoint():
             assert "job_id" in data
             assert "call_id" in data
             assert data["status_url"].startswith("/v1/jobs/")
-            # B9: воркеру ушёл s3_key, а не source_url.
-            mock_fetch.assert_awaited_once()
-            enqueued_payload = mock_queue.enqueue_long_job.await_args[0][1]
-            assert "source_url" not in enqueued_payload
-            assert "s3_key" in enqueued_payload
+            # Скачивание НЕ выполнялось в запросе — только запланировано в фоне.
+            mock_fetch.assert_not_called()
+            mock_add_task.assert_called_once()
+            assert mock_add_task.call_args[0][0].__name__ == "ingest_url_job"
 
 
 @pytest.mark.asyncio

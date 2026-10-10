@@ -99,14 +99,14 @@ async def test_create_job_upload_unauthorized():
 
 
 @pytest.mark.asyncio
-async def test_create_job_by_url_returns_202(mock_infra):
-    _, mock_queue = mock_infra
+async def test_create_job_by_url_returns_202_without_waiting_for_download(mock_infra):
+    """Пункт 3: клиент быстро получает 202, скачивание запланировано в фоне."""
+    from fastapi import BackgroundTasks
+
     with (
         patch("app.api.jobs.validate_ssrf_url", return_value="https://example.com/audio.wav"),
-        patch(
-            "app.api.jobs.fetch_url_to_s3",
-            return_value=("test_msk/2026/01/01/call-1/original_from_url", "filehash123", 12345),
-        ) as mock_fetch,
+        patch.object(BackgroundTasks, "add_task") as mock_add_task,
+        patch("app.api.audio_ingest.fetch_url_to_s3") as mock_fetch,
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             headers = {"Authorization": "Bearer dev-token"}
@@ -118,38 +118,10 @@ async def test_create_job_by_url_returns_202(mock_infra):
             assert response.status_code == 202
             data = response.json()
             assert "job_id" in data
-            # B9: скачивание выполняет api (у воркера нет egress) — проверяем,
-            # что файл скачан и воркеру ушёл s3_key, а не source_url.
-            mock_fetch.assert_awaited_once()
-            enqueued_payload = mock_queue.enqueue_long_job.await_args[0][1]
-            assert "source_url" not in enqueued_payload
-            assert enqueued_payload["s3_key"] == "test_msk/2026/01/01/call-1/original_from_url"
-
-
-@pytest.mark.asyncio
-async def test_create_job_by_url_download_failure_returns_error(mock_infra):
-    from app.core.errors import AppError
-
-    with (
-        patch("app.api.jobs.validate_ssrf_url", return_value="https://example.com/audio.wav"),
-        patch(
-            "app.api.jobs.fetch_url_to_s3",
-            side_effect=AppError(
-                error="audio_download_failed",
-                message="Не удалось скачать аудио по ссылке",
-                status_code=422,
-            ),
-        ),
-    ):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            headers = {"Authorization": "Bearer dev-token"}
-            payload = {
-                "namespace": "test_msk",
-                "url": "https://example.com/audio.wav",
-            }
-            response = await ac.post("/v1/jobs/by-url", json=payload, headers=headers)
-            assert response.status_code == 422
-            assert response.json()["error"] == "audio_download_failed"
+            # Скачивание НЕ выполнялось в запросе — только запланировано в фоне.
+            mock_fetch.assert_not_called()
+            mock_add_task.assert_called_once()
+            assert mock_add_task.call_args[0][0].__name__ == "ingest_url_job"
 
 
 @pytest.mark.asyncio
