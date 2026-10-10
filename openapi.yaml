@@ -758,6 +758,12 @@ paths:
                   version:
                     type: string
                     example: "1.0.0"
+                  details:
+                    type: object
+                    properties:
+                      avx2:
+                        type: boolean
+                        description: CPU сообщает флаг AVX2 (без него ASR на порядок медленнее)
 
   /ready:
     get:

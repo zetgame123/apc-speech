@@ -12,6 +12,7 @@ from app.asr.engine import get_asr_engine
 from app.asr.preprocessor import AudioPreprocessor
 from app.asr.vad import VadDetector
 from app.core.config import get_settings
+from app.core.cpu import has_avx2
 from app.core.errors import AppError
 from app.core.logging import get_logger, setup_logging
 from app.db.models import Analysis, Call, Job, TranscriptSegment
@@ -501,6 +502,11 @@ async def main():
     await queue.ensure_groups()
     await prewarm(queue)
     logger.info("long_audio_processor_worker_started", group=GROUP_WORKERS)
+    if not has_avx2():
+        logger.warning(
+            "cpu_without_avx2_asr_will_be_slow",
+            hint="инференс без AVX2 на порядок медленнее, SLA/RTF недостижимы",
+        )
 
     while is_running:
         # Heartbeat готовности для /ready (флаг с TTL).

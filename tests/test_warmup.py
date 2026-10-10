@@ -116,3 +116,31 @@ async def test_ready_200_after_workers_warmed():
             resp = await ac.get("/ready")
             assert resp.status_code == 200
             assert resp.json()["status"] == "ready"
+
+
+def test_has_avx2_parses_cpuinfo_flags(tmp_path):
+    from app.core.cpu import cpu_flags, has_avx2
+
+    f = tmp_path / "cpuinfo"
+    f.write_text(
+        "processor\t: 0\nflags\t\t: fpu vme avx avx2 bmi1 bmi2 fma\n",
+        encoding="utf-8",
+    )
+    assert has_avx2(f) is True
+    assert "avx2" in cpu_flags(f)
+
+    f.write_text("processor\t: 0\nflags\t\t: fpu vme avx\n", encoding="utf-8")
+    assert has_avx2(f) is False
+
+    assert has_avx2(tmp_path / "no-such-file") is False
+
+
+@pytest.mark.asyncio
+async def test_health_reports_avx2_details():
+    """Пункт 4: /health отдаёт details.avx2 (bool)."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/health")
+        assert resp.status_code == 200
+        details = resp.json().get("details")
+        assert isinstance(details, dict)
+        assert isinstance(details.get("avx2"), bool)

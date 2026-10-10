@@ -7,6 +7,7 @@ from app.api.voice import VOICE_SEARCH_HOTWORDS, VOICE_SEARCH_INITIAL_PROMPT, is
 from app.asr.engine import get_voice_search_engine
 from app.asr.preprocessor import AudioPreprocessor
 from app.core.config import get_settings
+from app.core.cpu import has_avx2
 from app.core.logging import get_logger, setup_logging
 from app.queue.redis_streams import GROUP_FAST_WORKERS, STREAM_FAST_JOBS, get_queue
 from app.workers.warmup import mark_worker_ready, synthetic_warmup_wav
@@ -79,6 +80,11 @@ async def main():
         logger.warning("worker_ready_mark_failed", error=str(e))
     consumer = f"fast_worker_{os.getpid()}"
     logger.info("fast_voice_search_worker_started", group=GROUP_FAST_WORKERS)
+    if not has_avx2():
+        logger.warning(
+            "cpu_without_avx2_asr_will_be_slow",
+            hint="инференс без AVX2 на порядок медленнее, SLA/RTF недостижимы",
+        )
 
     while is_running:
         # Heartbeat готовности для /ready (флаг с TTL).

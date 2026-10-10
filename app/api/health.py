@@ -3,6 +3,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 
 from app.core.config import get_settings
+from app.core.cpu import has_avx2
 from app.core.logging import get_logger
 from app.db.session import engine
 from app.queue.redis_streams import get_queue
@@ -11,16 +12,33 @@ from app.storage.s3 import get_storage
 router = APIRouter(tags=["health"])
 logger = get_logger("health")
 
+_avx2_warning_logged = False
+
+
+def _warn_once_if_no_avx2() -> bool:
+    """Возвращает has_avx2(); предупреждение в лог — один раз за процесс."""
+    global _avx2_warning_logged
+    avx2 = has_avx2()
+    if not avx2 and not _avx2_warning_logged:
+        _avx2_warning_logged = True
+        logger.warning(
+            "cpu_without_avx2_asr_will_be_slow",
+            hint="для SLA голосового поиска и RTF нужен процессор с AVX2",
+        )
+    return avx2
+
 
 @router.get("/health")
 async def health_check():
     cfg = get_settings()
+    avx2 = _warn_once_if_no_avx2()
     return {
         "status": "ok",
         "version": cfg.build_version,
         "profile": cfg.app_profile,
         "app_profile": cfg.app_profile,
         "llm_model": cfg.local_llm_model,
+        "details": {"avx2": avx2},
     }
 
 
