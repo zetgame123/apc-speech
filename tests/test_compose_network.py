@@ -140,5 +140,32 @@ def test_images_pinned():
     assert ":server-b" in llm_image, f"llm-runtime без зафиксированной версии: {llm_image}"
 
 
+def test_published_services_wired_correctly():
+    """Пункт 4: сервисы с опубликованными портами и доступом с хоста.
+
+    Уточнение к исходной гипотезе: published ports (`ports:`) принимают входящие
+    соединения и на `internal`-сети (internal блокирует только egress наружу),
+    поэтому backend-only для llm-runtime допустим. Критично другое:
+    - api — единственная публичная точка входа: порт 8000 опубликован И есть
+      egress (frontend) для скачивания по внешним URL;
+    - minio без опубликованных портов: потребители только внутри backend,
+      хосту прямой доступ не нужен.
+    """
+    compose = load_compose()
+    services = compose["services"]
+
+    api = services["api"]
+    api_ports = [str(p) for p in (api.get("ports") or [])]
+    assert any("8000" in p for p in api_ports), "у api не опубликован порт 8000"
+    assert "frontend" in service_networks(api), "у api нет egress (frontend)"
+
+    minio = services["minio"]
+    assert not minio.get("ports"), "у minio появились опубликованные порты — проверить сети"
+    assert "backend" in service_networks(minio), "minio недоступен из backend"
+
+    llm = services["llm-runtime"]
+    assert "backend" in service_networks(llm), "llm-runtime недоступен воркерам из backend"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
