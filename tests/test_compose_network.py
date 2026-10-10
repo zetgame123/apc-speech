@@ -167,5 +167,31 @@ def test_published_services_wired_correctly():
     assert "backend" in service_networks(llm), "llm-runtime недоступен воркерам из backend"
 
 
+def test_workers_have_thread_limits_matching_cpu_quota():
+    """B1: BLAS-потоки поджаты под CPU-квоту (иначе лишний oversubscription).
+
+    worker-fast/worker-long обязаны задавать OMP*/MKL*-переменные. Потоки самого
+    CTranslate2 (ASR_THREADS) намеренно не фиксируем: замер B1 показал, что
+    1 поток замедляет инференс в разы даже под квотой (см. known-issues.md п.5).
+    """
+    compose = load_compose()
+    services = compose["services"]
+    for name in ("worker-fast", "worker-long"):
+        env = services[name].get("environment", [])
+        env_vars = {}
+        for item in env:
+            if isinstance(item, str) and "=" in item:
+                k, v = item.split("=", 1)
+                env_vars[k] = v
+            elif isinstance(item, dict):
+                env_vars.update(item)
+        for var in (
+            "OMP_NUM_THREADS",
+            "OPENBLAS_NUM_THREADS",
+            "MKL_NUM_THREADS",
+        ):
+            assert var in env_vars, f"{name}: нет {var} — потоки не ограничены"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
