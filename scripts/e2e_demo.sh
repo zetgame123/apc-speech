@@ -4,6 +4,10 @@ set -e
 API_URL="${API_BASE_URL:-http://localhost:8000}"
 TOKEN="${DEV_TOKEN:-dev-token}"
 NAMESPACE="demo_outdoor_msk"
+# Сколько ждать завершения задания (холодный старт ASR на слабом CPU —
+# минуты, а не секунды). Переопределение: E2E_TIMEOUT_SEC=120 bash scripts/e2e_demo.sh
+E2E_TIMEOUT_SEC="${E2E_TIMEOUT_SEC:-600}"
+E2E_POLL_INTERVAL_SEC=5
 
 echo "================================================================="
 echo "  APC-SPEECH END-TO-END DEMO WALKTHROUGH"
@@ -49,9 +53,10 @@ JOB_ID=$(echo "${JOB_RESP}" | grep -o '"job_id":"[^"]*' | cut -d'"' -f4)
 echo "  ✓ Задание создано: Job ID = ${JOB_ID}"
 
 # 4. Poll Job Status
-echo -e "\n[Шаг 4] Опрос статуса задания до завершения..."
+echo -e "\n[Шаг 4] Опрос статуса задания до завершения (лимит ${E2E_TIMEOUT_SEC} с)..."
 STATUS="queued"
-for i in {1..20}; do
+DEADLINE=$(( $(date +%s) + E2E_TIMEOUT_SEC ))
+while true; do
   STATUS_RESP=$(curl -s -X GET "${API_URL}/v1/jobs/${JOB_ID}?namespace=${NAMESPACE}" \
     -H "Authorization: Bearer ${TOKEN}")
   STATUS=$(echo "${STATUS_RESP}" | grep -o '"status":"[^"]*' | cut -d'"' -f4)
@@ -63,7 +68,11 @@ for i in {1..20}; do
   if [ "${STATUS}" == "succeeded" ] || [ "${STATUS}" == "failed" ]; then
     break
   fi
-  sleep 2
+  if [ "$(date +%s)" -ge "${DEADLINE}" ]; then
+    echo "  ✗ Превышен лимит ожидания (${E2E_TIMEOUT_SEC} с): ${STATUS_RESP}"
+    exit 1
+  fi
+  sleep "${E2E_POLL_INTERVAL_SEC}"
 done
 
 if [ "${STATUS}" != "succeeded" ]; then
