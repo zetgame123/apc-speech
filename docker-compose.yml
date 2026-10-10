@@ -23,7 +23,7 @@ services:
           memory: 384M
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.2-alpine
     restart: unless-stopped
     networks:
       - backend
@@ -43,7 +43,11 @@ services:
           memory: 160M
 
   minio:
-    image: ${MINIO_IMAGE:-elestio/minio:latest}
+    # Версия зафиксирована digest'ом: у elestio/minio есть только тег latest,
+    # официальный minio/minio недоступен для анонимного pull. Digest проверен
+    # через Docker Hub API (multi-arch, есть linux/amd64). Переопределение для
+    # закрытого registry — через MINIO_IMAGE в .env.
+    image: ${MINIO_IMAGE:-elestio/minio:latest@sha256:25348a257f1ece1b192f25f6cd9854618fa86422ac87b494b5d4e629c556d4bd}
     restart: unless-stopped
     networks:
       - backend
@@ -357,7 +361,9 @@ services:
   # Активируется только для профиля local-full: docker compose --profile local-full up
   # Профиль по brief.md: 8 vCPU / 32 ГБ RAM или GPU >= 12 ГБ.
   llm-runtime:
-    image: ghcr.io/ggml-org/llama.cpp:server
+    # Тег server-b4738 зафиксирован (проверен через ghcr API: есть linux/amd64,
+    # digest sha256:358bdcd79aa31ebc99047092db7e0edd961666bf27f456df988dc717f3d80a4a).
+    image: ghcr.io/ggml-org/llama.cpp:server-b4738
     restart: unless-stopped
     profiles: ["local-full"]
     depends_on:

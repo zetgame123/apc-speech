@@ -97,7 +97,7 @@ flowchart TD
 5. **`worker-fast` (Python Async Worker)**:
    * Обязательный выделенный воркер синхронного голосового поиска. API помещает запрос в отдельный Redis Stream `jobs:audio:fast`, ожидает результат не дольше `VOICE_SEARCH_RESULT_TIMEOUT_SEC` и при перегрузке/таймауте возвращает `503` с `Retry-After`.
 6. **`llm-runtime` (llama.cpp server, профиль `local-full`)**:
-   * Контейнер на базе `ghcr.io/ggml-org/llama.cpp:server`.
+   * Контейнер на базе `ghcr.io/ggml-org/llama.cpp:server-b4738`.
    * Обслуживает локальную квантованную модель `Qwen 2.5 7B Instruct` (`qwen2.5-7b-instruct-q4_k_m.gguf` или шарды, 4.4 ГБ).
    * Предоставляет OpenAI-совместимый эндпоинт `/v1/chat/completions` со строгим форсированием JSON-схем (`json_schema`).
 7. **`postgres` (PostgreSQL 16 + pgvector)**:

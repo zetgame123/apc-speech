@@ -112,5 +112,33 @@ def test_all_services_accounted():
         assert name in services, f"сервис {name} отсутствует в compose"
 
 
+def _default_image(image_ref: str) -> str:
+    """Отрезает ${VAR:-default} обёртку, возвращает значение по умолчанию."""
+    if image_ref.startswith("${") and ":-" in image_ref and image_ref.endswith("}"):
+        return image_ref.split(":-", 1)[1][:-1]
+    return image_ref
+
+
+def test_images_pinned():
+    """B2: образы с зафиксированными версиями, без плавающих latest/server."""
+    compose = load_compose()
+    services = compose["services"]
+
+    redis_image = services["redis"]["image"]
+    assert redis_image == "redis:7.2-alpine", f"redis не закреплён: {redis_image}"
+
+    minio_image = _default_image(services["minio"]["image"])
+    assert "@sha256:" in minio_image, (
+        f"MinIO не закреплён digest'ом (у elestio/minio есть только latest): {minio_image}"
+    )
+
+    llm_image = services["llm-runtime"]["image"]
+    assert llm_image not in (
+        "ghcr.io/ggml-org/llama.cpp:server",
+        "ghcr.io/ggml-org/llama.cpp:latest",
+    ), f"llm-runtime на плавающем теге: {llm_image}"
+    assert ":server-b" in llm_image, f"llm-runtime без зафиксированной версии: {llm_image}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
