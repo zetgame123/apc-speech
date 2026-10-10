@@ -2,6 +2,8 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
+    networks:
+      - backend
     environment:
       POSTGRES_DB: apc_speech
       POSTGRES_USER: ${DB_USER:-apc_user}
@@ -23,6 +25,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    networks:
+      - backend
     command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy noeviction
     volumes:
       - redisdata:/data
@@ -41,6 +45,8 @@ services:
   minio:
     image: ${MINIO_IMAGE:-elestio/minio:latest}
     restart: unless-stopped
+    networks:
+      - backend
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
@@ -66,6 +72,8 @@ services:
       context: .
       dockerfile: Dockerfile
     command: alembic upgrade head
+    networks:
+      - backend
     depends_on:
       postgres: { condition: service_healthy }
     env_file:
@@ -133,6 +141,11 @@ services:
       dockerfile: Dockerfile
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
     restart: unless-stopped
+    # api в обеих сетях: frontend — для скачивания аудио по внешним URL (by-url,
+    # Bitrix RECORD_URL) с SSRF-защитой; backend — для БД/очереди/хранилища/LLM.
+    networks:
+      - frontend
+      - backend
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -187,6 +200,10 @@ services:
       dockerfile: Dockerfile
     command: python -m app.workers.long_audio_processor
     restart: unless-stopped
+    # Только backend (internal): распознавание локальное, аудио приходит из MinIO,
+    # скачивание по внешним URL выполняет api (у него есть egress). См. B9.
+    networks:
+      - backend
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -206,6 +223,9 @@ services:
       - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
       - ASR_MODEL_NAME=${ASR_MODEL_NAME:-./models/whisper-podlodka-turbo-ct2}
       - ASR_COMPUTE_TYPE=int8
+      # Запрет сетевых попыток HuggingFace (телеметрия/докачка весов): модели
+      # уже лежат в ./models благодаря model-downloader. См. B9.
+      - HF_HUB_OFFLINE=1
     volumes:
       - ./models:/app/models:ro
       - ./app:/app/app:ro
@@ -229,6 +249,10 @@ services:
       dockerfile: Dockerfile
     command: python -m app.workers.callback_dispatcher
     restart: unless-stopped
+    # Обе сети: backend — очередь/БД, frontend — доставка callback на внешние URL. См. B9.
+    networks:
+      - frontend
+      - backend
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -263,6 +287,9 @@ services:
       dockerfile: Dockerfile
     command: python -m app.workers.fast_voice_search
     restart: unless-stopped
+    # Только backend (internal): инференс локальный, очередь — Redis в backend. См. B9.
+    networks:
+      - backend
     depends_on:
       redis: { condition: service_healthy }
       model-downloader: { condition: service_completed_successfully }
@@ -276,6 +303,8 @@ services:
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
       - VOICE_SEARCH_MODEL_NAME=./models/whisper-small
       - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-2}
+      # Запрет сетевых попыток HuggingFace (телеметрия/докачка весов). См. B9.
+      - HF_HUB_OFFLINE=1
     volumes:
       - ./models:/app/models:ro
       - ./app:/app/app:ro
@@ -297,6 +326,8 @@ services:
       dockerfile: Dockerfile
     command: python scripts/retention_loop.py
     restart: unless-stopped
+    networks:
+      - backend
     depends_on:
       postgres: { condition: service_healthy }
       minio: { condition: service_healthy }
@@ -343,6 +374,9 @@ services:
       - ./models:/models:ro
     ports:
       - "8080:8080"
+    # Только backend (internal): к LLM обращаются api/worker-long из backend. См. B9.
+    networks:
+      - backend
     deploy:
       resources:
         limits:
@@ -353,3 +387,13 @@ volumes:
   pgdata:
   redisdata:
   miniodata:
+
+networks:
+  # Сеть по умолчанию для сервисов с выходом в интернет (api скачивает аудио
+  # по внешним URL, worker-callback доставляет callback, model-downloader
+  # тянет веса моделей). Явно объявлена, чтобы тест B9 мог отличить её от backend.
+  frontend:
+  # Изолированная сеть без выхода в интернет (internal: true) для распознавания:
+  # worker-long и worker-fast видят только БД/очередь/хранилище/LLM. См. B9.
+  backend:
+    internal: true

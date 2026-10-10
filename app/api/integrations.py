@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.audio_ingest import fetch_url_to_s3
 from app.api.rate_limit import rate_limit
 from app.core.config import get_settings
 from app.core.errors import AppError
@@ -15,7 +16,7 @@ from app.core.security import (
     AuthContext,
     validate_ssrf_url,
 )
-from app.db.models import Call, Job
+from app.db.models import AudioObject, Call, Job
 from app.db.session import get_db
 from app.integrations.bitrix24 import parse_bitrix24_webhook
 from app.queue.redis_streams import get_queue
@@ -147,6 +148,17 @@ async def bitrix24_telephony_webhook(
     call_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
+    # B9: worker-long живёт в сети без egress, поэтому скачиваем запись здесь,
+    # в api (у него есть egress), с той же SSRF-защитой. Ошибка скачивания —
+    # сразу 4xx ответ, записей в БД не создаём.
+    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    s3_key, file_hash, file_size = await fetch_url_to_s3(
+        url=safe_url,
+        namespace=namespace,
+        call_id=call_id,
+        max_bytes=max_bytes,
+    )
+
     call = Call(
         id=call_id,
         namespace=namespace,
@@ -160,14 +172,28 @@ async def bitrix24_telephony_webhook(
     )
     db.add(call)
 
+    # Аудио уже скачано в S3 (см. выше): фиксируем объект, как в /upload.
+    audio_obj = AudioObject(
+        call_id=call_id,
+        namespace=namespace,
+        s3_bucket=settings.s3_bucket_audio,
+        s3_key=s3_key,
+        mime_type="application/octet-stream",
+        file_size_bytes=file_size,
+        created_at=now,
+        expires_at=now + timedelta(days=settings.retention_audio_days),
+    )
+    db.add(audio_obj)
+
     job = Job(
         id=job_id,
         namespace=namespace,
         call_id=call_id,
         status="queued",
         progress=0,
-        step="pending_download",
+        step="downloaded",
         idempotency_key=effective_idempotency,
+        file_hash_sha256=file_hash,
         callback_url=callback_url,
         created_at=now,
     )
@@ -185,7 +211,8 @@ async def bitrix24_telephony_webhook(
         "job_id": job_id,
         "call_id": call_id,
         "namespace": namespace,
-        "source_url": safe_url,
+        "s3_bucket": settings.s3_bucket_audio,
+        "s3_key": s3_key,
         "callback_url": callback_url,
         "language": language,
         "metadata": {

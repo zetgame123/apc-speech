@@ -117,6 +117,11 @@ async def test_bitrix24_webhook_endpoint():
             "app.api.integrations.validate_ssrf_url",
             return_value="https://pub.telephony.bitrix24.ru/records/001.mp3",
         ),
+        # B9: скачивание выполняет api (у воркера нет egress).
+        patch(
+            "app.api.integrations.fetch_url_to_s3",
+            return_value=("outdoor_msk/2026/01/01/call-1/original_from_url", "filehash123", 12345),
+        ) as mock_fetch,
     ):
         mock_queue = AsyncMock()
         mock_get_queue.return_value = mock_queue
@@ -152,6 +157,11 @@ async def test_bitrix24_webhook_endpoint():
             assert "job_id" in data
             assert "call_id" in data
             assert data["status_url"].startswith("/v1/jobs/")
+            # B9: воркеру ушёл s3_key, а не source_url.
+            mock_fetch.assert_awaited_once()
+            enqueued_payload = mock_queue.enqueue_long_job.await_args[0][1]
+            assert "source_url" not in enqueued_payload
+            assert "s3_key" in enqueued_payload
 
 
 @pytest.mark.asyncio

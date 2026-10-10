@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.audio_ingest import fetch_url_to_s3
 from app.api.rate_limit import rate_limit
 from app.core.config import get_settings
 from app.core.errors import AppError
@@ -335,6 +336,17 @@ async def create_job_by_url(
     call_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
+    # B9: worker-long живёт в сети без egress, поэтому скачиваем аудио здесь,
+    # в api (у него есть egress), с той же SSRF-защитой. Ошибка скачивания —
+    # сразу 4xx ответ, записей в БД не создаём.
+    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    s3_key, file_hash, file_size = await fetch_url_to_s3(
+        url=safe_url,
+        namespace=req.namespace,
+        call_id=call_id,
+        max_bytes=max_bytes,
+    )
+
     call_created_at_dt = None
     if meta.get("call_created_at"):
         try:
@@ -357,14 +369,28 @@ async def create_job_by_url(
     )
     db.add(call)
 
+    # Аудио уже скачано в S3 (см. выше): фиксируем объект, как в /upload.
+    audio_obj = AudioObject(
+        call_id=call_id,
+        namespace=req.namespace,
+        s3_bucket=settings.s3_bucket_audio,
+        s3_key=s3_key,
+        mime_type="application/octet-stream",
+        file_size_bytes=file_size,
+        created_at=now,
+        expires_at=now + timedelta(days=settings.retention_audio_days),
+    )
+    db.add(audio_obj)
+
     job = Job(
         id=job_id,
         namespace=req.namespace,
         call_id=call_id,
         status="queued",
         progress=0,
-        step="pending_download",
+        step="downloaded",
         idempotency_key=effective_idempotency,
+        file_hash_sha256=file_hash,
         callback_url=req.callback_url,
         created_at=now,
     )
@@ -392,7 +418,8 @@ async def create_job_by_url(
         "job_id": job_id,
         "call_id": call_id,
         "namespace": req.namespace,
-        "source_url": safe_url,
+        "s3_bucket": settings.s3_bucket_audio,
+        "s3_key": s3_key,
         "callback_url": req.callback_url,
         "language": req.language or "ru",
         "metadata": meta,

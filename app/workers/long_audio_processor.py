@@ -3,8 +3,7 @@ import os
 import signal
 import tempfile
 import traceback
-import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 from sqlalchemy import select, update
 
@@ -14,8 +13,7 @@ from app.asr.vad import VadDetector
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.logging import get_logger, setup_logging
-from app.core.security import download_file_ssrf_safe
-from app.db.models import Analysis, AudioObject, Call, Job, TranscriptSegment
+from app.db.models import Analysis, Call, Job, TranscriptSegment
 from app.db.session import AsyncSessionLocal
 from app.diarization.roles import RoleClassifier
 from app.integrations.bitrix24 import format_timeline_comment, post_to_crm_timeline
@@ -74,39 +72,16 @@ async def process_job(job_id: str, data: dict):
     with tempfile.TemporaryDirectory() as tmp_dir:
         input_audio_path = os.path.join(tmp_dir, "input_raw_audio")
 
-        # 1. Acquire audio: from S3 or by downloading URL
-        if "s3_key" in data:
-            storage.download_to_file(data["s3_bucket"], data["s3_key"], input_audio_path)
-        elif "source_url" in data:
-            max_bytes = settings.max_upload_size_mb * 1024 * 1024
-            downloaded_hash = await download_file_ssrf_safe(
-                url=data["source_url"],
-                target_path=input_audio_path,
-                max_bytes=max_bytes,
-                timeout=60.0,
+        # 1. Acquire audio from S3. Скачивание по внешним URL выполняет api
+        # (у воркера нет egress: сеть backend internal, см. B9), сюда приходит
+        # готовый s3_key.
+        if "s3_key" not in data:
+            raise AppError(
+                error="invalid_job_payload",
+                message="В задании отсутствует s3_key",
+                status_code=500,
             )
-
-            # Persist downloaded audio to S3 for replay and compliance
-            s3_key = f"calls/{call_id}/audio.wav"
-            s3_bucket = settings.s3_bucket_audio
-            storage.upload_file(input_audio_path, s3_bucket, s3_key)
-            now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
-            async with AsyncSessionLocal() as db:
-                audio_obj = AudioObject(
-                    id=str(uuid.uuid4()),
-                    namespace=data.get("namespace", "default"),
-                    call_id=call_id,
-                    s3_bucket=s3_bucket,
-                    s3_key=s3_key,
-                    file_size_bytes=os.path.getsize(input_audio_path),
-                    created_at=now_dt,
-                    expires_at=now_dt + timedelta(days=settings.retention_audio_days),
-                )
-                db.add(audio_obj)
-                await db.execute(
-                    update(Job).where(Job.id == job_id).values(file_hash_sha256=downloaded_hash)
-                )
-                await db.commit()
+        storage.download_to_file(data["s3_bucket"], data["s3_key"], input_audio_path)
 
         # 2. Probe audio properties
         probe_info = preprocessor.probe_audio(input_audio_path)
