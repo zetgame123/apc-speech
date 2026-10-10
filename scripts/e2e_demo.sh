@@ -98,18 +98,27 @@ echo "  ✓ Тип обращения: $(echo "${ANALYSIS_RESP}" | grep -o '"inq
 
 # 7. Test Text Clustering
 echo -e "\n[Шаг 7] Проверка кластеризации пачки текстов (POST /v1/texts/analyze)..."
+# Пейлоад — через временный файл: инлайн-кириллица в аргументах curl ломается
+# перекодировкой argv в Git Bash на Windows (сервер получает битый UTF-8 и
+# отвечает 400), содержимое файла проходит как есть. На Linux разницы нет.
+E2E_TEXTS_JSON=$(mktemp)
+cat > "${E2E_TEXTS_JSON}" <<EOF
+{
+  "namespace": "${NAMESPACE}",
+  "texts": [
+    "щиты 3х6 в Балашихе",
+    "билборд 3х6 шоссе Энтузиастов",
+    "сколько стоит суперсайт в Москве",
+    "прайс на суперсайты и скидки"
+  ]
+}
+EOF
+# shellcheck disable=SC2086
 CLUSTERS_RESP=$(curl -s -X POST "${API_URL}/v1/texts/analyze" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{
-    "namespace": "'"${NAMESPACE}"'",
-    "texts": [
-      "щиты 3х6 в Балашихе",
-      "билборд 3х6 шоссе Энтузиастов",
-      "сколько стоит суперсайт в Москве",
-      "прайс на суперсайты и скидки"
-    ]
-  }')
+  --data-binary "@${E2E_TEXTS_JSON}")
+rm -f "${E2E_TEXTS_JSON}"
 echo "  ✓ Сформированные кластеры:"
 echo "    ${CLUSTERS_RESP}"
 
