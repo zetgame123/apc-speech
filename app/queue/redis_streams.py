@@ -194,6 +194,19 @@ class RedisQueue:
         except Exception:
             return False
 
+    async def set_worker_ready(self, name: str, ttl_sec: int = 90) -> None:
+        """Флаг готовности воркера после прогрева (см. app/workers/warmup.py)."""
+        client = await self.get_client()
+        await client.set(f"worker:ready:{name}", "1", ex=ttl_sec)
+
+    async def is_worker_ready(self, name: str) -> bool:
+        """Жив ли флаг готовности воркера (сбрасывается по TTL при смерти)."""
+        try:
+            client = await self.get_client()
+            return await client.get(f"worker:ready:{name}") is not None
+        except Exception:
+            return False
+
 
 _queue_instance: RedisQueue | None = None
 

@@ -785,6 +785,12 @@ paths:
                         type: boolean
                       asr_model:
                         type: boolean
+                      worker_long:
+                        type: boolean
+                        description: Прогрет и жив (Redis-флаг после warmup)
+                      worker_fast:
+                        type: boolean
+                        description: Прогрет и жив (Redis-флаг после warmup)
         '503':
           description: Сервис не готов к приему трафика
           content:

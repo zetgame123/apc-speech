@@ -1,4 +1,5 @@
 import asyncio
+import io
 import os
 import signal
 import tempfile
@@ -27,6 +28,7 @@ from app.queue.redis_streams import (
     get_queue,
 )
 from app.storage.s3 import get_storage
+from app.workers.warmup import mark_worker_ready, synthetic_warmup_wav
 
 settings = get_settings()
 setup_logging(settings.log_level)
@@ -471,12 +473,41 @@ async def process_job(job_id: str, data: dict):
                 logger.error("bitrix24_timeline_post_error", error=str(b24_err))
 
 
+async def prewarm(queue=None):
+    """Прогрев ASR-модели и холостой прогон на синтетике до первого задания."""
+    logger.info("prewarming_long_asr_engine", model=settings.asr_model_name)
+    try:
+        engine = get_asr_engine()
+        engine.load_model()
+        engine.transcribe(
+            io.BytesIO(synthetic_warmup_wav()),
+            language="ru",
+            beam_size=1,
+            temperature=0.0,
+            vad_filter=True,
+            word_timestamps=False,
+        )
+        logger.info("long_asr_warmup_run_completed")
+        await mark_worker_ready(queue or get_queue(), "long")
+    except Exception as e:
+        # Без прогрева воркер стартует как раньше (ленивая загрузка в задании),
+        # но флаг готовности не выставляется и /ready отвечает 503.
+        logger.warning("long_asr_prewarm_failed", error=str(e))
+    logger.info("long_audio_processor_warmup_done")
+
+
 async def main():
     queue = get_queue()
     await queue.ensure_groups()
+    await prewarm(queue)
     logger.info("long_audio_processor_worker_started", group=GROUP_WORKERS)
 
     while is_running:
+        # Heartbeat готовности для /ready (флаг с TTL).
+        try:
+            await mark_worker_ready(queue, "long")
+        except Exception as e:
+            logger.warning("worker_ready_heartbeat_failed", error=str(e))
         try:
             job_item = await queue.read_next_job(
                 stream=STREAM_LONG_JOBS,

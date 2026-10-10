@@ -86,7 +86,13 @@ async def test_ready_reports_unavailable_without_dependencies():
         assert resp.status_code == 503
         data = resp.json()
         assert data["status"] == "unavailable"
-        assert set(data["dependencies"]) == {"database", "redis", "s3"}
+        assert set(data["dependencies"]) == {
+            "database",
+            "redis",
+            "s3",
+            "worker_long",
+            "worker_fast",
+        }
 
 
 @pytest.mark.asyncio
@@ -101,6 +107,7 @@ async def test_ready_ok_with_healthy_dependencies():
 
     mock_queue = MagicMock()
     mock_queue.check_health = AsyncMock(return_value=True)
+    mock_queue.is_worker_ready = AsyncMock(return_value=True)
     mock_storage = MagicMock()
     mock_storage.check_health.return_value = True
 

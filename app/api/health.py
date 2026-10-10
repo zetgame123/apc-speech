@@ -30,6 +30,8 @@ async def readiness_check(response: Response):
         "database": False,
         "redis": False,
         "s3": False,
+        "worker_long": False,
+        "worker_fast": False,
     }
 
     # Check database
@@ -41,6 +43,7 @@ async def readiness_check(response: Response):
         logger.warning("database_health_check_failed", error=str(e))
 
     # Check Redis
+    queue = None
     try:
         queue = get_queue()
         deps["redis"] = await queue.check_health()
@@ -53,6 +56,14 @@ async def readiness_check(response: Response):
         deps["s3"] = storage.check_health()
     except Exception as e:
         logger.warning("s3_health_check_failed", error=str(e))
+
+    # Workers are ready only after model warmup (Redis flags with TTL).
+    if queue is not None:
+        try:
+            deps["worker_long"] = await queue.is_worker_ready("long")
+            deps["worker_fast"] = await queue.is_worker_ready("fast")
+        except Exception as e:
+            logger.warning("worker_ready_check_failed", error=str(e))
 
     is_ready = all(deps.values())
     if not is_ready:

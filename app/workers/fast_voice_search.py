@@ -9,6 +9,7 @@ from app.asr.preprocessor import AudioPreprocessor
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
 from app.queue.redis_streams import GROUP_FAST_WORKERS, STREAM_FAST_JOBS, get_queue
+from app.workers.warmup import mark_worker_ready, synthetic_warmup_wav
 
 settings = get_settings()
 setup_logging(settings.log_level)
@@ -30,6 +31,19 @@ def prewarm():
     logger.info("prewarming_voice_search_engine", model=settings.voice_search_model_name)
     engine = get_voice_search_engine()
     engine.load_model()
+    # Холостой прогон на синтетике: греем ядра инференса до первого запроса.
+    try:
+        engine.transcribe(
+            io.BytesIO(synthetic_warmup_wav()),
+            language="ru",
+            beam_size=1,
+            temperature=0.0,
+            vad_filter=True,
+            word_timestamps=False,
+        )
+        logger.info("voice_search_warmup_run_completed")
+    except Exception as e:
+        logger.warning("voice_search_warmup_run_failed", error=str(e))
     logger.info("voice_search_engine_prewarmed_ready")
 
 
@@ -58,10 +72,20 @@ async def main():
     prewarm()
     queue = get_queue()
     await queue.ensure_groups()
+    # Флаг сразу после прогрева: /ready — 200, не дожидаясь первого тика heartbeat.
+    try:
+        await mark_worker_ready(queue, "fast")
+    except Exception as e:
+        logger.warning("worker_ready_mark_failed", error=str(e))
     consumer = f"fast_worker_{os.getpid()}"
     logger.info("fast_voice_search_worker_started", group=GROUP_FAST_WORKERS)
 
     while is_running:
+        # Heartbeat готовности для /ready (флаг с TTL).
+        try:
+            await mark_worker_ready(queue, "fast")
+        except Exception as e:
+            logger.warning("worker_ready_heartbeat_failed", error=str(e))
         item = await queue.read_next_job(
             stream=STREAM_FAST_JOBS,
             group=GROUP_FAST_WORKERS,
