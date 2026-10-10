@@ -244,7 +244,9 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.error("unhandled_exception", error=str(exc))
+    # В лог — только тип исключения: текст может содержать PII/секреты,
+    # им не место в логах (см. AGENTS.md п.3 и guard no_pii_in_logs).
+    logger.error("unhandled_exception", error=type(exc).__name__)
     return error_response(
         error="internal_server_error",
         message="Внутренняя непредвиденная ошибка сервиса",

@@ -358,3 +358,41 @@ def test_no_shell_invocations_in_app():
                         ):
                             offenders.append(f"{path}:{node.lineno} shell=")
     assert not offenders, f"shell-вызовы в приложении: {offenders}"
+
+
+@pytest.mark.asyncio
+async def test_unhandled_exception_returns_500_envelope_without_leak(monkeypatch):
+    """Пункт 2: 500 — единая форма, без внутренних деталей и PII вне debug."""
+    import app.api.health as health_mod
+
+    secret = "phone=+79990001122 card=4111111111111111 db_password=s3cr3t"
+    # raise_app_exceptions=False: иначе тестовый клиент перевыбрасывает
+    # исключение вместо возврата 500-ответа от хендлера.
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    with patch.object(
+        health_mod,
+        "get_settings",
+        side_effect=RuntimeError(f"boom {secret}"),
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.get("/health")
+            assert resp.status_code == 500
+            data = resp.json()
+            assert set(data) == {"error", "message", "details"}
+            assert data["error"] == "internal_server_error"
+            assert isinstance(data["message"], str) and data["message"]
+
+    # Production-режим (debug=False): деталей исключения нет, секрета в теле нет.
+    settings = get_settings()
+    monkeypatch.setattr(settings, "debug", False)
+    with patch.object(
+        health_mod,
+        "get_settings",
+        side_effect=RuntimeError(f"boom {secret}"),
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.get("/health")
+            assert resp.status_code == 500
+            assert resp.json()["details"] == {}
+            assert "s3cr3t" not in resp.text
+            assert "+79990001122" not in resp.text
