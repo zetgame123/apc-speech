@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 import uuid
@@ -92,8 +93,25 @@ async def lifespan(app: FastAPI):
 
     # Voice-search ASR is prewarmed by the dedicated worker-fast service.
     # API processes remain lightweight and do not compete with long-audio ASR for model memory.
+
+    # 5. Reap downloads stalled by a previous api run + start periodic sweeper.
+    # (BackgroundTasks не переживают рестарт api: задание может навсегда
+    # зависнуть в pending_download.)
+    try:
+        from app.api.audio_ingest import reap_stalled_downloads, stalled_downloads_sweeper_loop
+
+        reaped = await reap_stalled_downloads()
+        if reaped:
+            logger.warning("stalled_downloads_reaped_at_startup", count=reaped)
+        sweeper_task = asyncio.create_task(stalled_downloads_sweeper_loop())
+    except Exception as e:
+        logger.warning("stalled_downloads_sweeper_start_failed", error=str(e))
+        sweeper_task = None
+
     yield
 
+    if sweeper_task is not None:
+        sweeper_task.cancel()
     logger.info("service_shutdown_completed")
 
 

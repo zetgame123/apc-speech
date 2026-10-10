@@ -15,7 +15,7 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from app.core.config import get_settings
 from app.core.errors import AppError
@@ -189,3 +189,73 @@ async def ingest_url_job(
     }
     await queue.enqueue_long_job(job_id, payload)
     logger.info("url_ingest_enqueued", job_id=job_id, call_id=call_id, source=source)
+
+
+async def reap_stalled_downloads(*, max_age_sec: int | None = None) -> int:
+    """Уборка зависших заданий: pending_download старше таймаута -> failed + callback.
+
+    Задание зависает, если api-процесс умер во время фоновой задачи скачивания
+    (BackgroundTasks не переживают рестарт). Вызывается из lifespan api
+    при старте и периодически. Возвращает число переведённых заданий.
+    """
+    settings = get_settings()
+    limit_sec = max_age_sec if max_age_sec is not None else settings.pending_download_timeout_sec
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=limit_sec)
+    queue = get_queue()
+    reaped = 0
+    async with AsyncSessionLocal() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(Job).where(
+                        Job.status == "queued",
+                        Job.step == "pending_download",
+                        Job.created_at < cutoff,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for job in rows:
+            error_type = "download_stalled"
+            error_msg = (
+                f"Скачивание аудио по ссылке не завершилось в срок (превышен лимит {limit_sec} с)"
+            )
+            job.status = "failed"
+            job.step = error_type
+            job.error_details = {"error": error_type, "message": error_msg}
+            if job.callback_url:
+                try:
+                    await queue.enqueue_callback(
+                        job.id,
+                        job.callback_url,
+                        {
+                            "job_id": job.id,
+                            "call_id": job.call_id,
+                            "status": "failed",
+                            "error": {"error": error_type, "message": error_msg},
+                        },
+                    )
+                except Exception as cb_err:
+                    logger.error("reaper_failure_callback_error", job_id=job.id, error=str(cb_err))
+            reaped += 1
+        if reaped:
+            await db.commit()
+    if reaped:
+        logger.warning("stalled_downloads_reaped", count=reaped)
+    return reaped
+
+
+async def stalled_downloads_sweeper_loop(*, interval_sec: int = 60) -> None:
+    """Фоновый цикл уборщика для lifespan api."""
+    import asyncio
+
+    while True:
+        try:
+            await reap_stalled_downloads()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error("stalled_downloads_sweep_failed", error=str(e))
+        await asyncio.sleep(interval_sec)

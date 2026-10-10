@@ -22,7 +22,7 @@ import pytest
 from sqlalchemy import select
 
 import app.api.audio_ingest as ingest_mod
-from app.api.audio_ingest import ingest_url_job
+from app.api.audio_ingest import ingest_url_job, reap_stalled_downloads
 from app.core.errors import AppError
 from app.db.models import AudioObject, Call, Job
 from tests.conftest import TestingSessionLocal
@@ -157,3 +157,74 @@ async def test_ingest_url_job_failure_marks_job_failed_and_callbacks():
         job = (await session.execute(select(Job).where(Job.id == job_id))).scalar_one()
         assert job.status == "failed"
         assert job.error_details["error"] == "payload_too_large"
+
+
+@pytest.mark.asyncio
+async def test_reap_stalled_downloads_marks_old_pending_failed():
+    """Уборка: зависший pending_download -> failed + callback; свежие не трогаем."""
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    old = now - timedelta(hours=2)
+    async with TestingSessionLocal() as session:
+        session.add(
+            Call(
+                id="call-reap-1",
+                namespace="test_msk",
+                direction="inbound",
+                call_created_at=old,
+                created_at=old,
+                expires_at=now,
+            )
+        )
+        session.add(
+            Job(
+                id="job-reap-stalled",
+                namespace="test_msk",
+                call_id="call-reap-1",
+                status="queued",
+                progress=0,
+                step="pending_download",
+                idempotency_key="reap-1",
+                callback_url="https://crm.example.com/hook",
+                created_at=old,
+            )
+        )
+        session.add(
+            Job(
+                id="job-reap-fresh",
+                namespace="test_msk",
+                call_id="call-reap-1",
+                status="queued",
+                progress=0,
+                step="pending_download",
+                idempotency_key="reap-2",
+                created_at=now,
+            )
+        )
+        await session.commit()
+
+    mock_queue = MagicMock()
+    mock_queue.enqueue_callback = AsyncMock(return_value="9-0")
+    with (
+        patch.object(ingest_mod, "get_queue", return_value=mock_queue),
+        patch.object(ingest_mod, "AsyncSessionLocal", return_value=_session_cm()),
+    ):
+        reaped = await reap_stalled_downloads(max_age_sec=600)
+
+    assert reaped == 1
+    mock_queue.enqueue_callback.assert_awaited_once()
+    failure = mock_queue.enqueue_callback.await_args[0][2]
+    assert failure["status"] == "failed"
+    assert failure["error"]["error"] == "download_stalled"
+
+    async with TestingSessionLocal() as session:
+        stalled = (
+            await session.execute(select(Job).where(Job.id == "job-reap-stalled"))
+        ).scalar_one()
+        assert stalled.status == "failed"
+        assert stalled.step == "download_stalled"
+        assert stalled.error_details["error"] == "download_stalled"
+        fresh = (await session.execute(select(Job).where(Job.id == "job-reap-fresh"))).scalar_one()
+        assert fresh.status == "queued"
+        assert fresh.step == "pending_download"

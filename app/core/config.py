@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = Field(default=500, alias="MAX_UPLOAD_SIZE_MB")
     # Максимум заданий в статусах queued/running; сверх — 429 с Retry-After (B6).
     max_pending_jobs: int = Field(default=100, alias="MAX_PENDING_JOBS")
+    # Возраст задания в шаге pending_download, после которого уборщик считает
+    # скачивание зависшим (api перезапустили во время фоновой задачи) и
+    # переводит задание в failed с callback (п.1 B1-догонки).
+    pending_download_timeout_sec: int = Field(default=600, alias="PENDING_DOWNLOAD_TIMEOUT_SEC")
 
     # Voice Search
     voice_search_max_duration_sec: int = Field(default=60, alias="VOICE_SEARCH_MAX_DURATION_SEC")
