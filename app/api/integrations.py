@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.audio_ingest import ingest_url_job
+from app.api.jobs import ensure_job_capacity
 from app.api.rate_limit import rate_limit
 from app.core.config import get_settings
 from app.core.errors import AppError
@@ -89,6 +90,8 @@ async def bitrix24_telephony_webhook(
     auth.require_scope("write")
     auth.verify_namespace(namespace)
     settings = get_settings()
+
+    await ensure_job_capacity(db)
 
     if callback_url:
         validate_ssrf_url(callback_url)

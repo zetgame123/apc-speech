@@ -18,12 +18,13 @@ from fastapi import (
     status,
 )
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.audio_ingest import ingest_url_job
 from app.api.rate_limit import rate_limit
+from app.asr.preprocessor import AudioPreprocessor
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.logging import get_logger
@@ -35,6 +36,27 @@ from app.storage.s3 import get_storage
 
 router = APIRouter(prefix="/v1/jobs", tags=["jobs"])
 logger = get_logger("jobs_api")
+
+
+async def ensure_job_capacity(db: AsyncSession) -> None:
+    """B6: лимит числа одновременных заданий (queued + running).
+
+    Превышение — 429 с Retry-After, а не падение. Вызывать после auth,
+    до тяжёлой работы (стриминг файла, скачивание по URL).
+    """
+    settings = get_settings()
+    pending = (
+        await db.execute(
+            select(func.count()).select_from(Job).where(Job.status.in_(["queued", "running"]))
+        )
+    ).scalar_one()
+    if pending >= settings.max_pending_jobs:
+        raise AppError(
+            error="too_many_jobs",
+            message=f"Превышен лимит одновременных заданий ({settings.max_pending_jobs})",
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            headers={"Retry-After": "60"},
+        )
 
 
 class JobAcceptedResponse(BaseModel):
@@ -104,6 +126,8 @@ async def create_job_upload(
     auth.verify_namespace(namespace)
     settings = get_settings()
 
+    await ensure_job_capacity(db)
+
     if callback_url:
         validate_ssrf_url(callback_url)
 
@@ -133,6 +157,11 @@ async def create_job_upload(
 
         if total_bytes == 0:
             raise AppError("empty_file", "Загруженный файл пуст", 400)
+
+        # B8: ранняя проверка враждебного/битого файла. ffprobe читает только
+        # заголовки (дёшево, timeout 10 c) — мусор отклоняем сразу 400,
+        # не тащим его в S3 и очередь.
+        AudioPreprocessor().probe_audio(tmp_upload_path)
 
         file_hash = hasher.hexdigest()
         param_fingerprint = f"{language or 'ru'}:{channel_manager}:{vocabulary_hints}"
@@ -309,6 +338,8 @@ async def create_job_by_url(
     auth.verify_namespace(req.namespace)
     settings = get_settings()
 
+    await ensure_job_capacity(db)
+
     # SSRF Protection
     safe_url = validate_ssrf_url(req.url)
     if req.callback_url:
@@ -434,6 +465,8 @@ async def create_job_by_s3(
     auth.require_scope("write")
     auth.verify_namespace(req.namespace)
     settings = get_settings()
+
+    await ensure_job_capacity(db)
 
     if req.callback_url:
         validate_ssrf_url(req.callback_url)

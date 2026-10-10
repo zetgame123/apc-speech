@@ -52,7 +52,9 @@ class AudioPreprocessor:
                 text=True,
                 check=True,
                 timeout=10,
-                preexec_fn=set_process_limits,
+                # preexec_fn — только POSIX; на Windows этот параметр
+                # не поддерживается и роняет любой вызов (см. B8-тесты).
+                preexec_fn=set_process_limits if os.name == "posix" else None,
             )
             data = json.loads(result.stdout)
             format_info = data.get("format", {})
@@ -111,7 +113,7 @@ class AudioPreprocessor:
                 capture_output=True,
                 check=True,
                 timeout=10,
-                preexec_fn=set_process_limits,
+                preexec_fn=set_process_limits if os.name == "posix" else None,
             )
             return res.stdout
         except Exception as e:
@@ -152,7 +154,7 @@ class AudioPreprocessor:
                 capture_output=True,
                 check=True,
                 timeout=300,
-                preexec_fn=set_process_limits,
+                preexec_fn=set_process_limits if os.name == "posix" else None,
             )
             return output_path
         except subprocess.TimeoutExpired:
@@ -192,7 +194,7 @@ class AudioPreprocessor:
                 capture_output=True,
                 check=True,
                 timeout=180,
-                preexec_fn=set_process_limits,
+                preexec_fn=set_process_limits if os.name == "posix" else None,
             )
             return ch0_path, ch1_path
         except Exception as e:

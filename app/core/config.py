@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     vad_threshold: float = Field(default=0.5, alias="VAD_THRESHOLD")
     max_audio_duration_hours: int = Field(default=3, alias="MAX_AUDIO_DURATION_HOURS")
     max_upload_size_mb: int = Field(default=500, alias="MAX_UPLOAD_SIZE_MB")
+    # Максимум заданий в статусах queued/running; сверх — 429 с Retry-After (B6).
+    max_pending_jobs: int = Field(default=100, alias="MAX_PENDING_JOBS")
 
     # Voice Search
     voice_search_max_duration_sec: int = Field(default=60, alias="VOICE_SEARCH_MAX_DURATION_SEC")
