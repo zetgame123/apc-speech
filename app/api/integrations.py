@@ -17,6 +17,7 @@ from app.core.security import (
     AuthContext,
     validate_ssrf_url,
 )
+from app.core.urls import validate_callback_url
 from app.db.models import Call, Job
 from app.db.session import get_db
 from app.integrations.bitrix24 import parse_bitrix24_webhook
@@ -94,7 +95,7 @@ async def bitrix24_telephony_webhook(
     await ensure_job_capacity(db)
 
     if callback_url:
-        validate_ssrf_url(callback_url)
+        validate_callback_url(callback_url, allow_private_net=settings.callback_allow_private_net)
     if bitrix_rest_url:
         validate_ssrf_url(bitrix_rest_url)
 

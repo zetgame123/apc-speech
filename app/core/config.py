@@ -131,6 +131,10 @@ class Settings(BaseSettings):
     llm_external_provider_model: str = Field(
         default="gpt-4o-mini", alias="LLM_EXTERNAL_PROVIDER_MODEL"
     )
+    # Тестовый флаг E2E-проверки callback (п.9): разрешать приватные адреса
+    # ТОЛЬКО для исходящих callback. Дефолт выключен; в production включённый
+    # флаг блокирует старт сервиса (см. enforce_production_callback_policy).
+    callback_allow_private_net: bool = Field(default=False, alias="CALLBACK_ALLOW_PRIVATE_NET")
 
     # Retention
     retention_audio_days: int = Field(default=14, alias="RETENTION_AUDIO_DAYS")

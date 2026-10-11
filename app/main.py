@@ -52,6 +52,9 @@ async def lifespan(app: FastAPI):
             )
         if settings.dev_token:
             logger.warning("DEV_TOKEN is set in production — consider removing it")
+        from app.workers.callback_dispatcher import enforce_production_callback_policy
+
+        enforce_production_callback_policy(settings)
 
     # 1. Initialize DB tables
     try:

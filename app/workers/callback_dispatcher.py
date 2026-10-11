@@ -8,8 +8,8 @@ import httpx
 
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
-from app.core.security import sign_callback_payload, validate_ssrf_url
-from app.core.urls import redact_url_for_log
+from app.core.security import sign_callback_payload
+from app.core.urls import redact_url_for_log, validate_callback_url
 from app.db.models import CallbackLog
 from app.db.session import AsyncSessionLocal
 from app.queue.redis_streams import (
@@ -37,14 +37,31 @@ signal.signal(signal.SIGINT, handle_sigterm)
 RETRY_DELAYS_SEC = [5, 15, 60, 300, 900]  # 5 retry attempts with backoff
 
 
+def enforce_production_callback_policy(settings) -> None:
+    """Боевой профиль: тестовый флаг приватных callback запрещён.
+
+    Вызывается на старте api (lifespan) и worker-callback (main).
+    """
+    if settings.app_env == "production" and settings.callback_allow_private_net:
+        msg = (
+            "CRITICAL: CALLBACK_ALLOW_PRIVATE_NET включён в production! "
+            "Флаг только для тестового стенда (docker-compose.test.yml)."
+        )
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+
 async def dispatch_callback(job_id: str, callback_url: str, payload: dict):
     if not callback_url:
         logger.error("callback_url_empty", job_id=job_id)
         return False
 
-    # SSRF protection on outgoing callback URLs
+    # SSRF protection on outgoing callback URLs (тестовый флаг разрешает
+    # приватные адреса ТОЛЬКО для callback; скачивание по URL — никогда).
     try:
-        validate_ssrf_url(callback_url)
+        validate_callback_url(
+            callback_url, allow_private_net=get_settings().callback_allow_private_net
+        )
     except Exception as ssrf_err:
         logger.error(
             "callback_ssrf_rejected",
@@ -67,7 +84,10 @@ async def dispatch_callback(job_id: str, callback_url: str, payload: dict):
             }
 
             logger.info(
-                "dispatching_callback_attempt", job_id=job_id, url=callback_url, attempt=attempt
+                "dispatching_callback_attempt",
+                job_id=job_id,
+                url=redact_url_for_log(callback_url),
+                attempt=attempt,
             )
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
                 response = await client.post(callback_url, content=raw_body, headers=headers)
@@ -118,6 +138,7 @@ async def dispatch_callback(job_id: str, callback_url: str, payload: dict):
 
 
 async def main():
+    enforce_production_callback_policy(get_settings())
     queue = get_queue()
     await queue.ensure_groups()
     logger.info("callback_dispatcher_started", group=GROUP_CALLBACKS)

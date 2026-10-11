@@ -29,6 +29,7 @@ from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.logging import get_logger
 from app.core.security import AuthContext, validate_ssrf_url, verify_auth
+from app.core.urls import validate_callback_url
 from app.db.models import AudioObject, Call, Job
 from app.db.session import get_db
 from app.queue.redis_streams import get_queue
@@ -129,7 +130,7 @@ async def create_job_upload(
     await ensure_job_capacity(db)
 
     if callback_url:
-        validate_ssrf_url(callback_url)
+        validate_callback_url(callback_url, allow_private_net=settings.callback_allow_private_net)
 
     # Stream uploaded audio directly to a temporary file to prevent RAM duplication and OOM
     tmp_upload = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
@@ -343,7 +344,9 @@ async def create_job_by_url(
     # SSRF Protection
     safe_url = validate_ssrf_url(req.url)
     if req.callback_url:
-        validate_ssrf_url(req.callback_url)
+        validate_callback_url(
+            req.callback_url, allow_private_net=settings.callback_allow_private_net
+        )
 
     meta = req.metadata or {}
     options = req.options or {}
@@ -469,7 +472,9 @@ async def create_job_by_s3(
     await ensure_job_capacity(db)
 
     if req.callback_url:
-        validate_ssrf_url(req.callback_url)
+        validate_callback_url(
+            req.callback_url, allow_private_net=settings.callback_allow_private_net
+        )
 
     bucket = req.s3_bucket or settings.s3_bucket_audio
     storage = get_storage()
