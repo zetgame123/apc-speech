@@ -1,5 +1,6 @@
 # Multi-stage Dockerfile for apc-speech
-FROM python:3.12-slim AS builder
+# Базовый образ закреплён digest'ом (3.12-slim на момент пина; см. test_images_pinned).
+FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS builder
 
 WORKDIR /build
 
@@ -22,7 +23,7 @@ RUN uv sync --frozen --no-dev
 
 
 # Runtime Stage
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS runtime
 
 WORKDIR /app
 

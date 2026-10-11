@@ -139,6 +139,19 @@ def test_images_pinned():
     ), f"llm-runtime на плавающем теге: {llm_image}"
     assert ":server-b" in llm_image, f"llm-runtime без зафиксированной версии: {llm_image}"
 
+    pg_image = services["postgres"]["image"]
+    assert pg_image == "pgvector/pgvector:0.8.7-pg16", f"postgres не закреплён: {pg_image}"
+
+    # Сервисы со сборкой (api, воркеры, миграции): базовый образ в Dockerfile
+    # закреплён digest'ом — без исключений.
+    from pathlib import Path
+
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8").splitlines()
+    from_lines = [ln.strip() for ln in dockerfile if ln.strip().startswith("FROM ")]
+    assert from_lines, "в Dockerfile нет FROM"
+    for ln in from_lines:
+        assert "@sha256:" in ln, f"базовый образ не закреплён digest'ом: {ln}"
+
 
 def test_published_services_wired_correctly():
     """Пункт 4: сервисы с опубликованными портами и доступом с хоста.
