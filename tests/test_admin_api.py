@@ -47,6 +47,24 @@ async def test_delete_data_no_matches():
 
 
 @pytest.mark.asyncio
+async def test_delete_data_by_period_with_tz_aware_dates():
+    """Удаление по периоду с aware-датами (+00:00) не даёт 500.
+
+    Регрессия: сравнение offset-aware параметра с naive created_at роняло
+    Postgres (asyncpg: can't subtract offset-naive and offset-aware).
+    """
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        headers = {"Authorization": "Bearer dev-token"}
+        response = await ac.delete(
+            "/v1/data/delete?namespace=nonexistent_namespace_xyz"
+            "&date_from=2026-10-11T00:00:00%2B00:00&date_to=2026-10-12T00:00:00%2B00:00",
+            headers=headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["deleted_calls"] == 0
+
+
+@pytest.mark.asyncio
 async def test_revoke_token_endpoint():
     """Admin can revoke a token hash."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
