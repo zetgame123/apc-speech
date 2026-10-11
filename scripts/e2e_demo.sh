@@ -28,6 +28,9 @@ fi
 
 # 2. Fast-Track Voice Search
 echo -e "\n[Шаг 2] Синхронный голосовой поиск (SLA <= 2.5 с)..."
+# E2E_STRICT_VOICE=1: 503 на голосовом шаге роняет сценарий (приёмка C4),
+# по умолчанию — только фиксируем факт и идём дальше (B1 smoke).
+E2E_STRICT_VOICE="${E2E_STRICT_VOICE:-0}"
 START_TIME=$(date +%s%N)
 SEARCH_RESP=$(curl -s -X POST "${API_URL}/v1/voice/search?namespace=${NAMESPACE}" \
   -H "Authorization: Bearer ${TOKEN}" \
@@ -38,6 +41,13 @@ ELAPSED_MS=$(( (END_TIME - START_TIME) / 1000000 ))
 
 echo "  ✓ Ответ Voice Search получен за ${ELAPSED_MS} мс:"
 echo "    ${SEARCH_RESP}"
+if echo "${SEARCH_RESP}" | grep -q '"error"'; then
+  echo "  ! Голосовой поиск вернул ошибку (см. тело выше)"
+  if [ "${E2E_STRICT_VOICE}" == "1" ]; then
+    echo "  ✗ E2E_STRICT_VOICE=1: прерываю сценарий"
+    exit 1
+  fi
+fi
 
 # 3. Create Asynchronous Analysis Job
 echo -e "\n[Шаг 3] Загрузка телефонного звонка на полный анализ..."
