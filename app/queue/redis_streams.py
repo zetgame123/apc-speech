@@ -26,10 +26,21 @@ class RedisQueue:
 
     async def get_client(self) -> aioredis.Redis:
         if self.client is None:
+            settings = get_settings()
+            # Блокирующие чтения (BLPOP результата voice-search, XREADGROUP воркеров)
+            # не должны рваться чтением сокета раньше серверного таймаута:
+            # redis-py 8.x без явного socket_timeout роняет BLPOP ~через 5 с
+            # (TimeoutError: Timeout reading from redis). Держим запас +5 с
+            # поверх самого длинного окна ожидания.
+            socket_timeout = max(
+                settings.redis_socket_timeout_sec,
+                settings.voice_search_result_timeout_sec + 5.0,
+            )
             self.client = aioredis.from_url(
                 self.redis_url,
                 encoding="utf-8",
                 decode_responses=True,
+                socket_timeout=socket_timeout,
             )
         return self.client
 

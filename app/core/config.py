@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     redis_max_connections: int = Field(default=20, alias="REDIS_MAX_CONNECTIONS")
+    # Таймаут чтения сокета: обязан превышать самое длинное блокирующее ожидание
+    # (BLPOP результата voice-search до voice_search_result_timeout_sec + запас),
+    # иначе redis-py 8.x рвёт чтение ~через 5 с (TimeoutError) и быстрый путь
+    # отвечает 503 voice_search_unavailable при любом окне >5 с.
+    redis_socket_timeout_sec: float = Field(default=30.0, alias="REDIS_SOCKET_TIMEOUT_SEC")
 
     # MinIO / S3
     s3_endpoint_url: str = Field(default="http://localhost:9000", alias="S3_ENDPOINT_URL")
