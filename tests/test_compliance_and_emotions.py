@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -276,3 +277,65 @@ async def test_transcript_download_headers():
             == f'attachment; filename="transcript_{call_id}.vtt"'
         )
         assert "WEBVTT" in resp_vtt.text
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (6, 6),
+        (None, None),
+        (True, None),
+        (2.0, 2),
+        (2.5, None),
+        ("6", 6),
+        (" 12 ", 12),
+        ("1 000", 1000),
+        ("6.0", 6),
+        ("2.5", None),
+        ("три", 3),
+        ("двести тысяч", 200000),
+        ("месяц", None),
+        ("", None),
+        ("6 щитов", 6),
+        ([1], None),
+    ],
+)
+def test_coerce_quantity_cases(raw, expected):
+    from app.llm.local_adapter import coerce_quantity
+
+    assert coerce_quantity(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (200000, 200000),
+        (None, None),
+        (True, None),
+        ("200000", 200000),
+        ("199.99", 199.99),
+        ("двести тысяч", 200000),
+        ("1 000 000", 1000000),
+        ("много", None),
+        ("", None),
+    ],
+)
+def test_coerce_budget_cases(raw, expected):
+    from app.llm.local_adapter import coerce_budget
+
+    assert coerce_budget(raw) == expected
+
+
+def test_normalize_analysis_dict_coerces_numeric_entities():
+    from app.llm.local_adapter import normalize_analysis_dict
+
+    parsed = {
+        "entities": {"cities": [], "formats": [], "quantity": "6", "budget_rub": "двести тысяч"},
+    }
+    out = normalize_analysis_dict(parsed, "")
+    assert out["entities"]["quantity"] == 6
+    assert out["entities"]["budget_rub"] == 200000
+    import jsonschema
+
+    schema = json.load(open("schemas/analysis_schema_v1.json"))
+    jsonschema.validate(out["entities"], schema["properties"]["entities"])

@@ -6,10 +6,88 @@ from typing import Any
 import httpx
 import yaml
 
-from app.asr.normalizer import RussianTextNormalizer
+from app.asr.normalizer import NUMBER_WORDS, RussianTextNormalizer
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.llm.port import AnalysisContext, AnalysisModelPort, StructuredAnalysis
+
+
+def coerce_quantity(value: Any) -> int | None:
+    """Мягкое приведение entities.quantity к integer|null (только однозначное).
+
+    Цифры строкой ("6", "1 000") и числительные через нормалайзер проекта
+    ("двести тысяч" -> "200 000") и NUMBER_WORDS ("три" -> 3). Остальное
+    (слова без чисел, bool, дроби, мусор) -> None, а не падение схемы.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if isinstance(value, str):
+        s = value.strip().lower().replace("ё", "е").replace(" ", " ")
+        if not s:
+            return None
+        nospace = re.sub(r"\s+", "", s)
+        try:
+            return int(nospace)
+        except ValueError:
+            pass
+        try:
+            as_float = float(nospace.replace(",", "."))
+            return int(as_float) if as_float.is_integer() else None
+        except ValueError:
+            pass
+        normed = RussianTextNormalizer().normalize(s)
+        digit_run = re.search(r"\d[\d\s]*", normed)
+        if digit_run:
+            try:
+                return int(re.sub(r"\s+", "", digit_run.group(0)))
+            except ValueError:
+                pass
+        if s in NUMBER_WORDS:
+            return NUMBER_WORDS[s]
+        return None
+    return None
+
+
+def coerce_budget(value: Any) -> float | int | None:
+    """Мягкое приведение entities.budget_rub к number|null (аналог quantity)."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        s = value.strip().lower().replace("ё", "е").replace(" ", " ")
+        if not s:
+            return None
+        nospace = re.sub(r"\s+", "", s)
+        try:
+            return int(nospace)
+        except ValueError:
+            pass
+        try:
+            return float(nospace.replace(",", "."))
+        except ValueError:
+            pass
+        normed = RussianTextNormalizer().normalize(s)
+        digit_run = re.search(r"\d[\d\s]*[.,]?\d*", normed)
+        if digit_run:
+            try:
+                num = float(digit_run.group(0).replace(" ", "").replace(",", "."))
+                return int(num) if num.is_integer() else num
+            except ValueError:
+                pass
+        if s in NUMBER_WORDS:
+            return NUMBER_WORDS[s]
+        return None
+    return None
+
 
 logger = get_logger("local_llm_adapter")
 
@@ -321,6 +399,12 @@ def normalize_analysis_dict(parsed: dict[str, Any], transcript: str = "") -> dic
             parsed["entities"]["cities"] = []
         if not isinstance(parsed["entities"].get("formats"), list):
             parsed["entities"]["formats"] = []
+        # Мягкое приведение числовых полей (шаг 1 robustness Qwen):
+        # модель любит класть строки ("6", "месяц") вместо integer/null.
+        if "quantity" in parsed["entities"]:
+            parsed["entities"]["quantity"] = coerce_quantity(parsed["entities"]["quantity"])
+        if "budget_rub" in parsed["entities"]:
+            parsed["entities"]["budget_rub"] = coerce_budget(parsed["entities"]["budget_rub"])
 
     # 4. agreements
     if not isinstance(parsed.get("agreements"), list):
