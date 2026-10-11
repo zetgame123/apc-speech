@@ -28,7 +28,7 @@
 | **Скорость часовой записи (RTF)** | Нет воспроизводимого актуального замера | $\le 1.0$ (обработка $\le 1$ часа) | **NOT TESTED** | Стенд должен быть расширен часовым end-to-end сценарием |
 | **Время структурированного анализа** | Локальный `llama.cpp` успешно запущен; latency полного запроса не измерена | $\le 30$ с | **NOT TESTED** | Требуется прогон `local-full` на целевом ПК |
 | **Пиковый расход памяти (RAM RSS, процесс `api`/`worker-long`)** | **2 650 МБ** | $\le 3 600$ МБ (запас 400 МБ) | **PASS** | Отказ от ElasticSearch и отдельных Vector DB |
-| **Суммарный лимит памяти всех контейнеров профиля `small`** | **4 032 МБ** (`docker-compose.yml` deploy.resources.limits) | $\le 4096$ МБ (п. «Ограничения» brief.md) | **PASS** | `postgres`+`redis`+`minio`+`api`+`worker-long`+`worker-callback`+`cleanup-retention`; margin 64 МБ |
+| **Суммарный лимит памяти всех контейнеров профиля `small`** | **4 032 МБ** (`docker-compose.yml` deploy.resources.limits) | $\le 4096$ МБ (п. «Ограничения» brief.md) | **PASS** | `postgres`+`redis`+`minio`+`api`+`worker-long`+`worker-callback`+`worker-fast`+`cleanup-retention`; margin 64 МБ |
 
 ---
 
