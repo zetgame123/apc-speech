@@ -1,0 +1,68 @@
+# E2E small-bench 2026-10-11, Arch Linux, Ryzen 7 8845HS, cpuset 4,6 (2 ядра, governor powersave)
+# Холодный старт up --build (кэш) -> /ready=200: ~149 c
+# E2E_EXIT: 0; задание: 24 опроса x 5 c ~= 120 c (queued->succeeded); voice-step: 503 timeout за 3068 мс (холодный worker-fast)
+# Проект: apc_small (docker-compose.yml + docker-compose.bench-small.yml), APP_PROFILE=local-full из .env
+
+=================================================================
+  APC-SPEECH END-TO-END DEMO WALKTHROUGH
+  Target API: http://localhost:8000
+=================================================================
+
+[Шаг 1] Проверка жизнеспособности и готовности сервиса...
+  ✓ /health: OK
+  ✓ /ready: Все зависимости доступны
+
+[Шаг 2] Синхронный голосовой поиск (SLA <= 2.5 с)...
+  ✓ Ответ Voice Search получен за 3068 мс:
+    {"error":"voice_search_timeout","message":"Голосовой поиск не успел обработать запрос в установленный срок","details":{}}
+
+[Шаг 3] Загрузка телефонного звонка на полный анализ...
+  ✓ Задание создано: Job ID = 5d3c7749-abaf-4413-b5b2-a66403b43b6b
+
+[Шаг 4] Опрос статуса задания до завершения (лимит 600 с)...
+  ... Прогресс: 0%, Шаг: uploaded, Статус: queued
+  ... Прогресс: 25%, Шаг: asr_transcription, Статус: running
+  ... Прогресс: 25%, Шаг: asr_transcription, Статус: running
+  ... Прогресс: 25%, Шаг: asr_transcription, Статус: running
+  ... Прогресс: 25%, Шаг: asr_transcription, Статус: running
+  ... Прогресс: 25%, Шаг: asr_transcription, Статус: running
+  ... Прогресс: 25%, Шаг: asr_transcription, Статус: running
+  ... Прогресс: 25%, Шаг: asr_transcription, Статус: running
+  ... Прогресс: 25%, Шаг: asr_transcription, Статус: running
+  ... Прогресс: 55%, Шаг: mono_diarization, Статус: running
+  ... Прогресс: 55%, Шаг: mono_diarization, Статус: running
+  ... Прогресс: 55%, Шаг: mono_diarization, Статус: running
+  ... Прогресс: 55%, Шаг: mono_diarization, Статус: running
+  ... Прогресс: 55%, Шаг: mono_diarization, Статус: running
+  ... Прогресс: 55%, Шаг: mono_diarization, Статус: running
+  ... Прогресс: 55%, Шаг: mono_diarization, Статус: running
+  ... Прогресс: 55%, Шаг: mono_diarization, Статус: running
+  ... Прогресс: 55%, Шаг: mono_diarization, Статус: running
+  ... Прогресс: 55%, Шаг: mono_diarization, Статус: running
+  ... Прогресс: 55%, Шаг: mono_diarization, Статус: running
+  ... Прогресс: 55%, Шаг: mono_diarization, Статус: running
+  ... Прогресс: 55%, Шаг: mono_diarization, Статус: running
+  ... Прогресс: 55%, Шаг: mono_diarization, Статус: running
+  ... Прогресс: 100%, Шаг: completed, Статус: succeeded
+  ✓ Задание успешно завершено! Call ID = 5de775de-a026-4e6b-87d1-eb6f98948c4f
+
+[Шаг 5] Получение маскированного транскрипта звонка...
+  ✓ Текст транскрипта:
+    Здравствуйте! Подскажите стоимость суперсайта на Ленинградке. Добрый день! Стоимость 200 тысяч рублей в месяц.
+
+[Шаг 6] Получение структурированного разбора и метрик...
+  ✓ Резюме диалога: Обсуждение коммерческого предложения по тематике 'pricing'. Форматы: суперсайт.
+  ✓ Тип обращения: pricing
+
+[Шаг 7] Проверка кластеризации пачки текстов (POST /v1/texts/analyze)...
+  ✓ Сформированные кластеры:
+    {"total_texts":4,"clusters":[{"cluster_id":1,"label":"3х6 / щиты 3х6 / балашихе","size":3,"representative_queries":["щиты 3х6 в Балашихе","билборд 3х6 шоссе Энтузиастов","сколько стоит суперсайт в Москве"]},{"cluster_id":2,"label":"Суперсайты скидки / суперсайты / скидки","size":1,"representative_queries":["прайс на суперсайты и скидки"]}]}
+
+[Шаг 8] Каскадное удаление тестовых данных (DELETE /v1/data/delete)...
+  ✓ Отчет об удалении: {"deleted_calls":1,"deleted_audio_files":1,"deleted_transcripts":1,"deleted_voice_queries":0}
+
+=================================================================
+  СКВОЗНОЙ СЦЕНАРИЙ УСПЕШНО ПРОЙДЕН!
+  Караоке-интерфейс доступен по адресу: http://localhost:8000/dashboard
+=================================================================
+E2E_EXIT:0
