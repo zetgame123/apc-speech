@@ -13,7 +13,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from evaluation.dataset_generator import apply_telephony_degradation, generate_speech_wav
+from evaluation.dataset_generator import apply_telephony_degradation
 
 OUT_DIR = os.path.join("tmp", "c4suite")
 
@@ -96,7 +96,9 @@ def build_suite() -> dict:
     manifest_path = os.path.join(OUT_DIR, "manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
-    durs = [v for m in manifest for v in (m["files"]["16k"]["duration"], m["files"]["8k"]["duration"])]
+    durs = [
+        v for m in manifest for v in (m["files"]["16k"]["duration"], m["files"]["8k"]["duration"])
+    ]
     print(f"сэмплов: {len(manifest)} запросов x 2 частоты = {len(durs)} файлов")
     print(f"длительность: мин {min(durs):.1f} с, макс {max(durs):.1f} с")
     return {"manifest": manifest_path, "count": len(manifest)}
