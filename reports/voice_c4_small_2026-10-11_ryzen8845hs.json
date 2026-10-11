@@ -6,67 +6,70 @@
     "flags_avx2": true,
     "flags_avx512": true,
     "cpuset": "4,6 (разные физические ядра 2 и 3, docker-compose.bench-small.yml)",
-    "governor": "powersave",
-    "cpu_mhz_cpuset_during_bench": "416-1400 (наблюдаемые; max 3801)",
+    "governor": "performance",
+    "cpu_mhz_cpuset_before": "4810/3602",
+    "cpu_mhz_cpuset_during_engine": "~4700",
+    "cpu_mhz_cpuset_after": "cpu MHz\t\t: 4714.033 cpu MHz\t\t: 1093.439",
     "ram_host_gb": 30,
     "project": "apc_small",
     "app_profile": "local-full (из .env; llm-runtime не поднимался)",
     "voice_model": "./models/whisper-small (int8, cpu, cpu_threads=2)",
     "voice_beam_size_effective": 2,
-    "voice_search_result_timeout_sec": 2.4
+    "voice_search_result_timeout_sec": 2.4,
+    "redis_socket_timeout_fix": "применён (REDIS_SOCKET_TIMEOUT_SEC=30, запас +5 с)"
   },
   "http_level": {
-    "method": "scripts/benchmark_load.py --matrix (последовательно, 1 прогрев + 20 замеров на ячейку, клиентский таймаут 30 с)",
+    "method": "scripts/benchmark_load.py --matrix (последовательно, 1 прогрев + 20 замеров на ячейку)",
     "payloads": "3 с / 10 с x 8 / 16 кГц, PCM16 mono, нарезаны ffmpeg из data/evaluation_suite/voice10_monologue.wav",
-    "result": "84/84 -> 503 (доля 503 = 1.0 во всех 4 ячейках), медиана/p95 успешных: нет данных",
-    "note": "при диагностическом окне 30 с ответы тоже 503, но на ~5.0 с с voice_search_unavailable (TimeoutError): redis-py 8.1.0 рвёт блокирующий BLPOP чтением сокета ~5 с без явного socket_timeout. Независимо от скорости движка окно >5 с сейчас неработоспособно"
+    "result": "84/84 -> 503 voice_search_timeout за ~3.0-3.1 с (окно 2.4 с), доля 503 = 1.0",
+    "cells": "s3_16k: ok 0/20, 503 20, first {'status': 503, 'latency_ms': 3024.1}; s3_8k: ok 0/20, 503 20, first {'status': 503, 'latency_ms': 3008.2}; s10_16k: ok 0/20, 503 20, first {'status': 503, 'latency_ms': 3108.2}; s10_8k: ok 0/20, 503 20, first {'status': 503, 'latency_ms': 3021.0}"
   },
   "engine_level": {
-    "method": "прямой вызов transcribe() из app/workers/fast_voice_search.py внутри контейнера worker-fast (тот же образ, модель, потоки, cpuset); 1 прогрев + 5 прогонов на ячейку",
-    "model_load_ms": 16100,
-    "warmup_3s_ms": 34989,
-    "cells": {
-      "s3_16k": {
-        "runs_ms": [
-          17401.9,
-          17596.2,
-          17626.5,
-          17783.1,
-          18792.8
-        ],
-        "median_ms": 17626.5
-      },
-      "s3_8k": {
-        "runs_ms": [
-          18213.3,
-          18298.6,
-          18401.7,
-          18478.5,
-          18786.2
-        ],
-        "median_ms": 18401.7
-      },
-      "s10_16k": {
-        "runs_ms": [
-          17723.3,
-          17779.6,
-          17905.3,
-          17916.3,
-          17991.2
-        ],
-        "median_ms": 17905.3
-      },
-      "s10_8k": {
-        "runs_ms": [
-          36000.6,
-          36316.0,
-          36388.0,
-          36401.4,
-          36477.7
-        ],
-        "median_ms": 36388.0
-      }
-    }
+    "method": "прямой вызов transcribe() в контейнере worker-fast; 1 прогрев + 5 прогонов; ЧИСТЫЕ цифры — очередь пуста, воркер idle",
+    "warmup_ms": 10724,
+    "cells_median_ms": {
+      "s3_16k": 6779.1,
+      "s3_8k": 7124.7,
+      "s10_16k": 6894.0,
+      "s10_8k": 14592.3
+    },
+    "cells_runs_ms": {
+      "s3_16k": [
+        6706.6,
+        6720.2,
+        6779.1,
+        6798.6,
+        7193.5
+      ],
+      "s3_8k": [
+        7094.5,
+        7103.7,
+        7124.7,
+        7182.0,
+        7200.0
+      ],
+      "s10_16k": [
+        6812.5,
+        6891.0,
+        6894.0,
+        6909.9,
+        6991.7
+      ],
+      "s10_8k": [
+        14400.1,
+        14488.2,
+        14592.3,
+        14707.8,
+        14788.7
+      ]
+    },
+    "contended_medians_ms": {
+      "s3_16k": 19101.6,
+      "s3_8k": 19618.2,
+      "s10_16k": 18899.6,
+      "s10_8k": 39912.2
+    },
+    "contended_note": "первый прогон шёл параллельно с дренированием очереди матрицы (~2.7x инфляция) — в зачёт не идёт, приведено для прозрачности"
   },
-  "verdict": "SLA 2.5 с НЕ выполнен: медиана движка 17.6-36.4 с (превышение в 7-14 раз). Движок и пороги не менялись."
+  "verdict": "SLA 2.5 с НЕ выполнен: чистый движок 6.8-14.6 с (превышение в 2.7-5.8 раз). Движок и пороги не менялись."
 }
