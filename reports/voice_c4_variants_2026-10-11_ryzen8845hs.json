@@ -1,0 +1,118 @@
+{
+  "date": "2026-10-11",
+  "target": "эксперименты быстрого пути voice-search только через env, дефолты не менялись",
+  "env": {
+    "cpu": "Ryzen 7 8845HS, governor performance (~4.7 ГГц), cpuset 4,6",
+    "model": "whisper-small int8 cpu_threads=2, VAD on",
+    "wavs": {
+      "dialogue_11.2s_8kHz": "data/evaluation_suite/sample_dialogue_01_telephony_8k.wav",
+      "telephony_5.2s_8kHz": "data/evaluation_suite/sample_telephony_01_telephony_8k.wav"
+    },
+    "method": "HTTP POST /v1/voice/search последовательно: 1 прогрев + 5 замеров (в таблице медиана/p95 по 5 пост-прогревным); текст для WER/терминов — первый успешный ответ",
+    "wer": "evaluation.wer_cer.calculate_wer_cer (ITN-нормализация) против reference из manifest.json",
+    "terms": "доля терминов config/vocabulary_hints.yaml, найденных в эталоне и узнанных в гипотезе (ITN-нормализация; 'три на шесть' и '3×6' посчитаны отдельно — ITN сводит их к одной форме)",
+    "api_window": "диагностические 120 с (оверрайд в /tmp, снят после; штат 2.4 с)"
+  },
+  "variants": {
+    "base": "штат: beam eff 2, initial_prompt+hotwords вкл, language=ru, word_timestamps=False, ASR_THREADS=2",
+    "beam1": "VOICE_SEARCH_BEAM_MIN=1 + VOICE_SEARCH_BEAM_SIZE=1",
+    "noprompt": "VOICE_SEARCH_INITIAL_PROMPT='' + VOICE_SEARCH_HOTWORDS=''",
+    "combo": "beam1 + noprompt",
+    "lang_ru_no_detect": "отдельного прогона нет: язык уже пинится language='ru' в transcribe() (детекция выкл) — покрыто base",
+    "no_word_timestamps": "отдельного прогона нет: word_timestamps=False уже в обоих путях — покрыто base",
+    "cpu_threads_2": "отдельного прогона нет: ASR_THREADS=2 дефолт, worker-fast переменную не задаёт — покрыто base"
+  },
+  "expected_terms": {
+    "dialogue": [
+      "суперсайт",
+      "Ленинградке"
+    ],
+    "telephony": [
+      "щит",
+      "щиты",
+      "три на шесть",
+      "3×6"
+    ]
+  },
+  "table": {
+    "base/dialogue": {
+      "median_ms": 9301.1,
+      "p95_ms": 9768.3,
+      "wer": 0.071,
+      "cer": 0.03,
+      "terms": "2/2",
+      "terms_missing": [],
+      "hyp": "Здравствуйте! Скажите стоимость суперсайта на Ленинградке. Добрый день! Стоимость 200 000 руб. в месяц."
+    },
+    "base/telephony": {
+      "median_ms": 7602.0,
+      "p95_ms": 7605.1,
+      "wer": 0.333,
+      "cer": 0.057,
+      "terms": "2/4",
+      "terms_missing": [
+        "щит",
+        "щиты"
+      ],
+      "hyp": "Подскажите свободные лищеты 3×6 в Балашихе на октябрь."
+    },
+    "beam1/dialogue": {
+      "median_ms": 7989.6,
+      "p95_ms": 8430.0,
+      "wer": 0.071,
+      "cer": 0.03,
+      "terms": "2/2",
+      "terms_missing": [],
+      "hyp": "Здравствуйте, скажите стоимость суперсайта на Ленинградке. Добрый день, стоимость 200 000 руб. в месяц."
+    },
+    "beam1/telephony": {
+      "median_ms": 6961.5,
+      "p95_ms": 6982.1,
+      "wer": 0.333,
+      "cer": 0.057,
+      "terms": "2/4",
+      "terms_missing": [
+        "щит",
+        "щиты"
+      ],
+      "hyp": "Подскажите свободные лищеты 3×6 в Балашихе на октябрь."
+    },
+    "noprompt/dialogue": {
+      "median_ms": 7388.0,
+      "p95_ms": 7401.6,
+      "wer": 0.071,
+      "cer": 0.03,
+      "terms": "2/2",
+      "terms_missing": [],
+      "hyp": "Здравствуйте! Скажите стоимость суперсайта на Ленинградке. Добрый день! Стоимость 200 000 руб. в месяц."
+    },
+    "noprompt/telephony": {
+      "median_ms": 6193.9,
+      "p95_ms": 6194.5,
+      "wer": 0.0,
+      "cer": 0.0,
+      "terms": "4/4",
+      "terms_missing": [],
+      "hyp": "Подскажите свободны ли щиты 3×6 в Балашихе на октябрь."
+    },
+    "combo/dialogue": {
+      "median_ms": 6708.2,
+      "p95_ms": 6810.5,
+      "wer": 0.071,
+      "cer": 0.03,
+      "terms": "2/2",
+      "terms_missing": [],
+      "hyp": "Здравствуйте, скажите стоимость суперсайта на Ленинградке. Добрый день, стоимость 200 000 руб. в месяц."
+    },
+    "combo/telephony": {
+      "median_ms": 5703.4,
+      "p95_ms": 5791.7,
+      "wer": 0.0,
+      "cer": 0.0,
+      "terms": "4/4",
+      "terms_missing": [],
+      "hyp": "Подскажите свободны ли щиты 3×6 в Балашихе на октябрь."
+    }
+  },
+  "verdict": "SLA 2.5 с НЕ достигнут ни одним вариантом: лучший (combo) 6.71 с на 11.2 с аудио (x2.7). Качество при этом высокое: WER 0.071/0.000, термины 2/2 и 4/4 в combo."
+}
