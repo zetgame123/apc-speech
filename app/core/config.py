@@ -84,14 +84,21 @@ class Settings(BaseSettings):
     )
     # Нижняя граница beam search (по умолчанию 2 — историческое поведение).
     # Только для диагностических замеров через env; дефолт не менять.
-    voice_search_beam_min: int = Field(default=2, alias="VOICE_SEARCH_BEAM_MIN")
-    # Переопределение подсказок декодера. None — встроенные константы
+    voice_search_beam_min: int = Field(
+        default=2, alias="VOICE_SEARCH_BEAM_MIN"
+    )  # Переопределение подсказок декодера. None — встроенные константы
     # (VOICE_SEARCH_INITIAL_PROMPT / VOICE_SEARCH_HOTWORDS из app.api.voice),
     # пустая строка — отключить подсказку. Только для замеров через env.
     voice_search_initial_prompt: str | None = Field(
         default=None, alias="VOICE_SEARCH_INITIAL_PROMPT"
     )
     voice_search_hotwords: str | None = Field(default=None, alias="VOICE_SEARCH_HOTWORDS")
+    # Движок быстрого пути: "whisper" (дефолт) или "tone" (эксперимент T-one, ADR-011).
+    voice_search_engine: str = Field(default="whisper", alias="VOICE_SEARCH_ENGINE")
+    # Каталог весов T-one (model.onnx тянет model-downloader) и потоки ORT
+    # (0 — дефолт onnxruntime; ограничение также через OMP_NUM_THREADS).
+    tone_model_dir: str = Field(default="./models/t-one", alias="TONE_MODEL_DIR")
+    tone_threads: int = Field(default=0, alias="TONE_THREADS")
 
     # Diarization
     diarization_min_speaker_distance: float = Field(

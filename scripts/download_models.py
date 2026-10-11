@@ -196,7 +196,11 @@ def download_whisper(model_name: str = "small", output_name: str | None = None):
     # try/except вокруг него в таком случае никогда не сработает (воспроизведено на реальном
     # Linux-хосте: три идентичных запуска молча зависали на этом шаге без единой [WARN]/[FATAL]
     # строки в логе).
-    repo_id = "Systran/faster-whisper-small" if model_name == "small" else model_name
+    repo_id = (
+        "Systran/faster-whisper-small"
+        if model_name == "small"
+        else (model_name if "/" in model_name else f"Systran/faster-whisper-{model_name}")
+    )
     files = [
         ("config.json", True, 100),
         ("model.bin", True, 10_000_000),
@@ -219,6 +223,23 @@ def download_whisper(model_name: str = "small", output_name: str | None = None):
             f"Failed to download Whisper model {model_name}: model.bin missing or invalid"
         )
     print(f"[OK] Downloaded Whisper {model_name} successfully via direct download")
+
+
+TONE_DIR = os.path.join(MODELS_DIR, "t-one")
+TONE_ONNX_URL = "https://huggingface.co/t-tech/T-one/resolve/main/model.onnx"
+TONE_ONNX_PATH = os.path.join(TONE_DIR, "model.onnx")
+
+
+def download_tone():
+    """Веса T-one для эксперимента быстрого пути (ADR-011): только model.onnx
+    (~144 МБ, greedy-декодер). Штатный kenlm.bin (5,5 ГБ) не скачивается."""
+    os.makedirs(TONE_DIR, exist_ok=True)
+    if os.path.exists(TONE_ONNX_PATH) and os.path.getsize(TONE_ONNX_PATH) > 100_000_000:
+        print(f"[OK] T-one model already present at {TONE_ONNX_PATH}")
+        return
+    print("Downloading T-one model.onnx (~144 MB, greedy) ...")
+    download_file(TONE_ONNX_URL, TONE_ONNX_PATH, expected_min_size=100_000_000)
+    print("[OK] Downloaded T-one model.onnx")
 
 
 def download_qwen():
@@ -269,6 +290,11 @@ def main():
         download_campplus()
         # 1. Voice search model (whisper-small)
         download_whisper("small")
+        # 1b. Лёгкие модели для матрицы эксперимента C4 (whisper-base/tiny int8)
+        download_whisper("base")
+        download_whisper("tiny")
+        # 1c. T-one для эксперимента быстрого пути (ADR-011, только greedy ONNX)
+        download_tone()
         # 2. Russian-adapted model for long audio processing (whisper-podlodka-turbo-ct2)
         download_whisper(
             "bond005/whisper-podlodka-turbo-ct2",

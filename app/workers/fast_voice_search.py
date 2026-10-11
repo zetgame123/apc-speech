@@ -50,12 +50,16 @@ def prewarm():
 
 def transcribe(payload: dict) -> tuple[list[dict], dict]:
     raw_bytes = bytes.fromhex(payload["audio_hex"])
+    cfg = get_settings()
+    if cfg.voice_search_engine == "tone":
+        from app.asr.tone_engine import get_tone_engine
+
+        return get_tone_engine().transcribe(raw_bytes, language=payload.get("language", "ru"))
     if is_16k_mono_pcm_wav(raw_bytes):
         clean_bytes = raw_bytes
     else:
         clean_bytes = AudioPreprocessor().preprocess_memory(raw_bytes)
 
-    cfg = get_settings()
     segments, metadata = get_voice_search_engine().transcribe(
         io.BytesIO(clean_bytes),
         language=payload.get("language", "ru"),

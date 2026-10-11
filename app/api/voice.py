@@ -185,6 +185,11 @@ async def voice_search(
 
     # Preprocess and transcribe in background worker thread to prevent event loop blocking
     def _sync_process(raw_bytes: bytes, lang: str):
+        cfg = get_settings()
+        if cfg.voice_search_engine == "tone":
+            from app.asr.tone_engine import get_tone_engine
+
+            return get_tone_engine().transcribe(raw_bytes, language=lang)
         if is_16k_mono_pcm_wav(raw_bytes):
             clean_bytes = raw_bytes
         else:
@@ -192,7 +197,6 @@ async def voice_search(
             clean_bytes = preproc.preprocess_memory(raw_bytes)
         eng = get_voice_search_engine()
         stream = io.BytesIO(clean_bytes)
-        cfg = get_settings()
         beam_size = max(cfg.voice_search_beam_min, cfg.voice_search_beam_size)
         segs, metadata = eng.transcribe(
             stream,
