@@ -108,10 +108,16 @@ async def ingest_url_job(
 
     async def _fail(error_type: str, error_msg: str) -> None:
         logger.error("url_ingest_failed", job_id=job_id, error_type=error_type, error=error_msg)
+        # Условный переход: только из pending_download. Если уборщик уже перевёл
+        # задание (или скачивание успело завершиться), чужой статус не затираем.
         async with AsyncSessionLocal() as db:
-            await db.execute(
+            res = await db.execute(
                 update(Job)
-                .where(Job.id == job_id)
+                .where(
+                    Job.id == job_id,
+                    Job.status == "queued",
+                    Job.step == "pending_download",
+                )
                 .values(
                     status="failed",
                     step=error_type,
@@ -119,6 +125,9 @@ async def ingest_url_job(
                 )
             )
             await db.commit()
+            if res.rowcount != 1:
+                logger.warning("url_ingest_fail_skipped_race", job_id=job_id)
+                return
         if callback_url:
             try:
                 await queue.enqueue_callback(
@@ -162,9 +171,13 @@ async def ingest_url_job(
                 expires_at=now + timedelta(days=settings.retention_audio_days),
             )
         )
-        await db.execute(
+        res = await db.execute(
             update(Job)
-            .where(Job.id == job_id)
+            .where(
+                Job.id == job_id,
+                Job.status == "queued",
+                Job.step == "pending_download",
+            )
             .values(
                 status="queued",
                 progress=0,
@@ -173,6 +186,11 @@ async def ingest_url_job(
             )
         )
         await db.commit()
+        if res.rowcount != 1:
+            # Уборщик уже перевёл задание в failed: файл в S3 остаётся,
+            # но в очередь воркера задание не ставим, чтобы не воскрешать.
+            logger.warning("url_ingest_downloaded_skipped_race", job_id=job_id)
+            return
 
     payload: dict[str, Any] = {
         "job_id": job_id,
@@ -222,9 +240,24 @@ async def reap_stalled_downloads(*, max_age_sec: int | None = None) -> int:
             error_msg = (
                 f"Скачивание аудио по ссылке не завершилось в срок (превышен лимит {limit_sec} с)"
             )
-            job.status = "failed"
-            job.step = error_type
-            job.error_details = {"error": error_type, "message": error_msg}
+            # Условный переход: если скачивание завершилось между SELECT и UPDATE
+            # (статус уже не queued/pending_download), чужой статус не затираем.
+            res = await db.execute(
+                update(Job)
+                .where(
+                    Job.id == job.id,
+                    Job.status == "queued",
+                    Job.step == "pending_download",
+                )
+                .values(
+                    status="failed",
+                    step=error_type,
+                    error_details={"error": error_type, "message": error_msg},
+                )
+            )
+            if res.rowcount != 1:
+                logger.info("reaper_skipped_race", job_id=job.id)
+                continue
             if job.callback_url:
                 try:
                     await queue.enqueue_callback(

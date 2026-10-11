@@ -228,3 +228,69 @@ async def test_reap_stalled_downloads_marks_old_pending_failed():
         fresh = (await session.execute(select(Job).where(Job.id == "job-reap-fresh"))).scalar_one()
         assert fresh.status == "queued"
         assert fresh.step == "pending_download"
+
+
+@pytest.mark.asyncio
+async def test_ingest_success_after_reaper_does_not_resurrect():
+    """Гонка «уборка -> скачивание»: уборщик уже перевёл в failed —
+    запоздалый успех скачивания не воскрешает задание и не ставит в очередь."""
+    from sqlalchemy import update
+
+    job_id, call_id = await _make_pending_job(job_id="job-race-1", call_id="call-race-1")
+    async with TestingSessionLocal() as session:
+        await session.execute(
+            update(Job).where(Job.id == job_id).values(status="failed", step="download_stalled")
+        )
+        await session.commit()
+
+    mock_queue = MagicMock()
+    mock_queue.enqueue_long_job = AsyncMock(return_value="1-0")
+    mock_queue.enqueue_callback = AsyncMock(return_value="2-0")
+    with (
+        patch.object(
+            ingest_mod,
+            "fetch_url_to_s3",
+            AsyncMock(return_value=("test_msk/k/original_from_url", "filehash123", 12345)),
+        ),
+        patch.object(ingest_mod, "get_queue", return_value=mock_queue),
+        patch.object(ingest_mod, "AsyncSessionLocal", return_value=_session_cm()),
+    ):
+        await ingest_url_job(**_ingest_kwargs(job_id, call_id))
+
+    mock_queue.enqueue_long_job.assert_not_awaited()
+    async with TestingSessionLocal() as session:
+        job = (await session.execute(select(Job).where(Job.id == job_id))).scalar_one()
+        assert job.status == "failed"
+        assert job.step == "download_stalled"
+
+
+@pytest.mark.asyncio
+async def test_reaper_after_download_does_not_clobber():
+    """Гонка «скачивание -> уборка»: задание уже downloaded —
+    уборщик его не трогает и callback не шлёт."""
+    from datetime import timedelta
+
+    from sqlalchemy import update
+
+    job_id, call_id = await _make_pending_job(job_id="job-race-2", call_id="call-race-2")
+    old = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=2)
+    async with TestingSessionLocal() as session:
+        await session.execute(
+            update(Job).where(Job.id == job_id).values(step="downloaded", created_at=old)
+        )
+        await session.commit()
+
+    mock_queue = MagicMock()
+    mock_queue.enqueue_callback = AsyncMock(return_value="9-0")
+    with (
+        patch.object(ingest_mod, "get_queue", return_value=mock_queue),
+        patch.object(ingest_mod, "AsyncSessionLocal", return_value=_session_cm()),
+    ):
+        reaped = await reap_stalled_downloads(max_age_sec=600)
+
+    assert reaped == 0
+    mock_queue.enqueue_callback.assert_not_awaited()
+    async with TestingSessionLocal() as session:
+        job = (await session.execute(select(Job).where(Job.id == job_id))).scalar_one()
+        assert job.status == "queued"
+        assert job.step == "downloaded"
