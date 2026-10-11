@@ -102,3 +102,31 @@
 * **Последствия**: плюс — честное сравнение на том же стенде без новых зависимостей
   и без downgrade `huggingface-hub` (faster-whisper не тронут).
 
+## ADR-012: Таблица лицензий моделей и зависимостей (2026-10-11)
+
+* **Статус**: Принято частично (открыт вопрос MinIO — см. `docs/questions.md`)
+* **Контекст**: AGENTS.md п.5: каждая модель/библиотека — только после записи лицензии.
+  Источники сверены 2026-10-11 по карточкам HF, файлам LICENSE, `pip-licenses`.
+  Где источник не найден — вопрос в `questions.md`, не догадка.
+
+| Компонент | Версия в стеке | Лицензия | Источник | Закрытый продукт |
+|---|---|---|---|---|
+| whisper-podlodka-turbo-ct2 (веса) | `bond005/…-ct2` | Apache 2.0 | HF-тег `license:apache-2.0` (см. ADR-010) | Да |
+| whisper-small (веса, Systran) | faster-whisper-small | MIT (конверсия); исходные веса OpenAI — Apache 2.0 | HF `Systran/faster-whisper-small` (`License: mit`); `openai/whisper-small` (`apache-2.0`); код openai/whisper — MIT | Да |
+| faster-whisper / ctranslate2 / onnxruntime (код) | 1.2.1 / 4.8.2 / 1.30.0 | MIT | GitHub SYSTRAN/faster-whisper, OpenNMT/CTranslate2, microsoft/onnxruntime | Да |
+| CAM++ `campplus.onnx` (веса) | `*_200k.onnx` | Apache 2.0 | HF `funasr/campplus` (`apache-2.0`); зеркала welcomyou/hb123xyz (`apache-2.0`); код modelscope/3D-Speaker — Apache 2.0. Оговорка: зеркала неофициальные, страница ModelScope напрямую не прочитана | Да, с оговоркой provenance |
+| Silero VAD v5 (бандл faster-whisper) | bundled | MIT | snakers4/silero-vad LICENSE | Да |
+| Natasha 1.6.0 (код), navec 0.10.0 (код) | см. версию | MIT | natasha/natasha, natasha/navec LICENSE | Да (код) |
+| SlovNet/Navec **веса** | — | **не найдена** | в репозиториях только MIT на код | **Вопрос** → questions.md |
+| Qwen2.5-7B-Instruct GGUF Q4_K_M | 2 shards | Apache 2.0 (Qianwen superseded) | HF `Qwen/Qwen2.5-7B-Instruct(-GGUF)` (`apache-2.0`), LICENSE в репозитории | Да |
+| T-one код и веса | model.onnx 144 МБ | Apache 2.0 | GitHub voicekit-team/T-one LICENSE; HF `t-tech/T-one` (`apache-2.0`) | Да |
+| llama.cpp server | b4738 | MIT | ggml-org/llama.cpp LICENSE | Да |
+| MinIO (образ elestio/minio) | latest@sha256:2534… | **AGPLv3** | minio/minio LICENSE (с 2021, был Apache 2.0) | **Нет без последствий → вопрос** |
+| Redis | 7.2-alpine | BSD-3-Clause | redis/redis@7.2 COPYING; граница RSAL/SSPL — с 7.4 | Да; ветку заморозить ≤7.2 |
+| PostgreSQL | 16 (pg16) | PostgreSQL Licence | postgresql.org/about/licence | Да |
+| pgvector | образ :pg16 (пин — п.2) | PostgreSQL Licence | pgvector/pgvector LICENSE | Да |
+| Python-зависимости (127 пакетов, `pip-licenses`, env 2026-10-11) | см. uv.lock | MIT/BSD/Apache-2.0/ISC/PSF; исключения: `soxr` LGPL-2.1 (колесо, через librosa), `certifi`/`tqdm` MPL-2.0 (уровень файлов) | PyPI-метаданные | Да (динамическая линковка, без модификаций) |
+
+* **Решение**: всё из таблицы со статусом «Да» допущено; slovnet/navec-веса и MinIO —
+  вопросы человеку. `soxr` (LGPL) допустим как немодифицированное колесо.
+
