@@ -86,19 +86,45 @@ def _split_phrases(is_speech: np.ndarray, *, is_last: bool) -> list[tuple[int, i
 class ToneEngine:
     """CTC-движок T-one (greedy). Интерфейс как у AsrEngine.transcribe."""
 
-    def __init__(self, model_path: str, intra_threads: int = 0):
+    def __init__(
+        self,
+        model_path: str,
+        intra_threads: int = 0,
+        inter_threads: int = 0,
+        graph_opt: str = "all",
+        disable_arena: bool = False,
+        disable_mem_pattern: bool = False,
+    ):
         import onnxruntime as ort
 
         opts = ort.SessionOptions()
         if intra_threads > 0:
             opts.intra_op_num_threads = intra_threads
-            opts.inter_op_num_threads = 1
+            opts.inter_op_num_threads = inter_threads if inter_threads > 0 else 1
+        levels = {
+            "disabled": ort.GraphOptimizationLevel.ORT_DISABLE_ALL,
+            "basic": ort.GraphOptimizationLevel.ORT_ENABLE_BASIC,
+            "extended": ort.GraphOptimizationLevel.ORT_ENABLE_EXTENDED,
+            "all": ort.GraphOptimizationLevel.ORT_ENABLE_ALL,
+        }
+        if graph_opt not in levels:
+            raise ValueError(f"TONE_GRAPH_OPT: {graph_opt!r}, допустимо {sorted(levels)}")
+        opts.graph_optimization_level = levels[graph_opt]
+        if disable_arena:
+            opts.enable_cpu_mem_arena = False
+        if disable_mem_pattern:
+            opts.enable_mem_pattern = False
         if not os.path.exists(model_path):
             raise FileNotFoundError(
                 f"веса T-one не найдены: {model_path} "
                 "(скачиваются model-downloader в models/t-one/model.onnx)"
             )
-        logger.info("loading_tone_model", model=model_path, intra_threads=intra_threads)
+        logger.info(
+            "loading_tone_model",
+            model=model_path,
+            intra_threads=intra_threads,
+            graph_opt=graph_opt,
+        )
         self._sess = ort.InferenceSession(model_path, sess_options=opts)
         self._normalizer = RussianTextNormalizer()
         logger.info("tone_model_loaded_successfully", model=model_path)
@@ -229,6 +255,13 @@ def get_tone_engine() -> ToneEngine:
         from app.core.config import get_settings
 
         settings = get_settings()
-        model_path = os.path.join(settings.tone_model_dir, "model.onnx")
-        _tone_engine_instance = ToneEngine(model_path, intra_threads=settings.tone_threads)
+        model_path = os.path.join(settings.tone_model_dir, settings.tone_model_file)
+        _tone_engine_instance = ToneEngine(
+            model_path,
+            intra_threads=settings.tone_threads,
+            inter_threads=settings.tone_inter_threads,
+            graph_opt=settings.tone_graph_opt,
+            disable_arena=settings.tone_disable_arena,
+            disable_mem_pattern=settings.tone_disable_mem_pattern,
+        )
     return _tone_engine_instance

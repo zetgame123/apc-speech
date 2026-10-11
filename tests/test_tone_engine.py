@@ -110,3 +110,34 @@ def test_default_engine_is_whisper(monkeypatch):
         assert get_settings().voice_search_engine == "whisper"
     finally:
         get_settings.cache_clear()
+
+
+def test_tone_ort_options_applied(monkeypatch, tmp_path):
+    """Ручки ORT прокидываются в SessionOptions; мусор в GRAPH_OPT отклоняется."""
+    import sys
+    from unittest.mock import MagicMock
+
+    import app.asr.tone_engine as te
+
+    fake_ort = MagicMock()
+    fake_ort.GraphOptimizationLevel.ORT_ENABLE_ALL = "ALL"
+    monkeypatch.setitem(sys.modules, "onnxruntime", fake_ort)
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"fake")
+    te.ToneEngine(
+        str(model),
+        intra_threads=2,
+        inter_threads=1,
+        graph_opt="all",
+        disable_arena=True,
+        disable_mem_pattern=True,
+    )
+    _, kwargs = fake_ort.InferenceSession.call_args
+    opts = kwargs["sess_options"]
+    assert opts.intra_op_num_threads == 2
+    assert opts.inter_op_num_threads == 1
+    assert opts.graph_optimization_level == "ALL"
+    assert opts.enable_cpu_mem_arena is False
+    assert opts.enable_mem_pattern is False
+    with pytest.raises(ValueError, match="TONE_GRAPH_OPT"):
+        te.ToneEngine(str(model), graph_opt="turbo")

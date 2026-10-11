@@ -99,6 +99,15 @@ class Settings(BaseSettings):
     # (0 — дефолт onnxruntime; ограничение также через OMP_NUM_THREADS).
     tone_model_dir: str = Field(default="./models/t-one", alias="TONE_MODEL_DIR")
     tone_threads: int = Field(default=0, alias="TONE_THREADS")
+    # inter-потоки ORT (0 — не трогать; при intra>0 код ставит 1 как раньше).
+    tone_inter_threads: int = Field(default=0, alias="TONE_INTER_THREADS")
+    # Оптимизации графа ORT: all (дефолт ORT и текущий факт), basic, extended, disabled.
+    tone_graph_opt: str = Field(default="all", alias="TONE_GRAPH_OPT")
+    # Отключение арены/паттерна памяти ORT (0 — штат; 1 — эксперимент).
+    tone_disable_arena: bool = Field(default=False, alias="TONE_DISABLE_ARENA")
+    tone_disable_mem_pattern: bool = Field(default=False, alias="TONE_DISABLE_MEM_PATTERN")
+    # Имя файла весов в TONE_MODEL_DIR (дефолт model.onnx).
+    tone_model_file: str = Field(default="model.onnx", alias="TONE_MODEL_FILE")
 
     # Diarization
     diarization_min_speaker_distance: float = Field(

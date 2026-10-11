@@ -1,0 +1,203 @@
+{
+  "date": "2026-10-11",
+  "target": "T-one: свип опций onnxruntime (движковый уровень, 1 прогрев + 5 повторов, cpuset 4,6, performance)",
+  "method": "прямые вызовы ToneEngine в контейнере worker-fast; RSS — пик процесса (ru_maxrss)",
+  "single_pass": "невозможен: вход signal фиксирован [B,2400,1] — чанковый цикл обязателен по архитектуре",
+  "quantization": {
+    "direct_int8": "INVALID_GRAPH (fp16-активации vs DynamicQuantizeLinear)",
+    "fp32cast_int8": "INVALID_GRAPH (остаточные fp16-узлы)",
+    "verdict": "вариант снят, WER не измерялся — модель не грузится"
+  },
+  "variants": {
+    "V0_base_t2": {
+      "cells": {
+        "s3_16k": {
+          "median_ms": 997.7,
+          "p95_ms": 1006.9
+        },
+        "s3_8k": {
+          "median_ms": 980.1,
+          "p95_ms": 1014.1
+        },
+        "s10_16k": {
+          "median_ms": 3180.3,
+          "p95_ms": 3289.6
+        },
+        "s10_8k": {
+          "median_ms": 2787.9,
+          "p95_ms": 2814.6
+        }
+      },
+      "peak_rss_mb": 590.4
+    },
+    "V1_graph_basic": {
+      "cells": {
+        "s3_16k": {
+          "median_ms": 1791.0,
+          "p95_ms": 1793.7
+        },
+        "s3_8k": {
+          "median_ms": 1699.7,
+          "p95_ms": 1797.4
+        },
+        "s10_16k": {
+          "median_ms": 4919.6,
+          "p95_ms": 5008.0
+        },
+        "s10_8k": {
+          "median_ms": 4902.8,
+          "p95_ms": 4906.2
+        }
+      },
+      "peak_rss_mb": 400.1
+    },
+    "V2_graph_disabled": {
+      "cells": {
+        "s3_16k": {
+          "median_ms": 1690.1,
+          "p95_ms": 1703.7
+        },
+        "s3_8k": {
+          "median_ms": 1610.1,
+          "p95_ms": 1612.2
+        },
+        "s10_16k": {
+          "median_ms": 5085.9,
+          "p95_ms": 5091.0
+        },
+        "s10_8k": {
+          "median_ms": 4997.6,
+          "p95_ms": 5000.1
+        }
+      },
+      "peak_rss_mb": 399.7
+    },
+    "V3_no_arena": {
+      "cells": {
+        "s3_16k": {
+          "median_ms": 911.2,
+          "p95_ms": 992.0
+        },
+        "s3_8k": {
+          "median_ms": 897.9,
+          "p95_ms": 906.5
+        },
+        "s10_16k": {
+          "median_ms": 2795.5,
+          "p95_ms": 2801.4
+        },
+        "s10_8k": {
+          "median_ms": 2696.9,
+          "p95_ms": 2788.8
+        }
+      },
+      "peak_rss_mb": 590.5
+    },
+    "V4_no_mempat": {
+      "cells": {
+        "s3_16k": {
+          "median_ms": 983.6,
+          "p95_ms": 990.5
+        },
+        "s3_8k": {
+          "median_ms": 907.4,
+          "p95_ms": 984.9
+        },
+        "s10_16k": {
+          "median_ms": 2816.5,
+          "p95_ms": 2895.4
+        },
+        "s10_8k": {
+          "median_ms": 2808.4,
+          "p95_ms": 2812.2
+        }
+      },
+      "peak_rss_mb": 590.5
+    },
+    "V5_no_arena_mempat": {
+      "cells": {
+        "s3_16k": {
+          "median_ms": 908.7,
+          "p95_ms": 990.1
+        },
+        "s3_8k": {
+          "median_ms": 908.0,
+          "p95_ms": 987.1
+        },
+        "s10_16k": {
+          "median_ms": 2899.8,
+          "p95_ms": 2990.0
+        },
+        "s10_8k": {
+          "median_ms": 2802.3,
+          "p95_ms": 2871.7
+        }
+      },
+      "peak_rss_mb": 590.4
+    },
+    "V6_intra1": {
+      "cells": {
+        "s3_16k": {
+          "median_ms": 677.8,
+          "p95_ms": 681.2
+        },
+        "s3_8k": {
+          "median_ms": 629.6,
+          "p95_ms": 671.2
+        },
+        "s10_16k": {
+          "median_ms": 1966.7,
+          "p95_ms": 1985.1
+        },
+        "s10_8k": {
+          "median_ms": 1962.9,
+          "p95_ms": 1986.8
+        }
+      },
+      "peak_rss_mb": 590.1
+    },
+    "V7_intra4": {
+      "cells": {
+        "s3_16k": {
+          "median_ms": 2718.7,
+          "p95_ms": 2787.4
+        },
+        "s3_8k": {
+          "median_ms": 2807.9,
+          "p95_ms": 2879.0
+        },
+        "s10_16k": {
+          "median_ms": 8115.1,
+          "p95_ms": 8190.1
+        },
+        "s10_8k": {
+          "median_ms": 8094.8,
+          "p95_ms": 8498.7
+        }
+      },
+      "peak_rss_mb": 590.8
+    },
+    "V8_intra1_noarena_mempat": {
+      "cells": {
+        "s3_16k": {
+          "median_ms": 692.6,
+          "p95_ms": 699.2
+        },
+        "s3_8k": {
+          "median_ms": 683.2,
+          "p95_ms": 686.3
+        },
+        "s10_16k": {
+          "median_ms": 1990.3,
+          "p95_ms": 1993.9
+        },
+        "s10_8k": {
+          "median_ms": 2002.0,
+          "p95_ms": 2016.6
+        }
+      },
+      "peak_rss_mb": 590.3
+    }
+  },
+  "best": "V8/V6: intra_op=1, ENABLE_ALL (arena/mempattern нейтральны): s3 ~0.69с, s10 ~2.0с, RSS 590МБ"
+}
