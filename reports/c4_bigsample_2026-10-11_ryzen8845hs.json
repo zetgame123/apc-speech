@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-11",
+  "suite": "scripts/gen_c4_suite.py: 25 TTS-запросов (TTS gTTS ru, диалоги 2 реплики) x 16кГц clean + 8кГц телефония = 50 файлов 7.0-9.4с; аудио в git не входят (tmp/c4suite/)",
+  "whisper_small_combo": {
+    "engine": "whisper-small-combo",
+    "n_ok": 50,
+    "n_total": 50,
+    "median_ms": 5959.9,
+    "p95_ms": 6372.9,
+    "mean_wer": 0.081,
+    "terms": "91/108=0.843",
+    "ram_peak_mb": 594.2
+  },
+  "tone_v8_intra1": {
+    "engine": "t-one-v8-intra1",
+    "n_ok": 50,
+    "n_total": 50,
+    "median_ms": 1538.0,
+    "p95_ms": 1794.4,
+    "mean_wer": 0.085,
+    "terms": "83/108=0.769",
+    "ram_peak_mb": 930.3
+  },
+  "tone_v8_matrix_10s": {
+    "s3_16k": {
+      "median_ms": 676.3,
+      "p95_ms": 704.6
+    },
+    "s3_8k": {
+      "median_ms": 649.8,
+      "p95_ms": 683.3
+    },
+    "s10_16k": {
+      "median_ms": 1913.4,
+      "p95_ms": 2001.9
+    },
+    "s10_8k": {
+      "median_ms": 1908.1,
+      "p95_ms": 1987.4
+    }
+  },
+  "rule": {
+    "median_10s_le_2500_both_rates": true,
+    "ram_le_800": false,
+    "terms_ge_90": false,
+    "verdict": "1/3 — ветка НЕ создаётся"
+  },
+  "verdict": "T-one V8 в 3.9x быстрее (1.54с vs 5.96с) при равном WER (0.085 vs 0.081), но термины 76.9% < 90% и RAM 930МБ > 800МБ. Дефолт не переключается."
+}
