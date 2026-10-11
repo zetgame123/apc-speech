@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -162,3 +163,25 @@ def test_swagger_docs_enabled_only_outside_production(monkeypatch):
         monkeypatch.undo()
         get_settings.cache_clear()
         importlib.reload(main_mod)
+
+
+@pytest.mark.asyncio
+async def test_texts_analyze_masks_pii_in_response():
+    """C7: представители и подписи кластеров — маскированные (e-mail, карты)."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {
+            "namespace": "test_msk",
+            "texts": [
+                "моя почта ivan.petrov@example.com для договора",
+                "оплата картой 4111 1111 1111 1111 в октябре",
+                "вторая карта 4111111111111111 тоже моя",
+            ],
+        }
+        headers = {"Authorization": "Bearer dev-token"}
+        resp = await client.post("/v1/texts/analyze", json=payload, headers=headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        dumped = json.dumps(body, ensure_ascii=False)
+        assert "ivan.petrov@example.com" not in dumped
+        assert "4111" not in dumped
+        assert "[EMAIL]" in dumped or "[КАРТА]" in dumped

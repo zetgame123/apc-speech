@@ -172,9 +172,18 @@ async def analyze_texts(
 
     labels, cluster_names, _ = clustering_engine.fit_transform_texts(req.texts)
 
+    # C7: кластеризация и весь ответ — только по маскированным текстам.
+    # Иначе сырые ПД утекают в подписи кластеров (топ-термы вроде "1111")
+    # и в представителей, даже если представители маскировать отдельно.
+    from app.pii.masker import PiiMasker
+
+    masker = PiiMasker()
+    masked_texts = [masker.mask_text(t) for t in req.texts]
+    labels, cluster_names, _ = clustering_engine.fit_transform_texts(masked_texts)
+
     # Group texts by cluster
     grouped: dict[int, list[str]] = {}
-    for text, label in zip(req.texts, labels):
+    for text, label in zip(masked_texts, labels):
         grouped.setdefault(label, []).append(text)
 
     clusters_output = []
