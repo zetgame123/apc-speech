@@ -581,38 +581,54 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         )
         schema = StructuredAnalysis.model_json_schema()
 
-        async with httpx.AsyncClient(timeout=180.0) as client:
-            resp = await client.post(
-                f"{self.endpoint_url}/chat/completions",
-                json={
-                    "model": self.model_name,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": (
-                                "Ты — аналитик деловых звонков. Отвечай только валидным JSON согласно схеме. "
-                                "Поля inquiry_type, call_result, who, client_overall и manager_tone заполняй только указанными английскими слагами."
-                            ),
+        # Шаг 2 robustness Qwen: один повтор при невалидном ответе.
+        # В лог — только тип ошибки и номер попытки, без текста звонка и
+        # значений полей (там могут быть ПД).
+        last_error: Exception | None = None
+        for attempt in (1, 2):
+            try:
+                async with httpx.AsyncClient(timeout=180.0) as client:
+                    resp = await client.post(
+                        f"{self.endpoint_url}/chat/completions",
+                        json={
+                            "model": self.model_name,
+                            "messages": [
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "Ты — аналитик деловых звонков. Отвечай только валидным JSON согласно схеме. "
+                                        "Поля inquiry_type, call_result, who, client_overall и manager_tone заполняй только указанными английскими слагами."
+                                    ),
+                                },
+                                {"role": "user", "content": prompt},
+                            ],
+                            "response_format": {
+                                "type": "json_schema",
+                                "json_schema": {
+                                    "name": "StructuredAnalysis",
+                                    "schema": schema,
+                                },
+                            },
+                            "temperature": 0.1,
                         },
-                        {"role": "user", "content": prompt},
-                    ],
-                    "response_format": {
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "StructuredAnalysis",
-                            "schema": schema,
-                        },
-                    },
-                    "temperature": 0.1,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-            parsed = json.loads(content)
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    content = data["choices"][0]["message"]["content"]
+                    parsed = json.loads(content)
 
-            parsed = normalize_analysis_dict(parsed, trimmed_transcript)
-            return StructuredAnalysis(**parsed)
+                    parsed = normalize_analysis_dict(parsed, trimmed_transcript)
+                    return StructuredAnalysis(**parsed)
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    "local_llm_attempt_failed",
+                    attempt=attempt,
+                    error=type(e).__name__,
+                )
+                continue
+        assert last_error is not None
+        raise last_error
 
     async def refine_speaker_roles(
         self,

@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -339,3 +340,60 @@ def test_normalize_analysis_dict_coerces_numeric_entities():
 
     schema = json.load(open("schemas/analysis_schema_v1.json"))
     jsonschema.validate(out["entities"], schema["properties"]["entities"])
+
+
+@pytest.mark.asyncio
+async def test_llm_retry_once_on_invalid_json(monkeypatch):
+    """Шаг 2: невалидный JSON первой попытки -> повтор, без текста звонка в логе."""
+    import json as _json
+
+    from app.llm.local_adapter import LocalLlamaCppAdapter
+
+    good = {
+        "summary": "s",
+        "call_result": "info_provided",
+        "inquiry_type": "other",
+        "entities": {"cities": [], "formats": []},
+        "agreements": [],
+        "sentiment": {"client_overall": "neutral", "manager_tone": "neutral"},
+        "manager_checklist": {},
+    }
+    bad_resp, good_resp = MagicMock(), MagicMock()
+    bad_resp.json.return_value = {"choices": [{"message": {"content": "не json {"}}]}
+    bad_resp.raise_for_status.return_value = None
+    good_resp.json.return_value = {"choices": [{"message": {"content": _json.dumps(good)}}]}
+    good_resp.raise_for_status.return_value = None
+    mock_client = AsyncMock()
+    mock_client.post.side_effect = [bad_resp, good_resp]
+
+    with patch("app.llm.local_adapter.httpx.AsyncClient") as mock_cls:
+        mock_cls.return_value.__aenter__.return_value = mock_client
+        adapter = LocalLlamaCppAdapter()
+        result = await adapter._analyze_via_llm(
+            "секретный транскрипт звонка",
+            MagicMock(namespace="t", call_id="c"),
+        )
+    assert mock_client.post.call_count == 2
+    assert result.summary == "s"
+
+
+@pytest.mark.asyncio
+async def test_llm_retry_exhausted_raises_for_fallback(monkeypatch, caplog):
+    """Обе попытки битые -> исключение наружу (там rule-fallback), в логе нет текста."""
+    from app.llm.local_adapter import LocalLlamaCppAdapter
+
+    bad_resp = MagicMock()
+    bad_resp.json.return_value = {"choices": [{"message": {"content": "мусор"}}]}
+    bad_resp.raise_for_status.return_value = None
+    mock_client = AsyncMock()
+    mock_client.post.return_value = bad_resp
+    with patch("app.llm.local_adapter.httpx.AsyncClient") as mock_cls:
+        mock_cls.return_value.__aenter__.return_value = mock_client
+        adapter = LocalLlamaCppAdapter()
+        with pytest.raises(Exception):
+            await adapter._analyze_via_llm(
+                "секретный транскрипт звонка",
+                MagicMock(namespace="t", call_id="c"),
+            )
+    assert mock_client.post.call_count == 2
+    assert "секретный транскрипт" not in caplog.text
