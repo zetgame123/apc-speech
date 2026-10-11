@@ -45,6 +45,10 @@ async def revoke_token_endpoint(
 
 @router.get("/v1/admin/tokens/revoked")
 async def list_revoked_tokens_endpoint(
+    cursor: str | None = Query(
+        None, description="Курсор (смещение) для пагинации, ответ содержит next_cursor"
+    ),
+    limit: int = Query(20, ge=1, le=100, description="Размер страницы, максимум 100"),
     auth: AuthContext = Depends(verify_auth),
 ):
     auth.require_scope("admin")
@@ -61,7 +65,16 @@ async def list_revoked_tokens_endpoint(
                 revoke_token(token_h)
     except Exception:
         pass
-    return {"revoked_hashes": list(revoked)}
+    try:
+        offset = int(cursor) if cursor else 0
+        if offset < 0:
+            offset = 0
+    except (TypeError, ValueError):
+        offset = 0
+    ordered = sorted(revoked)
+    page = ordered[offset : offset + limit]
+    next_cursor = str(offset + limit) if len(page) == limit else None
+    return {"revoked_hashes": page, "next_cursor": next_cursor}
 
 
 # --- Data deletion ---

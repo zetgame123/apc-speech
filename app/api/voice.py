@@ -337,14 +337,24 @@ async def voice_search(
 )
 async def get_voice_history(
     namespace: str = Query(..., description="Namespace изоляции данных"),
+    cursor: str | None = Query(
+        None, description="Курсор (смещение) для пагинации, ответ содержит next_cursor"
+    ),
+    limit: int = Query(20, ge=1, le=100, description="Размер страницы, максимум 100"),
     auth: AuthContext = Depends(verify_auth),
 ):
     auth.require_scope("read")
     auth.verify_namespace(namespace)
     try:
+        offset = int(cursor) if cursor else 0
+        if offset < 0:
+            offset = 0
+    except (TypeError, ValueError):
+        offset = 0
+    try:
         queue = get_queue()
         client = await queue.get_client()
-        raw_items = await client.lrange(f"voice:history:{namespace}", 0, 99)
+        raw_items = await client.lrange(f"voice:history:{namespace}", offset, offset + limit - 1)
         items = []
         for raw in raw_items:
             try:
@@ -352,7 +362,8 @@ async def get_voice_history(
                 items.append(json.loads(decoded))
             except Exception:
                 continue
-        return {"items": items, "count": len(items)}
+        next_cursor = str(offset + limit) if len(raw_items) == limit else None
+        return {"items": items, "count": len(items), "next_cursor": next_cursor}
     except Exception as err:
         logger.warning("voice_history_fetch_failed", error=str(err))
         return {"items": [], "count": 0}

@@ -109,3 +109,34 @@ async def test_admin_gdpr_deletes_voice_history():
             data = res.json()
             assert "deleted_voice_queries" in data
             fake_redis.delete.assert_called_with("voice:history:test_gdpr_ns")
+
+
+@pytest.mark.asyncio
+async def test_revoked_tokens_cursor_pagination():
+    """cursor/next_cursor + кап limit на списке отозванных токенов."""
+    from app.core.security import _revoked_token_hashes, hash_token, unrevoke_token
+
+    hashes = set()
+    for suffix in ("c8p1", "c8p2", "c8p3"):
+        h = hash_token(f"page-test-token-{suffix}")
+        hashes.add(h)
+        _revoked_token_hashes.add(h)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            headers = {"Authorization": "Bearer dev-token"}
+            seen, cursor, guard = set(), None, 0
+            while guard < 10:
+                qs = "/v1/admin/tokens/revoked?limit=2" + (f"&cursor={cursor}" if cursor else "")
+                page = (await ac.get(qs, headers=headers)).json()
+                assert len(page["revoked_hashes"]) <= 2
+                seen.update(page["revoked_hashes"])
+                cursor = page["next_cursor"]
+                guard += 1
+                if cursor is None:
+                    break
+            assert hashes <= seen
+            bad = await ac.get("/v1/admin/tokens/revoked?limit=101", headers=headers)
+            assert bad.status_code == 422
+    finally:
+        for h in hashes:
+            unrevoke_token(h)

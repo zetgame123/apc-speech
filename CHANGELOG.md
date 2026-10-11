@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Этап D (контракт и пагинация)**: примеры запросов/ответов для всех ручек
+  `openapi.yaml` + контрактный тест на их наличие; курсорная пагинация
+  (`cursor`/`next_cursor`, кап 100) в `GET /v1/voice/history` и
+  `GET /v1/admin/tokens/revoked`; тест «Swagger /docs только вне production»;
+  раздел README «Что делать, если...»; `.env.example` покрывает все переменные.
 - **Audit Re-Check Resolutions (R-01 through R-13)**:
   - **R-01 (Strict Schema & Enum Canonicalization)**: Enforced strict enum typing (`Literal[...]`) across Pydantic models for `agreements.who`, `StructuredAnalysis.call_result`, and `sentiment` fields; implemented canonical slug normalization (`normalize_analysis_dict`) handling Russian synonyms and role variations; configured dynamic taxonomy validation against `config/taxonomy.yaml` with custom runtime adapter registration.
   - **R-02 (Robust Model Downloader & Multi-Shard Provisioning)**: Updated `scripts/download_models.py` to fetch official Qwen 2.5 7B GGUF split shards (`qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf` & `00002`) from Hugging Face, added strict size verification and exception raising on download failures, ensuring non-zero exit codes.

@@ -188,6 +188,36 @@ async def test_voice_history_endpoints(mock_voice_deps):
 
 
 @pytest.mark.asyncio
+async def test_voice_history_cursor_pagination(mock_voice_deps):
+    """cursor/next_cursor + кап limit на истории голосовых запросов."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        headers = {"Authorization": "Bearer dev-token"}
+        wav_data = make_wav_bytes()
+        post_headers = {"Authorization": "Bearer dev-token", "Content-Type": "audio/wav"}
+        for _ in range(3):
+            await ac.post(
+                "/v1/voice/search?namespace=test_pag",
+                content=wav_data,
+                headers=post_headers,
+            )
+        page1 = (
+            await ac.get("/v1/voice/history?namespace=test_pag&limit=2", headers=headers)
+        ).json()
+        assert page1["count"] == 2
+        assert page1["next_cursor"] == "2"
+        page2 = (
+            await ac.get(
+                f"/v1/voice/history?namespace=test_pag&limit=2&cursor={page1['next_cursor']}",
+                headers=headers,
+            )
+        ).json()
+        assert page2["count"] == 1
+        assert page2["next_cursor"] is None
+        bad = await ac.get("/v1/voice/history?namespace=test_pag&limit=101", headers=headers)
+        assert bad.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_voice_search_unauthorized():
     """No auth → 401."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:

@@ -116,3 +116,49 @@ def test_schema_validation_strict_error():
     }
     with pytest.raises(Exception):
         validate_analysis_schema(invalid_data)
+
+
+def test_openapi_all_json_operations_have_examples():
+    """Этап D: у каждого JSON requestBody и каждого 2xx JSON-ответа есть example.
+
+    Бинарные (audio) и текстовые (csv, metrics) ответы исключены осознанно.
+    """
+    import yaml
+
+    with open("openapi.yaml", encoding="utf-8") as f:
+        spec = yaml.safe_load(f)
+    missing = []
+    for path, ops in spec["paths"].items():
+        for method, op in ops.items():
+            if not isinstance(op, dict):
+                continue
+            body = (op.get("requestBody") or {}).get("content", {}).get("application/json")
+            if body is not None and "example" not in body and "examples" not in body:
+                missing.append(f"REQ {method.upper()} {path}")
+            for code, resp in (op.get("responses") or {}).items():
+                if not str(code).startswith("2"):
+                    continue
+                content = (resp.get("content") or {}).get("application/json")
+                if content is not None and "example" not in content and "examples" not in content:
+                    missing.append(f"RESP {method.upper()} {path} {code}")
+    assert not missing, f"нет example: {missing}"
+
+
+def test_swagger_docs_enabled_only_outside_production(monkeypatch):
+    """Swagger UI на /docs — только вне production (пересборка app с env)."""
+    import importlib
+
+    import app.main as main_mod
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("DEBUG", raising=False)
+    get_settings = main_mod.get_settings
+    get_settings.cache_clear()
+    try:
+        importlib.reload(main_mod)
+        prod_routes = {getattr(r, "path", "") for r in main_mod.app.routes}
+        assert "/docs" not in prod_routes
+    finally:
+        monkeypatch.undo()
+        get_settings.cache_clear()
+        importlib.reload(main_mod)
