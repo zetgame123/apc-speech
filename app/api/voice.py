@@ -193,14 +193,22 @@ async def voice_search(
         eng = get_voice_search_engine()
         stream = io.BytesIO(clean_bytes)
         cfg = get_settings()
-        beam_size = max(2, cfg.voice_search_beam_size)
+        beam_size = max(cfg.voice_search_beam_min, cfg.voice_search_beam_size)
         segs, metadata = eng.transcribe(
             stream,
             language=lang,
             beam_size=beam_size,
             temperature=0.0,
-            initial_prompt=VOICE_SEARCH_INITIAL_PROMPT,
-            hotwords=VOICE_SEARCH_HOTWORDS,
+            initial_prompt=(
+                cfg.voice_search_initial_prompt
+                if cfg.voice_search_initial_prompt is not None
+                else VOICE_SEARCH_INITIAL_PROMPT
+            ),
+            hotwords=(
+                cfg.voice_search_hotwords
+                if cfg.voice_search_hotwords is not None
+                else VOICE_SEARCH_HOTWORDS
+            ),
             vad_filter=True,
             vad_parameters=dict(
                 min_silence_duration_ms=250,

@@ -82,6 +82,16 @@ class Settings(BaseSettings):
     voice_search_result_timeout_sec: float = Field(
         default=2.4, alias="VOICE_SEARCH_RESULT_TIMEOUT_SEC"
     )
+    # Нижняя граница beam search (по умолчанию 2 — историческое поведение).
+    # Только для диагностических замеров через env; дефолт не менять.
+    voice_search_beam_min: int = Field(default=2, alias="VOICE_SEARCH_BEAM_MIN")
+    # Переопределение подсказок декодера. None — встроенные константы
+    # (VOICE_SEARCH_INITIAL_PROMPT / VOICE_SEARCH_HOTWORDS из app.api.voice),
+    # пустая строка — отключить подсказку. Только для замеров через env.
+    voice_search_initial_prompt: str | None = Field(
+        default=None, alias="VOICE_SEARCH_INITIAL_PROMPT"
+    )
+    voice_search_hotwords: str | None = Field(default=None, alias="VOICE_SEARCH_HOTWORDS")
 
     # Diarization
     diarization_min_speaker_distance: float = Field(

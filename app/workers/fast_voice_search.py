@@ -55,13 +55,22 @@ def transcribe(payload: dict) -> tuple[list[dict], dict]:
     else:
         clean_bytes = AudioPreprocessor().preprocess_memory(raw_bytes)
 
+    cfg = get_settings()
     segments, metadata = get_voice_search_engine().transcribe(
         io.BytesIO(clean_bytes),
         language=payload.get("language", "ru"),
-        beam_size=max(2, settings.voice_search_beam_size),
+        beam_size=max(cfg.voice_search_beam_min, cfg.voice_search_beam_size),
         temperature=0.0,
-        initial_prompt=VOICE_SEARCH_INITIAL_PROMPT,
-        hotwords=VOICE_SEARCH_HOTWORDS,
+        initial_prompt=(
+            cfg.voice_search_initial_prompt
+            if cfg.voice_search_initial_prompt is not None
+            else VOICE_SEARCH_INITIAL_PROMPT
+        ),
+        hotwords=(
+            cfg.voice_search_hotwords
+            if cfg.voice_search_hotwords is not None
+            else VOICE_SEARCH_HOTWORDS
+        ),
         vad_filter=True,
         vad_parameters={"min_silence_duration_ms": 250, "speech_pad_ms": 200},
         word_timestamps=False,
