@@ -94,6 +94,7 @@ class ToneEngine:
         graph_opt: str = "all",
         disable_arena: bool = False,
         disable_mem_pattern: bool = False,
+        fuzzy_threshold: float = 0.0,
     ):
         import onnxruntime as ort
 
@@ -127,10 +128,64 @@ class ToneEngine:
         )
         self._sess = ort.InferenceSession(model_path, sess_options=opts)
         self._normalizer = RussianTextNormalizer()
+        self._fuzzy_threshold = fuzzy_threshold
+        self._fuzzy_terms: list[str] | None = None
         logger.info("tone_model_loaded_successfully", model=model_path)
 
     def load_model(self) -> None:
         return None
+
+    def _load_fuzzy_terms(self) -> list[str]:
+        if self._fuzzy_terms is None:
+            import yaml
+
+            terms: set[str] = set()
+            try:
+                with open("config/vocabulary_hints.yaml", encoding="utf-8") as f:
+                    hints = yaml.safe_load(f)
+                for value in hints.values():
+                    if isinstance(value, list):
+                        for term in value:
+                            norm = str(term).lower().replace("ё", "е").strip()
+                            if norm and " " not in norm:
+                                terms.add(norm)
+            except Exception as e:
+                logger.warning("tone_fuzzy_terms_load_failed", error=str(e))
+            self._fuzzy_terms = sorted(terms)
+        return self._fuzzy_terms
+
+    def _apply_fuzzy_terms(self, text: str) -> str:
+        """Нечёткая замена слов гипотезы на термины словаря (только T-one).
+
+        Трогаем только слова, похожие на термин (difflib >= порога); точные
+        совпадения и обычные слова остаются как есть — ложных замен нет.
+        """
+        if self._fuzzy_threshold <= 0:
+            return text
+        import difflib
+
+        terms = self._load_fuzzy_terms()
+        if not terms:
+            return text
+        exact = set(terms)
+        out = []
+        for word in text.split():
+            low = word.lower().replace("ё", "е")
+            if low in exact:
+                out.append(word)
+                continue
+            best, best_ratio = None, 0.0
+            for term in terms:
+                if abs(len(term) - len(low)) > 2:
+                    continue
+                ratio = difflib.SequenceMatcher(None, low, term).ratio()
+                if ratio > best_ratio:
+                    best, best_ratio = term, ratio
+            if best is not None and best_ratio >= self._fuzzy_threshold:
+                out.append(best)
+            else:
+                out.append(word)
+        return " ".join(out)
 
     def _wav_to_8k(self, audio_bytes: bytes) -> np.ndarray:
         try:
@@ -222,7 +277,7 @@ class ToneEngine:
                     {
                         "start": seg_start,
                         "end": seg_end,
-                        "text": self._normalizer.normalize(text),
+                        "text": self._normalizer.normalize(self._apply_fuzzy_terms(text)),
                         "confidence": round(min(1.0, max(0.0, conf)), 3),
                         "no_speech_prob": round(min(1.0, max(0.0, silence)), 3),
                         "words": [],
@@ -263,5 +318,6 @@ def get_tone_engine() -> ToneEngine:
             graph_opt=settings.tone_graph_opt,
             disable_arena=settings.tone_disable_arena,
             disable_mem_pattern=settings.tone_disable_mem_pattern,
+            fuzzy_threshold=settings.tone_fuzzy_threshold,
         )
     return _tone_engine_instance

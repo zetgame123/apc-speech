@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     tone_disable_mem_pattern: bool = Field(default=False, alias="TONE_DISABLE_MEM_PATTERN")
     # Имя файла весов в TONE_MODEL_DIR (дефолт model.onnx).
     tone_model_file: str = Field(default="model.onnx", alias="TONE_MODEL_FILE")
+    # Порог нечёткого сопоставления слов гипотезы со словарём терминов (0 — выкл).
+    # Только для T-one: чинит «счеты»→«щиты» без LM. Обычные слова не трогаем:
+    # замена только при similarity >= порога и несовпадении с точной формой.
+    tone_fuzzy_threshold: float = Field(default=0.0, alias="TONE_FUZZY_THRESHOLD")
 
     # Diarization
     diarization_min_speaker_distance: float = Field(

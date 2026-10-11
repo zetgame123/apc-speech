@@ -141,3 +141,49 @@ def test_tone_ort_options_applied(monkeypatch, tmp_path):
     assert opts.enable_mem_pattern is False
     with pytest.raises(ValueError, match="TONE_GRAPH_OPT"):
         te.ToneEngine(str(model), graph_opt="turbo")
+
+
+def test_fuzzy_disabled_by_default(monkeypatch, tmp_path):
+    """Дефолт TONE_FUZZY_THRESHOLD=0.0: постобработка выключена."""
+    import sys
+    from unittest.mock import MagicMock
+
+    import app.asr.tone_engine as te
+
+    monkeypatch.setitem(sys.modules, "onnxruntime", MagicMock())
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"fake")
+    eng = te.ToneEngine(str(model))
+    text = "подскажите свободный ли счеты в балашихе"
+    assert eng._apply_fuzzy_terms(text) == text
+
+
+def test_fuzzy_keeps_ordinary_words(monkeypatch, tmp_path):
+    """Порог 0.8 не трогает обычные слова без близких терминов."""
+    import sys
+    from unittest.mock import MagicMock
+
+    import app.asr.tone_engine as te
+
+    monkeypatch.setitem(sys.modules, "onnxruntime", MagicMock())
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"fake")
+    eng = te.ToneEngine(str(model), fuzzy_threshold=0.8)
+    assert eng._apply_fuzzy_terms("добрый день") == "добрый день"
+    assert eng._apply_fuzzy_terms("стоимость двести тысяч рублей") == (
+        "стоимость двести тысяч рублей"
+    )
+
+
+def test_fuzzy_terms_loaded(monkeypatch, tmp_path):
+    import sys
+    from unittest.mock import MagicMock
+
+    import app.asr.tone_engine as te
+
+    monkeypatch.setitem(sys.modules, "onnxruntime", MagicMock())
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"fake")
+    eng = te.ToneEngine(str(model), fuzzy_threshold=0.8)
+    terms = eng._load_fuzzy_terms()
+    assert "щиты" in terms and "суперсайт" in terms
