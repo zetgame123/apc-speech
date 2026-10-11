@@ -128,6 +128,9 @@ class Settings(BaseSettings):
     )
     llm_external_provider_url: str = Field(default="", alias="LLM_EXTERNAL_PROVIDER_URL")
     llm_external_provider_api_key: str = Field(default="", alias="LLM_EXTERNAL_PROVIDER_API_KEY")
+    llm_external_provider_model: str = Field(
+        default="gpt-4o-mini", alias="LLM_EXTERNAL_PROVIDER_MODEL"
+    )
 
     # Retention
     retention_audio_days: int = Field(default=14, alias="RETENTION_AUDIO_DAYS")

@@ -9,6 +9,7 @@ import httpx
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
 from app.core.security import sign_callback_payload, validate_ssrf_url
+from app.core.urls import redact_url_for_log
 from app.db.models import CallbackLog
 from app.db.session import AsyncSessionLocal
 from app.queue.redis_streams import (
@@ -45,7 +46,12 @@ async def dispatch_callback(job_id: str, callback_url: str, payload: dict):
     try:
         validate_ssrf_url(callback_url)
     except Exception as ssrf_err:
-        logger.error("callback_ssrf_rejected", job_id=job_id, url=callback_url, error=str(ssrf_err))
+        logger.error(
+            "callback_ssrf_rejected",
+            job_id=job_id,
+            url=redact_url_for_log(callback_url),
+            error=str(ssrf_err),
+        )
         return False
 
     raw_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")

@@ -281,6 +281,22 @@ flowchart TD
    > [!NOTE]
    > Чек-лист разработан строго под оценку коммерческих переговоров в сфере продаж наружной рекламы. Если запись не содержит этапов коммерческой сделки, критерии чек-листа обоснованно получают значение `false`, а итоговый скоринг равен 0.
 
+### Внешний провайдер аналитики (выключен по умолчанию)
+
+Отдельный адаптер `app/llm/external_adapter.py` за портом — только для разбора
+текста (не для распознавания). Включается явным флагом и получает **только
+маскированный текст** (перед отправкой — `assert_no_leaked_pii`):
+
+```env
+LLM_EXTERNAL_PROVIDER_ENABLED=true
+LLM_EXTERNAL_PROVIDER_URL="https://api.example.com/v1/chat/completions"
+LLM_EXTERNAL_PROVIDER_API_KEY="..."
+LLM_EXTERNAL_PROVIDER_MODEL="gpt-4o-mini"
+```
+
+По умолчанию `LLM_EXTERNAL_PROVIDER_ENABLED=false` — адаптер отвечает 403
+`external_provider_disabled`, внешний трафик отсутствует.
+
 ---
 
 ## Возможные недостатки и краевые случаи (Known Limitations)

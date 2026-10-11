@@ -6,6 +6,7 @@ import redis.asyncio as aioredis
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.urls import redact_url_for_log
 
 logger = get_logger("redis_queue")
 
@@ -107,7 +108,12 @@ class RedisQueue:
             "payload": json.dumps(payload_with_url, ensure_ascii=False),
         }
         msg_id = await client.xadd(STREAM_CALLBACKS, msg_payload)
-        logger.info("callback_enqueued", job_id=job_id, callback_url=callback_url, msg_id=msg_id)
+        logger.info(
+            "callback_enqueued",
+            job_id=job_id,
+            callback_url=redact_url_for_log(callback_url),
+            msg_id=msg_id,
+        )
         return msg_id
 
     async def enqueue_dlq(self, job_id: str, error: dict[str, Any], payload: dict[str, Any]) -> str:

@@ -133,3 +133,15 @@ async def test_token_revocation_redis_sync(monkeypatch):
             assert resp.json().get("error") == "token_revoked"
         finally:
             unrevoke_token(hash_y)
+
+
+def test_redact_url_for_log_keeps_scheme_and_host():
+    from app.core.urls import redact_url_for_log
+
+    assert (
+        redact_url_for_log("https://crm.example.com/hook?token=secret&x=1")
+        == "https://crm.example.com"
+    )
+    assert redact_url_for_log("http://127.0.0.1:9/hook") == "http://127.0.0.1:9"
+    assert redact_url_for_log("not a url") == "<invalid-url>"
+    assert redact_url_for_log("") == "<invalid-url>"
