@@ -59,3 +59,53 @@ async def test_dispatch_callback_success():
         result = await dispatch_callback("job-123", "http://example.com/hook", {"status": "ok"})
         assert result is True
         mock_client.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_callback_retries_five_times_then_gives_up():
+    """5 попыток с нарастающей задержкой [5,15,60,300,900], затем сдаётся."""
+    import asyncio
+
+    from app.workers import callback_dispatcher
+    from app.workers.callback_dispatcher import dispatch_callback
+
+    assert callback_dispatcher.RETRY_DELAYS_SEC == [5, 15, 60, 300, 900]
+
+    mock_resp = MagicMock()
+    mock_resp.is_success = False
+    mock_resp.status_code = 500
+    mock_resp.text = "ERR"
+
+    mock_client = AsyncMock()
+    mock_client.post.return_value = mock_resp
+    slept = []
+
+    async def fake_sleep(delay):
+        slept.append(delay)
+
+    with (
+        patch("app.workers.callback_dispatcher.httpx.AsyncClient") as mock_cls,
+        patch("app.workers.callback_dispatcher.AsyncSessionLocal") as mock_db_cls,
+        patch.object(asyncio, "sleep", fake_sleep),
+    ):
+        mock_cls.return_value.__aenter__.return_value = mock_client
+        mock_session = AsyncMock()
+        mock_db_cls.return_value.__aenter__.return_value = mock_session
+
+        result = await dispatch_callback("job-123", "http://example.com/hook", {"status": "ok"})
+        assert not result
+        assert mock_client.post.call_count == 5
+        assert slept == [5, 15, 60, 300]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_callback_ssrf_rejected():
+    """Callback на внутренний адрес не уходит (SSRF), без HTTP-попыток."""
+    from unittest.mock import patch
+
+    from app.workers.callback_dispatcher import dispatch_callback
+
+    with patch("app.workers.callback_dispatcher.httpx.AsyncClient") as mock_cls:
+        result = await dispatch_callback("job-123", "http://127.0.0.1:9/hook", {"status": "ok"})
+        assert result is False
+        mock_cls.assert_not_called()
