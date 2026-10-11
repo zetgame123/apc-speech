@@ -1,3 +1,6 @@
+import pytest
+import yaml
+
 from app.asr.normalizer import RussianTextNormalizer
 
 
@@ -99,3 +102,38 @@ def test_voice_search_misrecognitions_and_districts():
     assert normalizer.normalize("рас-рас") == "раз-раз"
     assert normalizer.normalize("Расслаз.") == "Раз-раз."
     assert normalizer.normalize("расслаз") == "раз-раз"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "щит",  # одно слово
+        "",  # пустая строка
+        "123",  # только числа
+        "!!!",  # только знаки
+        "три на шесть",
+        "щиты 3×6",
+        "а",
+        "  ",
+        "Румянцево",  # метро-шаблоны без групп (IndexError до чинки)
+        "Саларьево",
+        "Новогиреево",
+        "Перово",
+        "Беляево",
+    ],
+)
+def test_normalizer_never_raises_on_edge_inputs(text):
+    """Нормалайзер на любой вход возвращает строку и никогда не падает."""
+    result = RussianTextNormalizer().normalize(text)
+    assert isinstance(result, str)
+
+
+def test_normalizer_handles_all_vocabulary_hints():
+    """Все 409 терминов подсказок нормализуются без исключений."""
+    with open("config/vocabulary_hints.yaml", encoding="utf-8") as f:
+        hints = yaml.safe_load(f)
+    terms = [str(t) for v in hints.values() if isinstance(v, list) for t in v]
+    assert len(terms) > 0
+    normalizer = RussianTextNormalizer()
+    for term in terms:
+        assert isinstance(normalizer.normalize(term), str)

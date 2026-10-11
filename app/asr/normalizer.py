@@ -661,7 +661,12 @@ class RussianTextNormalizer:
             ("нижегородск(ая|ой|ую|ое|ом)", "Нижегородск"),
         ]
         self.metro_patterns = [
-            (re.compile(rf"\b{pat}\b", re.IGNORECASE), lambda m, r=repl: r + (m.group(1) or ""))
+            (
+                re.compile(rf"\b{pat}\b", re.IGNORECASE),
+                # Часть шаблонов без групп (румянцево, саларьево, ...): m.group(1)
+                # на них бросает IndexError. lastindex пуст — добавляем хвост "".
+                lambda m, r=repl: r + ((m.group(1) or "") if m.lastindex else ""),
+            )
             for pat, repl in metro_data
         ]
         # Compound metro stations
