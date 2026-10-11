@@ -267,6 +267,20 @@ def benchmark_voice_matrix(repeats: int = 20, warmup: int = 1, out_path: str | N
                     statuses.append("exception")
 
             lat_sorted = sorted(latencies)
+            first_text = None
+            if latencies:
+                # Текст первого успешного ответа — для WER/терминов в compare.
+                try:
+                    probe = client.post(
+                        f"{API_BASE_URL}/v1/voice/search?namespace=benchmark_c4",
+                        headers=headers,
+                        content=audio,
+                        timeout=180.0,
+                    )
+                    if probe.status_code == 200:
+                        first_text = probe.json().get("text", "")
+                except Exception:
+                    first_text = None
             cell = {
                 "payload": name,
                 "wav_bytes": len(audio),
@@ -279,6 +293,7 @@ def benchmark_voice_matrix(repeats: int = 20, warmup: int = 1, out_path: str | N
                 "p95_ms": round(lat_sorted[max(0, int(len(lat_sorted) * 0.95) - 1)], 1)
                 if lat_sorted
                 else None,
+                "first_text": first_text,
             }
             cells[name] = cell
             print(
@@ -296,6 +311,114 @@ def benchmark_voice_matrix(repeats: int = 20, warmup: int = 1, out_path: str | N
     return report
 
 
+# Эталоны для WER/терминов (из data/evaluation_suite/manifest.json).
+QUALITY_REFS = {
+    "dialogue_11s": (
+        os.path.join("data", "evaluation_suite", "sample_dialogue_01_telephony_8k.wav"),
+        "Здравствуйте! Подскажите стоимость суперсайта на Ленинградке. "
+        "Добрый день, стоимость двести тысяч рублей в месяц.",
+    ),
+    "telephony_5s": (
+        os.path.join("data", "evaluation_suite", "sample_telephony_01_telephony_8k.wav"),
+        "Подскажите свободны ли щиты три на шесть в Балашихе на октябрь",
+    ),
+}
+
+
+def _simple_norm(text: str) -> str:
+    import re
+
+    return re.sub(r"[^\w\s×]", " ", text.lower().replace("ё", "е"))
+
+
+def score_quality(hypothesis: str, reference: str, hint_terms: list) -> dict:
+    """WER/CER с ITN-нормализацией + доля узнанных терминов из эталона."""
+    from evaluation.wer_cer import calculate_wer_cer, normalize_eval_text
+
+    wer, cer = calculate_wer_cer(reference, hypothesis or "")
+
+    def term_norm(t: str) -> str:
+        try:
+            return normalize_eval_text(t)
+        except Exception:
+            return _simple_norm(t)
+
+    expected = [
+        t
+        for t in hint_terms
+        if term_norm(t).strip() and term_norm(t).strip() in normalize_eval_text(reference)
+    ]
+    hyp_norm = normalize_eval_text(hypothesis or "")
+    hit = [t for t in expected if term_norm(t).strip() in hyp_norm]
+    return {
+        "wer": round(wer, 3),
+        "cer": round(cer, 3),
+        "terms": f"{len(hit)}/{len(expected)}",
+        "terms_missing": [t for t in expected if t not in hit],
+    }
+
+
+def benchmark_engine_report(
+    engine_label: str,
+    ram_peak_mb: float | None = None,
+    repeats: int = 20,
+    warmup: int = 1,
+    out_path: str | None = None,
+) -> dict:
+    """Сравнение движков: матрица латентности + WER/термины на эталонах + RAM.
+
+    Движок переключается env воркера (VOICE_SEARCH_ENGINE / VOICE_SEARCH_MODEL_NAME),
+    скрипт только меряет. RAM-пик передаётся снаружи (замер docker stats).
+    """
+    import yaml
+
+    matrix = benchmark_voice_matrix(repeats=repeats, warmup=warmup, out_path=None)
+    with open(os.path.join("config", "vocabulary_hints.yaml"), encoding="utf-8") as f:
+        hints = yaml.safe_load(f)
+    hint_terms = [str(t) for v in hints.values() if isinstance(v, list) for t in v]
+
+    quality = {}
+    headers = {"Authorization": f"Bearer {DEV_TOKEN}", "Content-Type": "audio/wav"}
+    with httpx.Client(timeout=180.0) as client:
+        for key, (wav_path, ref) in QUALITY_REFS.items():
+            with open(wav_path, "rb") as f:
+                audio = f.read()
+            t0 = time.time()
+            resp = client.post(
+                f"{API_BASE_URL}/v1/voice/search?namespace=benchmark_cmp",
+                headers=headers,
+                content=audio,
+            )
+            dt_ms = round((time.time() - t0) * 1000, 1)
+            hyp = resp.json().get("text", "") if resp.status_code == 200 else ""
+            quality[key] = {
+                "status": resp.status_code,
+                "latency_ms": dt_ms,
+                "hypothesis": hyp,
+                **score_quality(hyp, ref, hint_terms),
+            }
+            print(f"  [quality {key}] {resp.status_code} за {dt_ms} мс: {quality[key]}")
+
+    cells = {}
+    for name, cell in matrix["cells"].items():
+        # first_text ячейки — из voice10-монолога без эталона: WER не считаем,
+        # текст храним как есть. WER/термины — только в quality (контент совпадает).
+        cells[name] = {**cell}
+    report = {
+        "engine": engine_label,
+        "env": matrix["env"],
+        "ram_peak_mb": ram_peak_mb,
+        "cells": cells,
+        "quality": quality,
+    }
+    if out_path:
+        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+        print(f"\nОтчёт движка записан: {out_path}")
+    return report
+
+
 async def main():
     parser = argparse.ArgumentParser(description="apc-speech Load & Performance Benchmarking")
     parser.add_argument("--concurrency", type=int, default=5, help="Number of concurrent requests")
@@ -308,7 +431,26 @@ async def main():
     parser.add_argument("--repeats", type=int, default=20, help="Повторов на ячейку в --matrix")
     parser.add_argument("--warmup", type=int, default=1, help="Прогревочных запросов в --matrix")
     parser.add_argument("--out", type=str, default="", help="Путь к JSON-отчёту --matrix")
+    parser.add_argument(
+        "--engine-report",
+        type=str,
+        default="",
+        help="Сравнение движка: матрица + WER/термины на эталонах (имя движка для отчёта)",
+    )
+    parser.add_argument(
+        "--ram-peak-mb", type=float, default=None, help="Пиковая RAM контейнера (замер снаружи)"
+    )
     args = parser.parse_args()
+
+    if args.engine_report:
+        benchmark_engine_report(
+            args.engine_report,
+            ram_peak_mb=args.ram_peak_mb,
+            repeats=args.repeats,
+            warmup=args.warmup,
+            out_path=args.out or None,
+        )
+        return
 
     if args.matrix:
         benchmark_voice_matrix(repeats=args.repeats, warmup=args.warmup, out_path=args.out or None)
