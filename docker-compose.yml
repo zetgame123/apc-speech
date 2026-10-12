@@ -375,9 +375,9 @@ services:
   # Активируется только для профиля local-full: docker compose --profile local-full up
   # Профиль по brief.md: 8 vCPU / 32 ГБ RAM или GPU >= 12 ГБ.
   llm-runtime:
-    # Тег server-b4738 зафиксирован (проверен через ghcr API: есть linux/amd64,
-    # digest sha256:358bdcd79aa31ebc99047092db7e0edd961666bf27f456df988dc717f3d80a4a).
-    image: ghcr.io/ggml-org/llama.cpp:server-b4738
+    # Тег server-b5350 зафиксирован (проверен через ghcr API: есть linux/amd64,
+    # digest sha256:8a0a31d0b342f96b2c5453eedadbb0544d6d426bd43c9ea6f62b2bd2489be676).
+    image: ghcr.io/ggml-org/llama.cpp:server-b5350
     restart: unless-stopped
     profiles: ["local-full"]
     depends_on:

@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-13",
+  "target": "шаг 3: свежая сборка llama.cpp, 30 звонков",
+  "image": "ghcr.io/ggml-org/llama.cpp:server-b5350 (digest sha256:8a0a31..., MIT upstream)",
+  "probe_5": "промпт 50мс/ток (19.7/с) против 81мс (12.4/с) на b4738; генерация ~7.3/с ~ как было",
+  "final_30": {
+    "invalid_share": "0/30",
+    "analysis_median_s": 61.2,
+    "analysis_p95_s": 65.7,
+    "refinement_median_s": 12.8,
+    "note": "0 fallback, 0 failed"
+  },
+  "vs_b4738": "медиана 84 -> 61с (-27%); всё ещё >> 30с"
+}
