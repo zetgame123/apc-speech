@@ -15,6 +15,14 @@
       "analysis_ms_median": 84400,
       "analysis_ms_p95": 92800,
       "note": "30/30 succeeded; ретраи живьём не сработали ни разу (покрыты юнитами); время как в шаге 1"
+    },
+    {
+      "step": 3,
+      "name": "constrained decoding: LOCAL_LLM_JSON_MODE (дефолт json_schema), флагом",
+      "server_support": "b4738: json_object/json_schema/grammar все 200 (прямой проброс)",
+      "overhead_probe": "10 json_schema (анализ med 86.7с) vs 10 json_object (med 82.4с): разница ~5% = шум, все 20/20 succeeded",
+      "decision": "дефолт не менялся (json_schema); время разбора >>30с в обоих режимах — вопрос времени решается не грамматикой",
+      "invalid_share": "0/20 в обеих пробах"
     }
   ]
 }

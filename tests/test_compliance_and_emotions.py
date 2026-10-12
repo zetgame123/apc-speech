@@ -397,3 +397,18 @@ async def test_llm_retry_exhausted_raises_for_fallback(monkeypatch, caplog):
             )
     assert mock_client.post.call_count == 2
     assert "секретный транскрипт" not in caplog.text
+
+
+def test_response_format_mode_flag(monkeypatch):
+    """Шаг 3: дефолт и мусор -> json_schema; явный json_object -> он."""
+    from app.core.config import get_settings
+    from app.llm.local_adapter import _response_format
+
+    settings = get_settings()
+    monkeypatch.delenv("LOCAL_LLM_JSON_MODE", raising=False)
+    monkeypatch.setattr(settings, "local_llm_json_mode", "json_schema")
+    assert _response_format({})["type"] == "json_schema"
+    monkeypatch.setattr(settings, "local_llm_json_mode", "weird")
+    assert _response_format({})["type"] == "json_schema"
+    monkeypatch.setattr(settings, "local_llm_json_mode", "json_object")
+    assert _response_format({}) == {"type": "json_object"}

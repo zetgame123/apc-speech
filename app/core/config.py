@@ -121,6 +121,10 @@ class Settings(BaseSettings):
     # LLM
     local_llm_url: str = Field(default="http://localhost:8080/v1", alias="LOCAL_LLM_URL")
     local_llm_model: str = Field(default="qwen2.5-7b-instruct", alias="LOCAL_LLM_MODEL")
+    # Режим constrained decoding llama.cpp: json_schema (дефолт, текущий факт)
+    # или json_object (слабее, только для замеров). Сырой grammar-GBNF не
+    # выведен: json_schema и так компилируется сервером в грамматику.
+    local_llm_json_mode: str = Field(default="json_schema", alias="LOCAL_LLM_JSON_MODE")
 
     # External LLM (Disabled by default)
     llm_external_provider_enabled: bool = Field(

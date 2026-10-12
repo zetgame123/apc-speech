@@ -491,6 +491,25 @@ def normalize_analysis_dict(parsed: dict[str, Any], transcript: str = "") -> dic
     return parsed
 
 
+def _response_format(schema: dict) -> dict:
+    """Шаг 3 robustness Qwen: режим constrained decoding из LOCAL_LLM_JSON_MODE.
+
+    Дефолт json_schema (текущий факт); json_object — только для замеров
+    накладных расходов. Неизвестное значение -> json_schema.
+    """
+    from app.core.config import get_settings
+
+    if get_settings().local_llm_json_mode == "json_object":
+        return {"type": "json_object"}
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "StructuredAnalysis",
+            "schema": schema,
+        },
+    }
+
+
 class LocalLlamaCppAdapter(AnalysisModelPort):
     def __init__(self):
         settings = get_settings()
@@ -602,13 +621,7 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                                 },
                                 {"role": "user", "content": prompt},
                             ],
-                            "response_format": {
-                                "type": "json_schema",
-                                "json_schema": {
-                                    "name": "StructuredAnalysis",
-                                    "schema": schema,
-                                },
-                            },
+                            "response_format": _response_format(schema),
                             "temperature": 0.1,
                         },
                     )
