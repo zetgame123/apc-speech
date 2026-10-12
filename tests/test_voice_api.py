@@ -42,6 +42,10 @@ def make_wav_bytes(duration_sec=1, sample_rate=16000):
 @pytest.fixture
 def mock_voice_deps(monkeypatch):
     """Mock ASR engine, preprocessor, and rate limiter for voice search tests."""
+    # Ветка voice-tone-default: эти тесты — про whisper-путь.
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "voice_search_engine", "whisper")
     # Mock ASR engine
     mock_engine = MagicMock()
     mock_engine.transcribe.return_value = (

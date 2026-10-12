@@ -23,9 +23,11 @@ def test_synthetic_warmup_wav_is_valid_audio():
 
 
 @pytest.mark.asyncio
-async def test_fast_prewarm_runs_dummy_transcribe_and_marks_ready():
+async def test_fast_prewarm_runs_dummy_transcribe_and_marks_ready(monkeypatch):
     import app.workers.fast_voice_search as fast
 
+    # Ветка voice-tone-default: этот тест — про whisper-путь.
+    monkeypatch.setattr(fast.settings, "voice_search_engine", "whisper")
     engine = MagicMock()
     engine.transcribe.return_value = ([{"text": "warmup"}], {"duration": 1.0})
     with (
