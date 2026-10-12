@@ -144,3 +144,49 @@ async def test_health_reports_avx2_details():
         details = resp.json().get("details")
         assert isinstance(details, dict)
         assert isinstance(details.get("avx2"), bool)
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_loop_refreshes_during_long_job():
+    """Heartbeat идёт из отдельной задачи: за время задания длиннее TTL
+    флаг обновляется несколько раз (раньше — ни разу, /ready падал в 503)."""
+    import asyncio
+
+    from app.workers.warmup import WORKER_READY_TTL_SEC, heartbeat_loop
+
+    calls = []
+
+    class FakeQueue:
+        async def set_worker_ready(self, name, ttl_sec=None):
+            calls.append((name, ttl_sec, asyncio.get_event_loop().time()))
+
+    task = asyncio.create_task(heartbeat_loop(FakeQueue(), "long", interval_sec=0.05))
+    await asyncio.sleep(0.22)  # имитация длинного задания (> TTL при interval<<TTL)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    assert len(calls) >= 3
+    assert all(name == "long" and ttl == WORKER_READY_TTL_SEC for name, ttl, _ in calls)
+
+
+def test_start_heartbeat_thread_is_daemon(monkeypatch):
+    """Поток heartbeat — daemon (умирает с процессом -> 503 при остановке)."""
+    import threading
+
+    import app.workers.warmup as warmup_mod
+
+    started = {}
+
+    class FakeQueue:
+        async def set_worker_ready(self, name, ttl_sec=None):
+            started["marked"] = True
+            raise RuntimeError("stop after first mark")
+
+    monkeypatch.setattr(warmup_mod, "RedisQueue", lambda: FakeQueue())
+    thread = warmup_mod.start_heartbeat_thread("long", interval_sec=60)
+    assert isinstance(thread, threading.Thread)
+    assert thread.daemon is True
+    thread.join(timeout=3)
+    assert started.get("marked") is True

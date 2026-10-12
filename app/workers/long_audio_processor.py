@@ -29,7 +29,7 @@ from app.queue.redis_streams import (
     get_queue,
 )
 from app.storage.s3 import get_storage
-from app.workers.warmup import mark_worker_ready, synthetic_warmup_wav
+from app.workers.warmup import mark_worker_ready, start_heartbeat_thread, synthetic_warmup_wav
 
 settings = get_settings()
 setup_logging(settings.log_level)
@@ -508,12 +508,10 @@ async def main():
             hint="инференс без AVX2 на порядок медленнее, SLA/RTF недостижимы",
         )
 
+    # Heartbeat готовности — отдельный поток: переживает блокировку
+    # event loop длинным синхронным инференсом.
+    start_heartbeat_thread("long")
     while is_running:
-        # Heartbeat готовности для /ready (флаг с TTL).
-        try:
-            await mark_worker_ready(queue, "long")
-        except Exception as e:
-            logger.warning("worker_ready_heartbeat_failed", error=str(e))
         try:
             job_item = await queue.read_next_job(
                 stream=STREAM_LONG_JOBS,

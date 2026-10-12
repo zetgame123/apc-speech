@@ -10,7 +10,7 @@ from app.core.config import get_settings
 from app.core.cpu import has_avx2
 from app.core.logging import get_logger, setup_logging
 from app.queue.redis_streams import GROUP_FAST_WORKERS, STREAM_FAST_JOBS, get_queue
-from app.workers.warmup import mark_worker_ready, synthetic_warmup_wav
+from app.workers.warmup import mark_worker_ready, start_heartbeat_thread, synthetic_warmup_wav
 
 settings = get_settings()
 setup_logging(settings.log_level)
@@ -99,12 +99,10 @@ async def main():
             hint="инференс без AVX2 на порядок медленнее, SLA/RTF недостижимы",
         )
 
+    # Heartbeat готовности — отдельный поток: переживает блокировку
+    # event loop длинным синхронным инференсом.
+    start_heartbeat_thread("fast")
     while is_running:
-        # Heartbeat готовности для /ready (флаг с TTL).
-        try:
-            await mark_worker_ready(queue, "fast")
-        except Exception as e:
-            logger.warning("worker_ready_heartbeat_failed", error=str(e))
         item = await queue.read_next_job(
             stream=STREAM_FAST_JOBS,
             group=GROUP_FAST_WORKERS,
