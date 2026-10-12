@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-12",
+  "target": "п.1: расхождение 590МБ (свип) vs 930МБ (выборка), кривая 300 запросов",
+  "env": {
+    "cpu": "Ryzen 7 8845HS, governor performance, max 3.0ГГц",
+    "mhz_cpuset": "cpu MHz\t\t: 2994.387 cpu MHz\t\t: 1093.439",
+    "cpuset": "4,6",
+    "engine": "T-one V8 (intra=1, fuzzy off)",
+    "wav": "s10_16k, 300x последовательно"
+  },
+  "method": "RSS процесса воркера (host /proc/PID/status) + cgroup memory.current/peak контейнера, каждая итерация",
+  "curve_300": {
+    "n_ok": 300,
+    "lat_median_ms": 2282.0,
+    "rss_first_mb": 997,
+    "rss_last_mb": 997,
+    "cg_peak_first_mb": 960,
+    "cg_peak_mb_last": 960,
+    "verdict": "плоская: 997/950/960 от 0 до 299 — роста нет"
+  },
+  "idle_vs_loaded": {
+    "fresh_worker_idle_mb": 412,
+    "after_first_inference_mb": 997,
+    "verdict": "скачок на первых запросах, дальше плато (high-water mark, удержание glibc)"
+  },
+  "arena_test": {
+    "n": 30,
+    "first_kb": 1018236,
+    "last_kb": 1018276,
+    "verdict": "без арены тот же уровень ~994МБ с 1-го запроса — арена не причина"
+  },
+  "fresh_probe_vs_worker": {
+    "probe_ru_maxrss_mb": 589.4,
+    "worker_rss_mb": 997,
+    "verdict": "разница базовых уровней (каркас воркера + рабочее множество ORT), не накопление"
+  },
+  "conclusion": "утечки нет, исправлений не требуется; расхождение объяснено"
+}
