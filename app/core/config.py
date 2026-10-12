@@ -112,6 +112,12 @@ class Settings(BaseSettings):
     # Только для T-one: чинит «счеты»→«щиты» без LM. Обычные слова не трогаем:
     # замена только при similarity >= порога и несовпадении с точной формой.
     tone_fuzzy_threshold: float = Field(default=0.0, alias="TONE_FUZZY_THRESHOLD")
+    # п.3а: нечёткая замена только для слов вне словаря navec (дефолт выкл).
+    tone_fuzzy_oov_only: bool = Field(default=False, alias="TONE_FUZZY_OOV_ONLY")
+    # п.3б: декодер T-one (greedy дефолт) и ширина/вес beam с хотвордами.
+    tone_decode: str = Field(default="greedy", alias="TONE_DECODE")
+    tone_beam_width: int = Field(default=10, alias="TONE_BEAM_WIDTH")
+    tone_hotword_weight: float = Field(default=3.0, alias="TONE_HOTWORD_WEIGHT")
 
     # Diarization
     diarization_min_speaker_distance: float = Field(

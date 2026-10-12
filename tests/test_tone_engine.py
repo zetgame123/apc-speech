@@ -187,3 +187,60 @@ def test_fuzzy_terms_loaded(monkeypatch, tmp_path):
     eng = te.ToneEngine(str(model), fuzzy_threshold=0.8)
     terms = eng._load_fuzzy_terms()
     assert "щиты" in terms and "суперсайт" in terms
+
+
+def _lp_for_word(word_ids, blank_boost_frames=()):
+    """Синтетические логпробы: каждый кадр топит за свой символ."""
+    import numpy as np
+
+    from app.asr.tone_engine import BLANK_ID
+
+    frames = []
+    for i, wid in enumerate(word_ids):
+        lp = np.full((BLANK_ID + 1,), -10.0, dtype=np.float32)
+        lp[wid] = -0.1
+        lp[BLANK_ID] = -5.0
+        frames.append(lp)
+    return np.stack(frames)
+
+
+def test_beam_width_one_matches_greedy():
+
+    from app.asr.tone_engine import _beam_decode, _greedy_decode
+
+    # "щит ": щ26 и9 т19 space33
+    lp = _lp_for_word([26, 9, 19, 33, 33])
+    g_text, _, _ = _greedy_decode(lp)
+    b_text, _, _ = _beam_decode(lp, beam_width=1)
+    assert g_text == b_text == "щит"
+
+
+def test_beam_hotword_flips_close_call():
+    """Хотворд перевешивает близкую пару с/ч при высоком весе."""
+
+    from app.asr.tone_engine import _beam_decode
+
+    lp = _lp_for_word([18, 9, 19, 33])
+    # кадр 0: с чуть сильнее щ
+    lp[0, 18] = -0.7
+    lp[0, 26] = -0.75
+    plain, _, _ = _beam_decode(lp, beam_width=5, hotwords=(), hotword_weight=5.0)
+    boosted, _, _ = _beam_decode(lp, beam_width=5, hotwords=("щит",), hotword_weight=5.0)
+    assert plain == "сит"
+    assert boosted == "щит"
+
+
+def test_fuzzy_oov_only_protects_vocab_words(monkeypatch, tmp_path):
+    """п.3а: слова из navec не трогаем даже при низком пороге."""
+    import sys
+    from unittest.mock import MagicMock
+
+    import app.asr.tone_engine as te
+
+    monkeypatch.setitem(sys.modules, "onnxruntime", MagicMock())
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"fake")
+    eng = te.ToneEngine(str(model), fuzzy_threshold=0.4, fuzzy_oov_only=True)
+    assert eng._apply_fuzzy_terms("подскажите ли") == "подскажите ли"
+    # OOV-слово правим: суперсайта нет в navec
+    assert "суперсайт" in eng._apply_fuzzy_terms("суперсайта")

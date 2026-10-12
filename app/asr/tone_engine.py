@@ -46,6 +46,75 @@ class _SplitterState:
     offset: int = 0
 
 
+def _logaddexp(a: float, b: float) -> float:
+    if a == float("-inf"):
+        return b
+    if b == float("-inf"):
+        return a
+    m = max(a, b)
+    import math
+
+    return m + math.log1p(math.exp(-abs(a - b)))
+
+
+def _beam_decode(
+    logprobs: np.ndarray,
+    beam_width: int = 10,
+    hotwords: tuple = (),
+    hotword_weight: float = 3.0,
+) -> tuple[str, float, float]:
+    """Собственный prefix beam search с hotword-бонусом (без KenLM/pyctcdecode).
+
+    Бонус (shallow fusion, приближение): при завершении слова пробелом, если
+    слово (или хвост из нескольких слов) совпадает с хотвордом, расширение
+    получает +hotword_weight. К вычислению арены отношения не имеет.
+    """
+    n_frames = len(logprobs)
+    beams: dict[str, list[float]] = {"": [0.0, float("-inf")]}
+    for fr in range(n_frames):
+        lp = logprobs[fr]
+        # Топ символов кадра (blank + лучшие) — иначе Python-цикл слишком медленный.
+        top_ids = np.argpartition(lp, -9)[-9:]
+        if BLANK_ID not in top_ids:
+            top_ids = np.append(top_ids, BLANK_ID)
+        nxt: dict[str, list[float]] = {}
+        for prefix, (pb, pnb) in beams.items():
+            total = _logaddexp(pb, pnb)
+            # blank: префикс не меняется
+            cell = nxt.setdefault(prefix, [float("-inf"), float("-inf")])
+            cell[0] = _logaddexp(cell[0], lp[BLANK_ID] + total)
+            for c in top_ids:
+                c = int(c)
+                if c == BLANK_ID:
+                    continue
+                ch = LABELS[c]
+                score = float(lp[c])
+                if prefix and prefix[-1] == ch:
+                    # повтор без blank: остаёмся в префиксе, только non-blank путь
+                    cell = nxt.setdefault(prefix, [float("-inf"), float("-inf")])
+                    cell[1] = _logaddexp(cell[1], score + pnb)
+                    continue
+                new_prefix = prefix + ch
+                bonus = 0.0
+                if hotwords and ch == " ":
+                    tail = (prefix.strip() + " ").split()
+                    for hw in hotwords:
+                        parts = hw.split()
+                        if tail[-len(parts) :] == parts:
+                            bonus = hotword_weight
+                            break
+                cell = nxt.setdefault(new_prefix, [float("-inf"), float("-inf")])
+                cell[1] = _logaddexp(cell[1], score + total + bonus)
+        ranked = sorted(nxt.items(), key=lambda kv: _logaddexp(kv[1][0], kv[1][1]), reverse=True)
+        beams = dict(ranked[:beam_width])
+    best = max(beams, key=lambda pr: _logaddexp(beams[pr][0], beams[pr][1]))
+    probs = np.exp(logprobs[np.arange(n_frames), logprobs.argmax(axis=-1)])
+    mask = logprobs.argmax(axis=-1) != BLANK_ID
+    confidence = float(probs[mask].mean()) if mask.any() else 0.0
+    silence_share = float(np.exp(logprobs[:, -2:]).sum(axis=-1).mean())
+    return best.strip(), confidence, silence_share
+
+
 def _greedy_decode(logprobs: np.ndarray) -> tuple[str, float, float]:
     """Жадный CTC-декодер. Возвращает (текст, уверенность, доля тишины).
 
@@ -95,6 +164,11 @@ class ToneEngine:
         disable_arena: bool = False,
         disable_mem_pattern: bool = False,
         fuzzy_threshold: float = 0.0,
+        fuzzy_oov_only: bool = False,
+        decode: str = "greedy",
+        beam_width: int = 10,
+        hotword_weight: float = 3.0,
+        hotwords: list[str] | None = None,
     ):
         import onnxruntime as ort
 
@@ -130,6 +204,13 @@ class ToneEngine:
         self._normalizer = RussianTextNormalizer()
         self._fuzzy_threshold = fuzzy_threshold
         self._fuzzy_terms: list[str] | None = None
+        self._fuzzy_oov_only = fuzzy_oov_only
+        self._navec_vocab = None
+        self._decode = decode if decode in ("greedy", "beam") else "greedy"
+        self._beam_width = max(1, beam_width)
+        self._hotword_weight = hotword_weight
+        self._hotwords_arg = hotwords
+        self._hotwords: tuple | None = None
         logger.info("tone_model_loaded_successfully", model=model_path)
 
     def load_model(self) -> None:
@@ -154,6 +235,50 @@ class ToneEngine:
             self._fuzzy_terms = sorted(terms)
         return self._fuzzy_terms
 
+    def _navec_contains(self, word: str) -> bool:
+        """Есть ли слово в словаре navec (защита обычных слов, п.3а)."""
+        if self._navec_vocab is None:
+            try:
+                from natasha import NewsEmbedding
+
+                self._navec_vocab = NewsEmbedding().vocab
+            except Exception as e:
+                logger.warning("tone_navec_load_failed", error=str(e))
+                self._navec_vocab = False
+        if self._navec_vocab is False:
+            return False
+        try:
+            return word in self._navec_vocab
+        except Exception:
+            return False
+
+    def _load_hotwords(self) -> tuple:
+        """Хотворды для beam: фразы из vocabulary_hints.yaml (с пробелами — тоже)."""
+        if self._hotwords is None:
+            if self._hotwords_arg is not None:
+                self._hotwords = tuple(
+                    h.lower().replace("ё", "е").strip()
+                    for h in self._hotwords_arg
+                    if str(h).strip()
+                )
+            else:
+                import yaml
+
+                found: set[str] = set()
+                try:
+                    with open("config/vocabulary_hints.yaml", encoding="utf-8") as f:
+                        hints = yaml.safe_load(f)
+                    for value in hints.values():
+                        if isinstance(value, list):
+                            for term in value:
+                                norm = str(term).lower().replace("ё", "е").strip()
+                                if norm:
+                                    found.add(norm)
+                except Exception as e:
+                    logger.warning("tone_hotwords_load_failed", error=str(e))
+                self._hotwords = tuple(sorted(found))
+        return self._hotwords
+
     def _apply_fuzzy_terms(self, text: str) -> str:
         """Нечёткая замена слов гипотезы на термины словаря (только T-one).
 
@@ -172,6 +297,9 @@ class ToneEngine:
         for word in text.split():
             low = word.lower().replace("ё", "е")
             if low in exact:
+                out.append(word)
+                continue
+            if self._fuzzy_oov_only and self._navec_contains(low):
                 out.append(word)
                 continue
             best, best_ratio = None, 0.0
@@ -252,7 +380,15 @@ class ToneEngine:
             last_end = 0
             for start, end in _split_phrases(is_speech, is_last=is_last):
                 piece = combined[max(0, start - SPEECH_EXPAND_FRAMES) : end + SPEECH_EXPAND_FRAMES]
-                text, conf, silence = _greedy_decode(piece)
+                if self._decode == "beam":
+                    text, conf, silence = _beam_decode(
+                        piece,
+                        beam_width=self._beam_width,
+                        hotwords=self._load_hotwords(),
+                        hotword_weight=self._hotword_weight,
+                    )
+                else:
+                    text, conf, silence = _greedy_decode(piece)
                 if not text:
                     continue
                 seg_start = max(
@@ -319,5 +455,9 @@ def get_tone_engine() -> ToneEngine:
             disable_arena=settings.tone_disable_arena,
             disable_mem_pattern=settings.tone_disable_mem_pattern,
             fuzzy_threshold=settings.tone_fuzzy_threshold,
+            fuzzy_oov_only=settings.tone_fuzzy_oov_only,
+            decode=settings.tone_decode,
+            beam_width=settings.tone_beam_width,
+            hotword_weight=settings.tone_hotword_weight,
         )
     return _tone_engine_instance

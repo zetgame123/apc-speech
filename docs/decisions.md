@@ -146,3 +146,20 @@
   в БД) контейнеры упрутся в CFS-квоты и замедлятся, но не упадут. Если замеры
   покажут систематический троттлинг long-очереди — резать лимиты фоновых сервисов
   (postgres/redis/minio) в пользу воркеров, а не наращивать сумму.
+
+## ADR-014: Beam search для T-one — свой, без pyctcdecode/kenlm (2026-10-12)
+
+* **Статус**: Принято
+* **Контекст**: Для hotword-бустинга в T-one рассмотрен pyctcdecode 0.5.0.
+  Проверено 2026-10-12: pyctcdecode — **Apache 2.0** (PyPI, Kensho; deps только
+  numpy+pygtrie), подключать было бы можно. Но `pyctcdecode/decoder.py`
+  содержит безусловный `import kenlm`, а KenLM — **LGPL-2.1**
+  (`kpu/kenlm` LICENSE: «Most of the code here is licensed under the LGPL»).
+* **Решение**: kenlm не подключать (копилефт — вопрос 4 в questions.md);
+  как следствие, и pyctcdecode не подключать (без kenlm не импортируется).
+  Вместо этого — компактный собственный prefix beam search с hotword-бонусом
+  (~80 строк, только numpy) в `app/asr/tone_engine.py`, включается только
+  `TONE_DECODE=beam` (дефолт greedy). Подмешивание словаря через KenLM остаётся
+  возможным в будущем при решении по kenlm.
+* **Последствия**: ноль новых зависимостей, образ не вырос; качество beam без LM
+  честно замеряется против greedy в п.3б.

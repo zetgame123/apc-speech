@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-12",
+  "target": "п.3: fuzzy-OOV и beam+hotwords (только T-one, дефолты выкл)",
+  "base_v8": {
+    "engine": "t-one-v8-3ghz",
+    "n_ok": 50,
+    "median_ms": 1790.2,
+    "p95_ms": 2079.5,
+    "mean_wer": 0.085,
+    "terms": "83/108=0.769",
+    "ram_peak_mb": 930.9
+  },
+  "fuzzy_oov_thr08": {
+    "engine": "t-one-fuzzy-oov",
+    "n_ok": 50,
+    "median_ms": 1883.6,
+    "p95_ms": 2186.2,
+    "mean_wer": 0.082,
+    "terms": "83/108=0.769",
+    "ram_peak_mb": 958.4
+  },
+  "beam_w10_hw3": {
+    "engine": "t-one-beam-hw",
+    "n_ok": 50,
+    "median_ms": 2198.4,
+    "p95_ms": 2530.1,
+    "mean_wer": 0.092,
+    "terms": "80/108=0.741",
+    "ram_peak_mb": 933.0
+  },
+  "per_file_diff": "fuzzy: WER изм. в 2 файлах (q17 fix, q19 mixed), terms 1 fix + 1 break; beam: WER изм. в 9 (7 хуже), terms -3 (q11 3/3->1/3)",
+  "false_examples": {
+    "fuzzy_oov_fix": "q17 диджетал->digital-экранах; q19 бщита->щита",
+    "fuzzy_oov_break": "q19 terms 5/5->4/5",
+    "beam_break": "q11 Шоссе Энтузиастов->шосе энтузиастов (пробелы beam ломают regex капитализации); q15 баннер->банер; q17 программатик->програматик"
+  },
+  "licenses": "pyctcdecode Apache-2.0 (не подключён: жёсткий import kenlm); kenlm LGPL-2.1 -> вопрос 4, не подключён; реализован собственный beam (numpy only)",
+  "verdict": "оба варианта хуже или равны базе: fuzzy нейтрален (термины те же 83), beam вредит (WER +0.007, термины -3, +23% времени)"
+}
