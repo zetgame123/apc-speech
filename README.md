@@ -722,6 +722,14 @@ curl -X POST "http://localhost:8000/v1/voice/search?namespace=outdoor_msk&langua
 ```
 * **Приватность и Zero Audio Retention**: аудиозапись голосового запроса обрабатывается исключительно в оперативной памяти (in-memory buffer) и **никогда не сохраняется на диск, в базу данных или в S3/MinIO**.
 
+> [!NOTE]
+> Ветка `voice-tone-default`: движок быстрого пути по умолчанию — T-one
+> (`VOICE_SEARCH_ENGINE=tone`, CTC greedy, 71M). Возврат на whisper:
+> `VOICE_SEARCH_ENGINE=whisper` (тогда снова грузится whisper-small).
+> Отличия T-one: текст строчными без пунктуации; термины 76,9% против 84,3%
+> у whisper-small; p95 на 10 с — 2,41 с при цели 2,5 с (запас 0,1 с).
+> Подробнее — ADR-015 и `docs/known-issues.md` п.17.
+
 ---
 
 ### 8. Общая серверная история голосовых запросов (`GET / DELETE /v1/voice/history`)
