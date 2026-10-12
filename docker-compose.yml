@@ -20,7 +20,7 @@ services:
       resources:
         limits:
           cpus: '0.3'
-          memory: 384M
+          memory: 160M
 
   redis:
     image: redis:7.2-alpine
@@ -69,7 +69,7 @@ services:
       resources:
         limits:
           cpus: '0.2'
-          memory: 224M
+          memory: 272M
 
   alembic-migrate:
     build:
@@ -196,7 +196,7 @@ services:
       resources:
         limits:
           cpus: '0.4'
-          memory: 320M
+          memory: 384M
 
   worker-long:
     build:
@@ -252,7 +252,7 @@ services:
       resources:
         limits:
           cpus: '0.6'
-          memory: 1792M
+          memory: 2112M
 
   worker-callback:
     build:
@@ -318,6 +318,9 @@ services:
       - OMP_NUM_THREADS=1
       - OPENBLAS_NUM_THREADS=1
       - MKL_NUM_THREADS=1
+      # Ограничение glibc-арен: пик T-one 931МБ -> 496МБ без потери скорости.
+      - MALLOC_ARENA_MAX=2
+      - MALLOC_TRIM_THRESHOLD_=131072
       # Запрет сетевых попыток HuggingFace (телеметрия/докачка весов). См. B9.
       - HF_HUB_OFFLINE=1
     volumes:
@@ -333,7 +336,7 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 960M
+          memory: 576M
 
   cleanup-retention:
     build:
@@ -367,7 +370,7 @@ services:
       resources:
         limits:
           cpus: '0.1'
-          memory: 64M
+          memory: 80M
 
   # Активируется только для профиля local-full: docker compose --profile local-full up
   # Профиль по brief.md: 8 vCPU / 32 ГБ RAM или GPU >= 12 ГБ.
