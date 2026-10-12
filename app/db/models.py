@@ -115,7 +115,7 @@ class Analysis(Base):
     )
     namespace = Column(String(100), nullable=False, index=True)
     schema_version = Column(String(20), nullable=False, default="1.0.0")
-    prompt_version = Column(String(50), nullable=False, default="v1.2-ru-outdoor")
+    prompt_version = Column(String(50), nullable=False, default="v1.3-ru-compact")
     summary = Column(Text, nullable=True)
     call_result = Column(String(50), nullable=True, index=True)
     inquiry_type = Column(String(50), nullable=True, index=True)

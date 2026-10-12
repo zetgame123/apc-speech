@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-13",
+  "target": "шаг 2: компактный ответ, 30 звонков",
+  "change": "summary 1-2 предл., пропуск metrics/emotion/score (считают правила); prompt v1.3-ru-compact; схема: +v1.3 в enum (совместимо)",
+  "invalid_share": "0/30",
+  "analysis_median_s": 85.3,
+  "analysis_p95_s": 88.6,
+  "quality_vs_step1": {
+    "inquiry_match": "29/30 (1 спорный availability/inventory_search)",
+    "entities_identical": "28/30",
+    "summary_len_med": "97 -> 72 (-26%)"
+  },
+  "verdict": "качество сохранено, ускорения нет (доминирует промпт); схема не ломана"
+}

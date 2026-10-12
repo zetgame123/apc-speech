@@ -621,7 +621,7 @@ curl -s "http://localhost:8000/v1/calls/c1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c/ana
 {
   "call_id": "c1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c",
   "schema_version": "1.0.0",
-  "prompt_version": "v1.2-ru-outdoor",
+  "prompt_version": "v1.3-ru-compact",
   "summary": "Клиент запросил подбор рекламных поверхностей 3×6 в Балашихе на октябрь. Менеджер предложил свободные щиты и пообещал направить расчет.",
   "call_result": "commercial_offer_requested",
   "inquiry_type": "inventory_search",

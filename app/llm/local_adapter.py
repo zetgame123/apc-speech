@@ -484,7 +484,7 @@ def normalize_analysis_dict(parsed: dict[str, Any], transcript: str = "") -> dic
 
     # 7. Metadata
     parsed["schema_version"] = "1.0.0"
-    parsed["prompt_version"] = "v1.2-ru-outdoor"
+    parsed["prompt_version"] = "v1.3-ru-compact"
     if not parsed.get("summary"):
         parsed["summary"] = "Деловой разговор представителя компании и клиента."
 
@@ -577,6 +577,9 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         prompt = (
             "Ты — русскоязычный аналитик деловых телефонных звонков (реклама, продажи, услуги, сервис, запись клиентов). "
             "Проанализируй диалог менеджера и клиента и заполни JSON строго по схеме.\n"
+            "ЭКОНОМЬ ТОКЕНЫ (компактный ответ v1.3): summary — 1-2 предложения, до 200 символов; "
+            "what в agreements — коротко; НЕ заполняй deterministic_speech_metrics, client_emotion и score "
+            "(их считают правила); пустые списки не расписывай.\n"
             "ВАЖНО по полям категории, результата и ролей:\n"
             "- inquiry_type ОБЯЗАТЕЛЬНО должен быть одним из английских слагов: "
             "'pricing', 'availability', 'inventory_search', 'specs', 'order_status', "
@@ -965,7 +968,7 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
 
         return StructuredAnalysis(
             schema_version="1.0.0",
-            prompt_version="v1.2-ru-outdoor",
+            prompt_version="v1.3-ru-compact",
             summary=summary,
             call_result="follow_up_scheduled" if next_step else "info_provided",
             inquiry_type=detected_type,
