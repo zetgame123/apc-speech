@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     )
     voice_search_hotwords: str | None = Field(default=None, alias="VOICE_SEARCH_HOTWORDS")
     # Движок быстрого пути: "whisper" (дефолт) или "tone" (эксперимент T-one, ADR-011).
-    voice_search_engine: str = Field(default="whisper", alias="VOICE_SEARCH_ENGINE")
+    voice_search_engine: str = Field(default="tone", alias="VOICE_SEARCH_ENGINE")
     # Каталог весов T-one (model.onnx тянет model-downloader) и потоки ORT
     # (0 — дефолт onnxruntime; ограничение также через OMP_NUM_THREADS).
     tone_model_dir: str = Field(default="./models/t-one", alias="TONE_MODEL_DIR")

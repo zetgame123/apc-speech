@@ -49,6 +49,8 @@ def mock_engine(monkeypatch):
 
 @pytest.fixture
 def clean_settings(monkeypatch):
+    # Ветка voice-tone-default: эти тесты — про whisper-путь, фиксируем его.
+    monkeypatch.setenv("VOICE_SEARCH_ENGINE", "whisper")
     for var in (
         "VOICE_SEARCH_BEAM_MIN",
         "VOICE_SEARCH_BEAM_SIZE",
@@ -97,3 +99,36 @@ def test_empty_prompt_and_hotwords_disable(mock_engine, clean_settings, monkeypa
     _, kwargs = mock_engine.transcribe.call_args
     assert kwargs["initial_prompt"] == ""
     assert kwargs["hotwords"] == ""
+
+
+def test_default_engine_is_tone(monkeypatch):
+    """Ветка voice-tone-default: дефолт tone, whisper — через переменную."""
+    from app.core.config import get_settings
+
+    monkeypatch.delenv("VOICE_SEARCH_ENGINE", raising=False)
+    get_settings.cache_clear()
+    try:
+        assert get_settings().voice_search_engine == "tone"
+    finally:
+        get_settings.cache_clear()
+
+
+def test_prewarm_tone_does_not_load_whisper(monkeypatch):
+    """При T-one прогрев не трогает whisper-small (память/старт)."""
+    import app.workers.fast_voice_search as fv
+
+    monkeypatch.setattr(fv.settings, "voice_search_engine", "tone")
+    called = {}
+    monkeypatch.setattr(
+        "app.workers.fast_voice_search.get_voice_search_engine",
+        lambda: (_ for _ in ()).throw(AssertionError("whisper must not load")),
+    )
+
+    class FakeTone:
+        def transcribe(self, audio, language="ru"):
+            called["n"] = called.get("n", 0) + 1
+            return ([{"text": "t"}], {"duration": 1.0})
+
+    monkeypatch.setattr("app.asr.tone_engine.get_tone_engine", lambda: FakeTone())
+    fv.prewarm()
+    assert called.get("n") == 1

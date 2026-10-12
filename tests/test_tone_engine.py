@@ -99,15 +99,15 @@ def test_missing_weights_raise_helpful_error(monkeypatch):
         te.ToneEngine("/nonexistent-dir/model.onnx")
 
 
-def test_default_engine_is_whisper(monkeypatch):
-    """Дефолт VOICE_SEARCH_ENGINE=whisper: основной путь не тронут."""
+def test_default_engine_is_tone(monkeypatch):
+    """Ветка voice-tone-default: дефолт tone (whisper — через переменную)."""
     from app.core.config import get_settings
 
     for var in ("VOICE_SEARCH_ENGINE",):
         monkeypatch.delenv(var, raising=False)
     get_settings.cache_clear()
     try:
-        assert get_settings().voice_search_engine == "whisper"
+        assert get_settings().voice_search_engine == "tone"
     finally:
         get_settings.cache_clear()
 

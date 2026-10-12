@@ -29,6 +29,19 @@ signal.signal(signal.SIGINT, handle_sigterm)
 
 
 def prewarm():
+    # При выбранном T-one whisper-small не грузим вообще (память, время старта).
+    if settings.voice_search_engine == "tone":
+        logger.info("prewarming_tone_engine")
+        from app.asr.tone_engine import get_tone_engine
+
+        engine = get_tone_engine()
+        try:
+            engine.transcribe(synthetic_warmup_wav(), language="ru")
+            logger.info("voice_search_warmup_run_completed")
+        except Exception as e:
+            logger.warning("voice_search_warmup_run_failed", error=str(e))
+        logger.info("voice_search_engine_prewarmed_ready")
+        return
     logger.info("prewarming_voice_search_engine", model=settings.voice_search_model_name)
     engine = get_voice_search_engine()
     engine.load_model()
