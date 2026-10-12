@@ -1,0 +1,18 @@
+{
+  "date": "2026-10-12",
+  "target": "шаг 1: настройки без смены модели, 30 звонков",
+  "config": "-t 2 --threads-batch 2 (cache-reuse/FA/KVq8 пробованы на 5 звонках: выигрыша нет, убраны)",
+  "probes_5calls": {
+    "threads_8": "промпт 80-83мс/ток, ген 165-185мс/ток",
+    "threads_2": "промпт 80-82, ген 143-157",
+    "cache_reuse": "без выигрыша (refinement вытесняет кэш)",
+    "fa_kvq8": "без выигрыша (81-87 / 144-163); -fa 1 ронял сервер (флаг без значения)"
+  },
+  "final_30": {
+    "invalid_share": "0/30",
+    "analysis_median_s": 78.9,
+    "analysis_p95_s": 86.6,
+    "refinement_median_s": 18.7,
+    "note": "0 fallback, 0 failed"
+  }
+}
