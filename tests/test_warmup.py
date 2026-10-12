@@ -19,7 +19,7 @@ def test_synthetic_warmup_wav_is_valid_audio():
         assert w.getsampwidth() == 2
         assert w.getframerate() == 16000
         assert w.getnframes() == 16000
-    assert WORKER_READY_TTL_SEC >= 30
+    assert WORKER_READY_TTL_SEC == 20
 
 
 @pytest.mark.asyncio

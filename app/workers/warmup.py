@@ -15,7 +15,7 @@ import wave
 from app.core.logging import get_logger
 from app.queue.redis_streams import RedisQueue
 
-WORKER_READY_TTL_SEC = 90
+WORKER_READY_TTL_SEC = 20  # п.2 доработки: был 90
 
 
 def synthetic_warmup_wav(duration_sec: float = 1.0, sample_rate: int = 16000) -> bytes:
@@ -39,7 +39,7 @@ async def mark_worker_ready(queue, name: str) -> None:
     await queue.set_worker_ready(name, ttl_sec=WORKER_READY_TTL_SEC)
 
 
-async def heartbeat_loop(queue, name: str, interval_sec: int = 30) -> None:
+async def heartbeat_loop(queue, name: str, interval_sec: int = 5) -> None:
     """Фоновая задача heartbeat готовности (п.1: не зависит от обработки заданий).
 
     Долгая транскрибация блокирует основной цикл воркера дольше TTL флага
@@ -60,7 +60,7 @@ async def heartbeat_loop(queue, name: str, interval_sec: int = 30) -> None:
             raise
 
 
-def start_heartbeat_thread(name: str, interval_sec: int = 30):
+def start_heartbeat_thread(name: str, interval_sec: int = 5):
     """Фоновый поток heartbeat (п.1): не зависит от event loop воркера.
 
     Длинный синхронный инференс блокирует цикл на минуты — asyncio-задача
