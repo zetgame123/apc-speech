@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-12",
+  "target": "п.2: скорость при 3.0ГГц, 50 файлов; фоновая нагрузка",
+  "env": {
+    "cpu": "Ryzen 7 8845HS, performance, max 3.0ГГц",
+    "cpuset": "4,6"
+  },
+  "tone_v8_idle": {
+    "engine": "t-one-v8-3ghz",
+    "n_ok": 50,
+    "median_ms": 1790.2,
+    "p95_ms": 2079.5,
+    "mean_wer": 0.085,
+    "terms": "83/108=0.769",
+    "ram_peak_mb": 930.9,
+    "mhz": "cpu MHz\t\t: 2994.200\ncpu MHz\t\t: 1093.439"
+  },
+  "whisper_small_combo": {
+    "engine": "whisper-small-combo-3ghz",
+    "n_ok": 50,
+    "median_ms": 7711.7,
+    "p95_ms": 8359.6,
+    "mean_wer": 0.081,
+    "terms": "91/108=0.843",
+    "ram_peak_mb": 597.2,
+    "mhz": "cpu MHz\t\t: 2994.270\ncpu MHz\t\t: 2993.618"
+  },
+  "tone_v8_loaded": {
+    "engine": "t-one-v8-loaded",
+    "n_ok": 50,
+    "median_ms": 1887.6,
+    "p95_ms": 2150.8,
+    "mean_wer": 0.085,
+    "terms": "83/108=0.769",
+    "ram_peak_mb": 932.6,
+    "mhz": "cpu MHz\t\t: 2986.140\ncpu MHz\t\t: 2983.529",
+    "bg": "long20 20.5мин на worker-long, asr_transcription 25% во время матрицы"
+  },
+  "neighbor_effect": "медиана +5.5% (1.79->1.89с), p95 +3.4%; качество идентично"
+}
