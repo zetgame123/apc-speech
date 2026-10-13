@@ -247,13 +247,120 @@ def extract_period(text_lower: str) -> str | None:
     return None
 
 
-def extract_category(text_lower: str) -> str | None:
+def extract_category(text_lower: str, categories: dict[str, list[str]] | None = None) -> str | None:
     """Категория бизнеса клиента из словаря (каноническая форма) или None."""
-    for canon, aliases in PRODUCT_CATEGORY_DICT.items():
+    mapping = categories or PRODUCT_CATEGORY_DICT
+    for canon, aliases in mapping.items():
         for alias in aliases:
             if alias in text_lower:
                 return canon
     return None
+
+
+def canonical_category(value: Any, categories: dict[str, list[str]] | None = None) -> str | None:
+    """Строгая валидация категории по закрытому списку (точное совпадение).
+
+    Каноника или алиас из конфига -> каноническая форма; всё остальное
+    (галлюцинации модели вроде «суперсайт»/«formats», мусор) -> None.
+    Подстроки НЕ принимаем: закрытый список должен оставаться закрытым.
+    """
+    if not isinstance(value, str):
+        return None
+    v = value.strip().lower().replace("ё", "е")
+    if not v:
+        return None
+    mapping = categories or PRODUCT_CATEGORY_DICT
+    for canon, aliases in mapping.items():
+        forms = [canon, *(aliases or [])]
+        if any(v == f.strip().lower().replace("ё", "е") for f in forms):
+            return canon
+    return None
+
+
+def extract_cities(text_lower: str) -> list[str]:
+    """Города из текста (тот же набор, что в rules-пути)."""
+    cities = []
+    city_patterns = {
+        "Москва": r"\bмоскв[аеыуой]?\b",
+        "Балашиха": r"\bбалаших[аеуойи]?\b",
+        "Химки": r"\bхимк[а-я]{1,3}\b",
+        "Мытищи": r"\bмытищ[а-я]{1,3}\b",
+        "Подольск": r"\bподольск[а-я]{0,3}\b",
+        "Одинцово": r"\bодинцов[оае]?\b",
+        "Красногорск": r"\bкрасногорск[а-я]{0,3}\b",
+        "Люберцы": r"\bлюберц[а-я]{1,3}\b",
+        "Королёв": r"\bкорол[её]в[а-я]{0,3}\b",
+    }
+    for city_name, pat in city_patterns.items():
+        if re.search(pat, text_lower):
+            cities.append(city_name)
+    return cities
+
+
+def extract_formats(text_lower: str) -> list[str]:
+    """Рекламные форматы из текста (тот же набор, что в rules-пути)."""
+    formats = []
+    for fmt in ["3×6", "щит", "суперсайт", "ситиборд", "экран", "медиафасад"]:
+        if fmt.lower() in text_lower:
+            formats.append(fmt)
+    return formats
+
+
+def extract_quantity(text_lower: str) -> int | None:
+    """Количество (штуки/поверхности/стороны) или None."""
+    qty_match = re.search(r"(\d+)\s*(щит|сторон|поверхност|экран)", text_lower)
+    if qty_match:
+        try:
+            return int(qty_match.group(1))
+        except ValueError:
+            return None
+    return None
+
+
+def backfill_entities_from_rules(
+    entities: dict[str, Any],
+    text: str,
+    categories: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
+    """П.4: добивка сущностей Qwen правилами-экстракторами на уровне полей.
+
+    Пустые поля (None/[]) дополняются результатами правил-экстракторов
+    по тому же тексту; непустые значения модели НЕ перезаписываются.
+    Категория валидируется по закрытому списку из конфига: чужое значение
+    обнуляется и тоже добивается правилами (или остаётся null).
+    """
+    if not isinstance(entities, dict):
+        entities = {}
+    normalizer = RussianTextNormalizer()
+    text_lower = normalizer.normalize(text).lower()
+
+    if not entities.get("cities"):
+        found = extract_cities(text_lower)
+        if found:
+            entities["cities"] = found
+    if not entities.get("formats"):
+        found = extract_formats(text_lower)
+        if found:
+            entities["formats"] = found
+    if entities.get("quantity") is None:
+        found = extract_quantity(text_lower)
+        if found is not None:
+            entities["quantity"] = found
+    if entities.get("target_period") is None:
+        found = extract_period(text_lower)
+        if found is not None:
+            entities["target_period"] = found
+    if entities.get("budget_rub") is None:
+        found = extract_budget_rub(text_lower)
+        if found is not None:
+            entities["budget_rub"] = found
+    valid = canonical_category(entities.get("product_category"), categories)
+    if valid is None:
+        found = extract_category(text_lower, categories)
+        entities["product_category"] = found
+    else:
+        entities["product_category"] = valid
+    return entities
 
 
 def extract_budget_rub(text_lower: str) -> float | int | None:
@@ -734,6 +841,7 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         self.model_name = settings.local_llm_model
         self.taxonomy = self._load_taxonomy()
         self.checklist_cfg = self._load_checklist()
+        self.categories = self._load_categories()
 
     def __setattr__(self, name: str, value: Any) -> None:
         if name == "taxonomy" and isinstance(value, dict):
@@ -759,6 +867,16 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
             with open(path, "r", encoding="utf-8") as f:
                 return yaml.safe_load(f)
         return {"items": {}, "forbidden_words": []}
+
+    def _load_categories(self) -> dict[str, list[str]]:
+        """Закрытый список категорий из конфига; нет файла — встроенный дефолт."""
+        path = "config/product_categories.yaml"
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+                if isinstance(data, dict) and data:
+                    return {str(k): list(v or []) for k, v in data.items()}
+        return dict(PRODUCT_CATEGORY_DICT)
 
     async def analyze(
         self,
@@ -868,6 +986,11 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                     parsed = json.loads(content)
 
                     parsed = normalize_analysis_dict(parsed, trimmed_transcript)
+                    # П.4: пустые поля сущностей добить правилами-экстракторами,
+                    # категорию — строго по закрытому списку из конфига.
+                    parsed["entities"] = backfill_entities_from_rules(
+                        parsed.get("entities") or {}, trimmed_transcript, self.categories
+                    )
                     return StructuredAnalysis(**parsed)
             except Exception as e:
                 last_error = e
@@ -1041,16 +1164,10 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
 
         budget_rub = extract_budget_rub(text_lower)
 
-        quantity = None
-        qty_match = re.search(r"(\d+)\s*(щит|сторон|поверхност|экран)", text_lower)
-        if qty_match:
-            try:
-                quantity = int(qty_match.group(1))
-            except ValueError:
-                pass
+        quantity = extract_quantity(text_lower)
 
         target_period = extract_period(text_lower)
-        product_category = extract_category(text_lower)
+        product_category = extract_category(text_lower, self.categories)
 
         # 1. Determine inquiry type
         detected_type = "other"
@@ -1062,26 +1179,9 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                 detected_type = category
 
         # 2. Extract entities
-        cities = []
-        city_patterns = {
-            "Москва": r"\bмоскв[аеыуой]?\b",
-            "Балашиха": r"\bбалаших[аеуойи]?\b",
-            "Химки": r"\bхимк[а-я]{1,3}\b",
-            "Мытищи": r"\bмытищ[а-я]{1,3}\b",
-            "Подольск": r"\bподольск[а-я]{0,3}\b",
-            "Одинцово": r"\bодинцов[оае]?\b",
-            "Красногорск": r"\bкрасногорск[а-я]{0,3}\b",
-            "Люберцы": r"\bлюберц[а-я]{1,3}\b",
-            "Королёв": r"\bкорол[её]в[а-я]{0,3}\b",
-        }
-        for city_name, pat in city_patterns.items():
-            if re.search(pat, text_lower):
-                cities.append(city_name)
+        cities = extract_cities(text_lower)
 
-        formats = []
-        for fmt in ["3×6", "щит", "суперсайт", "ситиборд", "экран", "медиафасад"]:
-            if fmt.lower() in text_lower:
-                formats.append(fmt)
+        formats = extract_formats(text_lower)
 
         # Extract manager lines specifically for checklist evaluation
         manager_lines = []
