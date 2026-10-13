@@ -483,7 +483,7 @@ paths:
               example:
                               call_id: 5de775de-a026-4e6b-87d1-eb6f98948c4f
                               schema_version: 1.0.0
-                              prompt_version: v1.4-ru-entities
+                              prompt_version: v1.5-ru-types
                               summary: Клиент интересуется стоимостью суперсайта на Ленинградке.
                               call_result: info_provided
                               inquiry_type: pricing

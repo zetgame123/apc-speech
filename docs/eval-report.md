@@ -16,6 +16,7 @@
 | 3 | Термины с подсказками (whisper-small, TTS-20) | ≥ 90 % | 63,6 % с подсказками (61,4 % без) | мимо |
 | 4 | DER-30 (collar 0,25 с) + роли | ориентира нет | моно 0,163 / роли 0,94; стерео 0,286 / роли 0,98 | измерено |
 | 5 | Типы: accuracy / macro-F1 (A120+B25) | ориентира нет | rules 0,67/0,59 (A), 0,56/0,48 (B); Qwen 0,67/0,50 (Asub-30), 0,68/0,60 (B); ASR-шум −0,08…−0,12 | измерено |
+| 5 | Типы: accuracy / macro-F1 на B (п.2) | ориентира нет | rules 0,56/0,48 → 0,60/0,53; Qwen 0,68/0,60 → 0,80/0,67 (промпт v1.5) | улучшено, остаток — синонимы B |
 | 5 | Сущности F1 (п.1, 2026-10-13) | ориентира нет | rules-A: period 1,0 / budget 1,0 / category 1,0 (было 0,0); rules-B: 0,67 / 0,38 / 0,0 — остаток только неполнота эталонов B; Qwen v1.4: Asub budget 1,0 / period 0,4 / category 0,0; B budget 0,33 / period 0,25; quantity везде 0 (эталоны A/B все None) | частично (нули: quantity по построению, Qwen-category — галлюцинации) |
 | 6 | Часовая запись, small 2 ядра | ≤ 60 мин | 3431 с (57,2 мин), RTF 0,953; ASR 75 %, диаризация 545 с, LLM ~205 с | OK впритык (без капа) |
 | 6 | Часовая запись, local-full 8 vCPU | в 2 раза быстрее на 4 (по ТЗ) | 3456 с, RTF 0,960 — выигрыша нет | мимо (см. узкие места) |
@@ -126,6 +127,63 @@ A каждый 4-й (30 шт.) + весь B; ASR-шум — TTS B → whisper-sm
   «2 поверхности»), по построению; не чинилось, эталоны не правились;
 - asr_*-секции в `reports/types_eval.json` — из HEAD (старый код),
   ASR-шум в п.1–2 не перемерялся.
+
+#### 5.2. П.2: типы — матрица ошибок A, таксономия, примеры (промпт v1.5)
+
+Матрица ошибок rules на A ДО (120 диалогов, старый `taxonomy.yaml`):
+complaint>production — 10 (все: «баннер» в тексте жалобы даёт 1:1,
+ничья уходит первому в словаре — production раньше complaint);
+other>inventory_search — 10 (менеджер перечисляет форматы в ответе);
+availability>other — 6 («свободен» нет в ключах, только «свободно»);
+availability>inventory_search — 3, partnership_supply>inventory_search — 3
+(формат из текста бьёт отсутствие ключей);
+partnership_supply>other — 6 («владельцы/сдать/инвентарь» не в ключах);
+availability>programmatic_digital — 1, partnership_supply>programmatic — 1
+(формат «экран»). Путаемые пары: complaint/production,
+other/inventory_search, availability/inventory_search+other,
+partnership_supply/inventory_search+other.
+
+Исправление (опора только на A; B — held-out, не трогали):
+- `config/taxonomy.yaml`: описания с «Отличие от …» (availability,
+  inventory_search, complaint, partnership_supply, other) + ключевые слова:
+  availability += свободен/свободна/свободны/свободный/свободные;
+  complaint += выцвел/замен; partnership_supply += владельцы/сдать/инвентарь;
+  other += просто узнаю/что у вас есть/в общих чертах/интересуюсь/спрашивайте.
+  Каждое проверено: в A встречается только в своём типе.
+- промпт v1.5-ru-types: блок «Частые путаницы типов» — 4 однострочные
+  примера на 6 типов (≤2 на тип: complaint/production, partnership/
+  inventory_search, availability/inventory_search, other/inventory_search),
+  плюс уточнения сущностей (period по-русски, category только бизнес
+  клиента, cities/formats не ронять).
+
+До/после на B (held-out, `reports/types_eval.json`, `reports/qwen_dump_v15.json`):
+- rules: accuracy 0,56 → 0,60, macro-F1 0,48 → 0,53. Остаток:
+  pricing>inventory_search 2, complaint>inventory_search 2,
+  order_status>production 2, partnership_supply>programmatic_digital 2,
+  pricing>other 1, complaint>other 1 — синонимы B («почём аренда»,
+  «местечко присмотреть», «счёт пришёл чужой»), которых нет в ключах.
+  Чинить по B запрещено — фиксируем как есть.
+- Qwen: accuracy 0,68 → 0,80, macro-F1 0,60 → 0,67. Остаток:
+  production>availability 1 (b007 — genuinely ambiguous),
+  partnership_supply>inventory_search 2 (b008/b023 — «свои поверхности»,
+  примеры не взяли короткие тексты), spam_irrelevant>other 1,
+  other>pricing 1 (b011 — «что почём» + сумма в ответе, спорно).
+- Qwen Asub (опора настройки): 0,67/0,50 → 1,0/1,0, путаница
+  partnership_supply>inventory_search (10/10) ушла полностью.
+- Побочки v1.5 на сущностях Qwen: cities восстановлены (Asub 1,0; B 0,96),
+  period на A — 1,0; budget нестабилен от прогона к прогону
+  (temperature=0.1): Asub 1,0 (v1.4) → 0,6 (v1.5) при неизменной строке
+  бюджета; повтор тех же 5 диалогов (a000/a012/a024/a036/a048) на v1.5 дал
+  1/5 совпадений с первым прогоном по инверсии (a000: 200000 → None),
+  периоды — 5/5 верно. Вывод: цифры бюджета/периода Qwen несут разброс
+  ±0,1–0,2 между прогонами, типы стабильны;
+  category у Qwen — 0,0 (переполнение «застройщик»/чужие значения;
+  B эталонов категории не содержит вовсе).
+
+Оговорка: rules-A 1,0/1,0 — насыщение шаблонного набора (10 повторов
+одних шаблонов), не генерализация; рабочий сигнал — B.
+Перебрано вариантов промпта итого: 3 (v1.3 base, v1.4 +блок сущностей,
+v1.5 +примеры пар + уточнения).
 
 ### 6. Время (`reports/hour_small_uncapped.json`, `reports/hour_localfull.json`)
 Часовка — конкат 15 моно-диалогов DER-набора, ровно 3600 с, 115 МБ.

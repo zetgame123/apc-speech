@@ -16,12 +16,34 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "type": "string", "enum": ["1.0.0"] },
-    "prompt_version": { "type": "string", "enum": ["v1.2-ru-outdoor", "v1.3-ru-compact", "v1.4-ru-entities"] },
-    "summary": { "type": "string", "maxLength": 1000 },
+    "schema_version": {
+      "type": "string",
+      "enum": [
+        "1.0.0"
+      ]
+    },
+    "prompt_version": {
+      "type": "string",
+      "enum": [
+        "v1.2-ru-outdoor",
+        "v1.3-ru-compact",
+        "v1.4-ru-entities",
+        "v1.5-ru-types"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 1000
+    },
     "call_result": {
       "type": "string",
-      "enum": ["success_deal", "follow_up_scheduled", "info_provided", "client_declined", "unclear_spam"]
+      "enum": [
+        "success_deal",
+        "follow_up_scheduled",
+        "info_provided",
+        "client_declined",
+        "unclear_spam"
+      ]
     },
     "inquiry_type": {
       "type": "string",
@@ -29,48 +51,141 @@
     },
     "entities": {
       "type": "object",
-      "required": ["cities", "formats"],
+      "required": [
+        "cities",
+        "formats"
+      ],
       "properties": {
-        "cities": { "type": "array", "items": { "type": "string" } },
-        "formats": { "type": "array", "items": { "type": "string" } },
-        "quantity": { "type": ["integer", "null"] },
-        "target_period": { "type": ["string", "null"] },
-        "budget_rub": { "type": ["number", "null"] },
-        "product_category": { "type": ["string", "null"] }
+        "cities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "formats": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "quantity": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "target_period": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "budget_rub": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "product_category": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "agreements": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["who", "what", "deadline"],
+        "required": [
+          "who",
+          "what",
+          "deadline"
+        ],
         "properties": {
-          "who": { "type": "string", "enum": ["manager", "client", "both"] },
-          "what": { "type": "string" },
-          "deadline": { "type": ["string", "null"] }
+          "who": {
+            "type": "string",
+            "enum": [
+              "manager",
+              "client",
+              "both"
+            ]
+          },
+          "what": {
+            "type": "string"
+          },
+          "deadline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       }
     },
     "sentiment": {
       "type": "object",
-      "required": ["client_overall", "manager_tone"],
+      "required": [
+        "client_overall",
+        "manager_tone"
+      ],
       "properties": {
-        "client_overall": { "type": "string", "enum": ["positive", "neutral", "negative", "conflict"] },
-        "manager_tone": { "type": "string", "enum": ["polite_constructive", "indifferent", "rude", "neutral"] },
+        "client_overall": {
+          "type": "string",
+          "enum": [
+            "positive",
+            "neutral",
+            "negative",
+            "conflict"
+          ]
+        },
+        "manager_tone": {
+          "type": "string",
+          "enum": [
+            "polite_constructive",
+            "indifferent",
+            "rude",
+            "neutral"
+          ]
+        },
         "client_emotion": {
           "type": "string",
-          "enum": ["enthusiasm_joy", "neutral_business", "doubt_skepticism", "irritation_anger", "urgency_anxiety"]
+          "enum": [
+            "enthusiasm_joy",
+            "neutral_business",
+            "doubt_skepticism",
+            "irritation_anger",
+            "urgency_anxiety"
+          ]
         },
         "manager_emotion": {
           "type": "string",
-          "enum": ["enthusiastic_helpful", "calm_professional", "indifferent_bored", "tense_defensive"]
+          "enum": [
+            "enthusiastic_helpful",
+            "calm_professional",
+            "indifferent_bored",
+            "tense_defensive"
+          ]
         },
         "emotions_breakdown": {
           "type": "object",
           "properties": {
-            "positive_pct": { "type": "number", "minimum": 0, "maximum": 100 },
-            "neutral_pct": { "type": "number", "minimum": 0, "maximum": 100 },
-            "negative_pct": { "type": "number", "minimum": 0, "maximum": 100 }
+            "positive_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "neutral_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "negative_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
           }
         }
       }
@@ -78,21 +193,64 @@
     "manager_checklist": {
       "type": "object",
       "required": [
-        "greeting", "need_identification", "options_offered",
-        "next_step_named", "contacts_taken", "forbidden_words_found", "score"
+        "greeting",
+        "need_identification",
+        "options_offered",
+        "next_step_named",
+        "contacts_taken",
+        "forbidden_words_found",
+        "score"
       ],
       "properties": {
-        "greeting": { "type": "boolean" },
-        "need_identification": { "type": "boolean" },
-        "options_offered": { "type": "boolean" },
-        "next_step_named": { "type": "boolean" },
-        "contacts_taken": { "type": "boolean" },
-        "forbidden_words_found": { "type": "array", "items": { "type": "string" } },
-        "score": { "type": "integer", "minimum": 0, "maximum": 5 },
-        "compliance_score": { "type": "number", "minimum": 0, "maximum": 100 },
-        "violations": { "type": "array", "items": { "type": "string" } },
-        "passed_rules": { "type": "array", "items": { "type": "string" } },
-        "recommendations": { "type": "array", "items": { "type": "string" } }
+        "greeting": {
+          "type": "boolean"
+        },
+        "need_identification": {
+          "type": "boolean"
+        },
+        "options_offered": {
+          "type": "boolean"
+        },
+        "next_step_named": {
+          "type": "boolean"
+        },
+        "contacts_taken": {
+          "type": "boolean"
+        },
+        "forbidden_words_found": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "compliance_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "violations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "passed_rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recommendations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "deterministic_speech_metrics": {
@@ -107,12 +265,30 @@
         "client_wpm"
       ],
       "properties": {
-        "manager_speech_share": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-        "client_speech_share": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-        "interruptions_count": { "type": "integer", "minimum": 0 },
-        "silence_duration_sec": { "type": "number", "minimum": 0.0 },
-        "manager_wpm": { "type": "number" },
-        "client_wpm": { "type": "number" }
+        "manager_speech_share": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "client_speech_share": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "interruptions_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "silence_duration_sec": {
+          "type": "number",
+          "minimum": 0.0
+        },
+        "manager_wpm": {
+          "type": "number"
+        },
+        "client_wpm": {
+          "type": "number"
+        }
       }
     }
   }

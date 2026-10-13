@@ -701,7 +701,7 @@ def normalize_analysis_dict(parsed: dict[str, Any], transcript: str = "") -> dic
 
     # 7. Metadata
     parsed["schema_version"] = "1.0.0"
-    parsed["prompt_version"] = "v1.4-ru-entities"
+    parsed["prompt_version"] = "v1.5-ru-types"
     if not parsed.get("summary"):
         parsed["summary"] = "Деловой разговор представителя компании и клиента."
 
@@ -794,16 +794,23 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         prompt = (
             "Ты — русскоязычный аналитик деловых телефонных звонков (реклама, продажи, услуги, сервис, запись клиентов). "
             "Проанализируй диалог менеджера и клиента и заполни JSON строго по схеме.\n"
-            "ЭКОНОМЬ ТОКЕНЫ (компактный ответ v1.4): summary — 1-2 предложения, до 200 символов; "
+            "ЭКОНОМЬ ТОКЕНЫ (компактный ответ v1.5): summary — 1-2 предложения, до 200 символов; "
             "what в agreements — коротко; НЕ заполняй deterministic_speech_metrics, client_emotion и score "
             "(их считают правила). Сущности (cities, formats и остальные поля) извлекай ПОЛНОСТЬЮ, "
             "экономия их не касается.\n"
             "Сущности entities — заполняй ВСЕ, что названо в диалоге (null — только если нет в тексте):\n"
+            "- cities, formats: списки пополняй обязательно, не оставляй пустыми при упоминании;\n"
             "- quantity: целое число (штуки, поверхности, стороны) или null\n"
-            "- target_period: месяц («октябрь»), квартал («первый квартал»), срок («полгода») или null\n"
+            "- target_period: ПО-РУССКИ (месяц «октябрь», квартал «первый квартал», срок «полгода») или null\n"
             "- budget_rub: ЧИСЛОМ в рублях («двести тысяч» → 200000, «полмиллиона» → 500000, "
             "«миллион» → 1000000) или null\n"
-            "- product_category: бизнес клиента («автосалон», «кафе», «застройщик») или null\n"
+            "- product_category: ТОЛЬКО бизнес самого клиента (кто он: «автосалон», «кафе», "
+            "«застройщик»); рекламируемый товар/формат сюда не писать; иначе null\n"
+            "Частые путаницы типов (примеры):\n"
+            "- «выцвел баннер, требую замену» → complaint, а не production;\n"
+            "- «мы владельцы щитов, хотим сдать» → partnership_supply, а не inventory_search;\n"
+            "- «свободен ли щит на октябрь» → availability, а не inventory_search;\n"
+            "- «просто узнаю, что у вас есть» → other (перечень форматов менеджером — не подбор).\n"
             "ВАЖНО по полям категории, результата и ролей:\n"
             "- inquiry_type ОБЯЗАТЕЛЬНО должен быть одним из английских слагов: "
             "'pricing', 'availability', 'inventory_search', 'specs', 'order_status', "
@@ -1187,7 +1194,7 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
 
         return StructuredAnalysis(
             schema_version="1.0.0",
-            prompt_version="v1.4-ru-entities",
+            prompt_version="v1.5-ru-types",
             summary=summary,
             call_result="follow_up_scheduled" if next_step else "info_provided",
             inquiry_type=detected_type,
