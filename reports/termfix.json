@@ -1,0 +1,47 @@
+{
+  "split": {
+    "A": [
+      "term_00",
+      "term_01",
+      "term_02",
+      "term_03",
+      "term_04",
+      "term_10",
+      "term_11",
+      "term_12",
+      "term_13",
+      "term_14"
+    ],
+    "B": [
+      "term_05",
+      "term_06",
+      "term_07",
+      "term_08",
+      "term_09",
+      "term_15",
+      "term_16",
+      "term_17",
+      "term_18",
+      "term_19"
+    ]
+  },
+  "derived_pairs_A": {
+    "billboard": "билборд",
+    "одинцова": "Одинцово"
+  },
+  "frozen_match": true,
+  "shares": {
+    "A_before": "10/14=0.714",
+    "A_after": "14/14=1.0",
+    "B_before": "23/30=0.767",
+    "B_after": "24/30=0.8",
+    "all_before": "33/44=0.75",
+    "all_after": "38/44=0.864"
+  },
+  "golos_fp": {
+    "false": 0,
+    "ok_total": 900,
+    "rate": 0.0,
+    "touched": 2
+  }
+}
