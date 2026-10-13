@@ -389,7 +389,7 @@ services:
        else
          MODEL=/models/qwen2.5-7b-instruct-q4_k_m.gguf;
        fi;
-       exec /app/llama-server -m $$MODEL --alias qwen2.5-7b-instruct --host 0.0.0.0 --port 8080 -c 4096 --n-gpu-layers 0 -t 2 --threads-batch 2"
+       exec /app/llama-server -m $$MODEL --alias qwen2.5-7b-instruct --host 0.0.0.0 --port 8080 -c 4096 --n-gpu-layers 0 -t ${LLAMA_THREADS:-4} --threads-batch ${LLAMA_THREADS:-4}"
     volumes:
       - ./models:/models:ro
     ports:

@@ -208,3 +208,19 @@ def test_workers_have_thread_limits_matching_cpu_quota():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_llm_runtime_threads_configurable_with_default_4():
+    """П.1: потоки llama.cpp задаются LLAMA_THREADS, дефолт 4.
+
+    Замер 2026-10-13: -t 2 при 8 vCPU недогружал CPU (медиана 65,4 с);
+    -t 6 на 8 физических ядрах — 25,8 с (≤ 30 с OK), -t 8 — 37,7 с.
+    """
+    compose = load_compose()
+    cmd = str(compose["services"]["llm-runtime"].get("command", ""))
+    assert "${LLAMA_THREADS:-4}" in cmd, (
+        f"llm-runtime не параметризован LLAMA_THREADS с дефолтом 4: {cmd[:200]}"
+    )
+    assert "-t 2" not in cmd and "--threads-batch 2" not in cmd, (
+        "в llm-runtime остался захардкоженный -t 2 (ошибка замера п.3)"
+    )
