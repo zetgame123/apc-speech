@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     voice_search_queue_wait_sec: float = Field(default=0.1, alias="VOICE_SEARCH_QUEUE_WAIT_SEC")
     voice_search_use_worker: bool = Field(default=True, alias="VOICE_SEARCH_USE_WORKER")
     voice_search_result_timeout_sec: float = Field(
-        default=2.4, alias="VOICE_SEARCH_RESULT_TIMEOUT_SEC"
+        default=2.5, alias="VOICE_SEARCH_RESULT_TIMEOUT_SEC"
     )
     # Нижняя граница beam search (по умолчанию 2 — историческое поведение).
     # Только для диагностических замеров через env; дефолт не менять.

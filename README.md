@@ -49,7 +49,7 @@ flowchart TD
     API -->|"Создание записи Call/Job"| PG
     API -->|"XADD jobs_long"| Redis
     API -->|"Redis Stream jobs:audio:fast"| WF
-    WF -->|"результат до таймаута 2.4с"| API
+    WF -->|"результат до таймаута 2.5с"| API
 
     subgraph Workers ["Фоновые исполнители"]
         WL["Worker-Long (Обработка звонков)"]
@@ -474,7 +474,7 @@ curl -s http://localhost:8000/health | jq .
 - Частые `429`: дефолтный лимит 5 запросов за 10 с на токен/IP
   (`RATE_LIMIT_REQUESTS_PER_WINDOW`/`RATE_LIMIT_WINDOW_SEC`); опрос статусов
   разреди до 1 запроса в 3–5 с либо подними лимит под свою нагрузку.
-- `503 voice_search_timeout`: воркер не уложился в 2,4 с — железо слабее
+- `503 voice_search_timeout`: воркер не уложился в 2,5 с — железо слабее
   профиля small или нет AVX2 (см. «Требования к системе» выше).
 - `500` при `DELETE /v1/data/delete?date_from=…`: передавать даты с таймзоной
   можно (нормализуются); повторяется — смотри `docs/runbook.md`.
