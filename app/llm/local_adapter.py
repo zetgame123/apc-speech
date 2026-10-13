@@ -856,7 +856,10 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                                 {"role": "user", "content": prompt},
                             ],
                             "response_format": _response_format(schema),
-                            "temperature": 0.1,
+                            # Детерминированный разбор: temperature 0 +
+                            # фиксированный seed (повтор B 3 раза — разброс 0).
+                            "temperature": 0.0,
+                            "seed": 42,
                         },
                     )
                     resp.raise_for_status()

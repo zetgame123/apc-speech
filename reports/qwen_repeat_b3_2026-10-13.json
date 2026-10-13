@@ -1,0 +1,1133 @@
+{
+  "passes": [
+    [
+      {
+        "id": "b000",
+        "inquiry_type": "availability",
+        "entities": {
+          "cities": [
+            "Химки"
+          ],
+          "formats": [
+            "суперсайт"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b001",
+        "inquiry_type": "pricing",
+        "entities": {
+          "cities": [
+            "Мытищи"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": "три месяца",
+          "budget_rub": 200000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b002",
+        "inquiry_type": "complaint",
+        "entities": {
+          "cities": [
+            "Люберцы"
+          ],
+          "formats": [
+            "суперсайты"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b003",
+        "inquiry_type": "order_status",
+        "entities": {
+          "cities": [
+            "Подольск"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b004",
+        "inquiry_type": "specs",
+        "entities": {
+          "cities": [
+            "Тверь"
+          ],
+          "formats": [
+            "вектор"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b005",
+        "inquiry_type": "documents_billing",
+        "entities": {
+          "cities": [
+            "Казань"
+          ],
+          "formats": [],
+          "quantity": 200000,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": "застройщик"
+        }
+      },
+      {
+        "id": "b006",
+        "inquiry_type": "inventory_search",
+        "entities": {
+          "cities": [
+            "Одинцово"
+          ],
+          "formats": [
+            "щит"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b007",
+        "inquiry_type": "availability",
+        "entities": {
+          "cities": [
+            "Королев"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": 50000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b008",
+        "inquiry_type": "inventory_search",
+        "entities": {
+          "cities": [
+            "Рязань"
+          ],
+          "formats": [
+            "экраны"
+          ],
+          "quantity": 2,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b009",
+        "inquiry_type": "programmatic_digital",
+        "entities": {
+          "cities": [
+            "Москва"
+          ],
+          "formats": [
+            "интернет-экраны"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b010",
+        "inquiry_type": "other",
+        "entities": {
+          "cities": [],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b011",
+        "inquiry_type": "pricing",
+        "entities": {
+          "cities": [],
+          "formats": [
+            "щиты"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": 80000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b012",
+        "inquiry_type": "pricing",
+        "entities": {
+          "cities": [
+            "столица"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": "полгода",
+          "budget_rub": 1000000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b013",
+        "inquiry_type": "availability",
+        "entities": {
+          "cities": [
+            "Красногорск"
+          ],
+          "formats": [
+            "призматрон"
+          ],
+          "quantity": null,
+          "target_period": "весна",
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b014",
+        "inquiry_type": "complaint",
+        "entities": {
+          "cities": [
+            "Подольск"
+          ],
+          "formats": [],
+          "quantity": 200000,
+          "target_period": null,
+          "budget_rub": 200000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b015",
+        "inquiry_type": "availability",
+        "entities": {
+          "cities": [
+            "Химки"
+          ],
+          "formats": [
+            "суперсайт"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b016",
+        "inquiry_type": "pricing",
+        "entities": {
+          "cities": [
+            "Мытищи"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": "три месяца",
+          "budget_rub": 200000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b017",
+        "inquiry_type": "complaint",
+        "entities": {
+          "cities": [
+            "Люберцы"
+          ],
+          "formats": [
+            "суперсайты"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b018",
+        "inquiry_type": "order_status",
+        "entities": {
+          "cities": [
+            "Подольск"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b019",
+        "inquiry_type": "specs",
+        "entities": {
+          "cities": [
+            "Тверь"
+          ],
+          "formats": [
+            "векторный"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b020",
+        "inquiry_type": "documents_billing",
+        "entities": {
+          "cities": [
+            "Казань"
+          ],
+          "formats": [],
+          "quantity": 200000,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": "застройщик"
+        }
+      },
+      {
+        "id": "b021",
+        "inquiry_type": "inventory_search",
+        "entities": {
+          "cities": [
+            "Одинцово"
+          ],
+          "formats": [
+            "щит"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b022",
+        "inquiry_type": "production",
+        "entities": {
+          "cities": [
+            "Королёв"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": 50000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b023",
+        "inquiry_type": "inventory_search",
+        "entities": {
+          "cities": [
+            "Рязань"
+          ],
+          "formats": [
+            "экраны"
+          ],
+          "quantity": 2,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b024",
+        "inquiry_type": "programmatic_digital",
+        "entities": {
+          "cities": [
+            "Москва"
+          ],
+          "formats": [
+            "интернет-экраны"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      }
+    ],
+    [
+      {
+        "id": "b000",
+        "inquiry_type": "availability",
+        "entities": {
+          "cities": [
+            "Химки"
+          ],
+          "formats": [
+            "суперсайт"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b001",
+        "inquiry_type": "pricing",
+        "entities": {
+          "cities": [
+            "Мытищи"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": "три месяца",
+          "budget_rub": 200000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b002",
+        "inquiry_type": "complaint",
+        "entities": {
+          "cities": [
+            "Люберцы"
+          ],
+          "formats": [
+            "суперсайты"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b003",
+        "inquiry_type": "order_status",
+        "entities": {
+          "cities": [
+            "Подольск"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b004",
+        "inquiry_type": "specs",
+        "entities": {
+          "cities": [
+            "Тверь"
+          ],
+          "formats": [
+            "вектор"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b005",
+        "inquiry_type": "documents_billing",
+        "entities": {
+          "cities": [
+            "Казань"
+          ],
+          "formats": [],
+          "quantity": 200000,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": "застройщик"
+        }
+      },
+      {
+        "id": "b006",
+        "inquiry_type": "inventory_search",
+        "entities": {
+          "cities": [
+            "Одинцово"
+          ],
+          "formats": [
+            "щит"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b007",
+        "inquiry_type": "availability",
+        "entities": {
+          "cities": [
+            "Королев"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": 50000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b008",
+        "inquiry_type": "inventory_search",
+        "entities": {
+          "cities": [
+            "Рязань"
+          ],
+          "formats": [
+            "экраны"
+          ],
+          "quantity": 2,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b009",
+        "inquiry_type": "programmatic_digital",
+        "entities": {
+          "cities": [
+            "Москва"
+          ],
+          "formats": [
+            "интернет-экраны"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b010",
+        "inquiry_type": "other",
+        "entities": {
+          "cities": [],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b011",
+        "inquiry_type": "pricing",
+        "entities": {
+          "cities": [],
+          "formats": [
+            "щиты"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": 80000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b012",
+        "inquiry_type": "pricing",
+        "entities": {
+          "cities": [
+            "столица"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": "полгода",
+          "budget_rub": 1000000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b013",
+        "inquiry_type": "availability",
+        "entities": {
+          "cities": [
+            "Красногорск"
+          ],
+          "formats": [
+            "призматрон"
+          ],
+          "quantity": null,
+          "target_period": "весна",
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b014",
+        "inquiry_type": "complaint",
+        "entities": {
+          "cities": [
+            "Подольск"
+          ],
+          "formats": [],
+          "quantity": 200000,
+          "target_period": null,
+          "budget_rub": 200000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b015",
+        "inquiry_type": "availability",
+        "entities": {
+          "cities": [
+            "Химки"
+          ],
+          "formats": [
+            "суперсайт"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b016",
+        "inquiry_type": "pricing",
+        "entities": {
+          "cities": [
+            "Мытищи"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": "три месяца",
+          "budget_rub": 200000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b017",
+        "inquiry_type": "complaint",
+        "entities": {
+          "cities": [
+            "Люберцы"
+          ],
+          "formats": [
+            "суперсайты"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b018",
+        "inquiry_type": "order_status",
+        "entities": {
+          "cities": [
+            "Подольск"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b019",
+        "inquiry_type": "specs",
+        "entities": {
+          "cities": [
+            "Тверь"
+          ],
+          "formats": [
+            "векторный"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b020",
+        "inquiry_type": "documents_billing",
+        "entities": {
+          "cities": [
+            "Казань"
+          ],
+          "formats": [],
+          "quantity": 200000,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": "застройщик"
+        }
+      },
+      {
+        "id": "b021",
+        "inquiry_type": "inventory_search",
+        "entities": {
+          "cities": [
+            "Одинцово"
+          ],
+          "formats": [
+            "щит"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b022",
+        "inquiry_type": "production",
+        "entities": {
+          "cities": [
+            "Королёв"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": 50000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b023",
+        "inquiry_type": "inventory_search",
+        "entities": {
+          "cities": [
+            "Рязань"
+          ],
+          "formats": [
+            "экраны"
+          ],
+          "quantity": 2,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b024",
+        "inquiry_type": "programmatic_digital",
+        "entities": {
+          "cities": [
+            "Москва"
+          ],
+          "formats": [
+            "интернет-экраны"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      }
+    ],
+    [
+      {
+        "id": "b000",
+        "inquiry_type": "availability",
+        "entities": {
+          "cities": [
+            "Химки"
+          ],
+          "formats": [
+            "суперсайт"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b001",
+        "inquiry_type": "pricing",
+        "entities": {
+          "cities": [
+            "Мытищи"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": "три месяца",
+          "budget_rub": 200000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b002",
+        "inquiry_type": "complaint",
+        "entities": {
+          "cities": [
+            "Люберцы"
+          ],
+          "formats": [
+            "суперсайты"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b003",
+        "inquiry_type": "order_status",
+        "entities": {
+          "cities": [
+            "Подольск"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b004",
+        "inquiry_type": "specs",
+        "entities": {
+          "cities": [
+            "Тверь"
+          ],
+          "formats": [
+            "вектор"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b005",
+        "inquiry_type": "documents_billing",
+        "entities": {
+          "cities": [
+            "Казань"
+          ],
+          "formats": [],
+          "quantity": 200000,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": "застройщик"
+        }
+      },
+      {
+        "id": "b006",
+        "inquiry_type": "inventory_search",
+        "entities": {
+          "cities": [
+            "Одинцово"
+          ],
+          "formats": [
+            "щит"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b007",
+        "inquiry_type": "availability",
+        "entities": {
+          "cities": [
+            "Королев"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": 50000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b008",
+        "inquiry_type": "inventory_search",
+        "entities": {
+          "cities": [
+            "Рязань"
+          ],
+          "formats": [
+            "экраны"
+          ],
+          "quantity": 2,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b009",
+        "inquiry_type": "programmatic_digital",
+        "entities": {
+          "cities": [
+            "Москва"
+          ],
+          "formats": [
+            "интернет-экраны"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b010",
+        "inquiry_type": "other",
+        "entities": {
+          "cities": [],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b011",
+        "inquiry_type": "pricing",
+        "entities": {
+          "cities": [],
+          "formats": [
+            "щиты"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": 80000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b012",
+        "inquiry_type": "pricing",
+        "entities": {
+          "cities": [
+            "столица"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": "полгода",
+          "budget_rub": 1000000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b013",
+        "inquiry_type": "availability",
+        "entities": {
+          "cities": [
+            "Красногорск"
+          ],
+          "formats": [
+            "призматрон"
+          ],
+          "quantity": null,
+          "target_period": "весна",
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b014",
+        "inquiry_type": "complaint",
+        "entities": {
+          "cities": [
+            "Подольск"
+          ],
+          "formats": [],
+          "quantity": 200000,
+          "target_period": null,
+          "budget_rub": 200000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b015",
+        "inquiry_type": "availability",
+        "entities": {
+          "cities": [
+            "Химки"
+          ],
+          "formats": [
+            "суперсайт"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b016",
+        "inquiry_type": "pricing",
+        "entities": {
+          "cities": [
+            "Мытищи"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": "три месяца",
+          "budget_rub": 200000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b017",
+        "inquiry_type": "complaint",
+        "entities": {
+          "cities": [
+            "Люберцы"
+          ],
+          "formats": [
+            "суперсайты"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b018",
+        "inquiry_type": "order_status",
+        "entities": {
+          "cities": [
+            "Подольск"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b019",
+        "inquiry_type": "specs",
+        "entities": {
+          "cities": [
+            "Тверь"
+          ],
+          "formats": [
+            "векторный"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b020",
+        "inquiry_type": "documents_billing",
+        "entities": {
+          "cities": [
+            "Казань"
+          ],
+          "formats": [],
+          "quantity": 200000,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": "застройщик"
+        }
+      },
+      {
+        "id": "b021",
+        "inquiry_type": "inventory_search",
+        "entities": {
+          "cities": [
+            "Одинцово"
+          ],
+          "formats": [
+            "щит"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b022",
+        "inquiry_type": "production",
+        "entities": {
+          "cities": [
+            "Королёв"
+          ],
+          "formats": [],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": 50000.0,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b023",
+        "inquiry_type": "inventory_search",
+        "entities": {
+          "cities": [
+            "Рязань"
+          ],
+          "formats": [
+            "экраны"
+          ],
+          "quantity": 2,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      },
+      {
+        "id": "b024",
+        "inquiry_type": "programmatic_digital",
+        "entities": {
+          "cities": [
+            "Москва"
+          ],
+          "formats": [
+            "интернет-экраны"
+          ],
+          "quantity": null,
+          "target_period": null,
+          "budget_rub": null,
+          "product_category": null
+        }
+      }
+    ]
+  ],
+  "mismatched": []
+}
