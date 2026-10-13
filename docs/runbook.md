@@ -5,6 +5,26 @@
 
 ---
 
+## 0. Запуск и остановка
+
+```bash
+cp .env.example .env   # один раз; заполнить DEV_TOKEN / API_TOKENS_HASHED / CALLBACK_SIGNING_SECRET
+APP_PROFILE=small docker compose up -d --build        # профиль small
+APP_PROFILE=local-full docker compose --profile local-full up -d --build  # с LLM
+
+docker compose ps                       # все контейнеры healthy
+docker compose up -d --force-recreate api   # подхватить изменённый .env (restart НЕ подхватит)
+
+# Остановка (данные в volumes pgdata/redisdata/miniodata сохраняются):
+docker compose stop                     # мягко (SIGTERM, воркеры доканчивают чанк)
+docker compose up -d                    # снова поднять
+```
+
+Холодный старт `small` до `/ready=200` — около 2,5 мин (прогрев ASR-моделей).
+Не используйте `down -v`: ключ `-v` удаляет volumes с БД, очередями и аудио.
+
+---
+
 ## 1. Мониторинг состояния и Healthcheck
 
 Сервис предоставляет три стандартных диагностических маршрута:
@@ -85,19 +105,11 @@ curl http://localhost:8000/metrics
   3. Воркер автоматически делает 5 попыток с экспоненциальной задержкой (до 15 минут).
 
 ### 2.4. Ротация токенов авторизации
-* **Симптом**: плановая смена API-ключа платформы.
-* **Порядок действий**:
-  1. Сгенерируйте новый случайный токен: `openssl rand -hex 32`.
-  2. Получите его SHA-256 хэш:
-     ```bash
-     echo -n "новый_токен" | sha256sum
-     ```
-  3. Добавьте хэш нового токена через запятую в переменную `API_TOKENS_HASHED` в `.env` рядом со старым.
-  4. Примените конфигурацию без простоя:
-     ```bash
-     docker compose up -d --no-deps api
-     ```
-  5. Переключите платформу на новый токен, после чего удалите старый хэш из `.env`.
+
+Полная процедура — в `docs/token-rotation.md` (перекрытие без простоя +
+мгновенный отзыв `POST /v1/admin/tokens/revoke`). Кратко: добавить хэш нового
+токена в `API_TOKENS_HASHED` рядом со старым, `up -d --force-recreate api`,
+переключить клиентов, отозвать старый ручкой, убрать из `.env`.
 
 ### 2.5. Принудительная очистка устаревших аудиозаписей в MinIO
 * **Симптом**: свободное место на диске подходит к концу.
@@ -109,9 +121,74 @@ curl http://localhost:8000/metrics
   ```
   Команда удалит как метаданные из базы данных, так и бинарные файлы из MinIO.
 
+### 2.6. `503 voice_search_timeout` на `POST /v1/voice/search`
+* **Симптом**: ответ `503 {"error":"voice_search_timeout"}` + заголовок `Retry-After`.
+* **Причины по порядку**: (a) холодный `worker-fast` (модель ещё грузится —
+  подождать `/ready=200`); (b) CPU без AVX2 или частота прибита (см. README
+  «Требования к системе»); (c) перегруз: больше `VOICE_SEARCH_MAX_CONCURRENCY`
+  параллельных запросов — повторить позже по `Retry-After`.
+* **Диагностика**:
+  ```bash
+  docker compose logs --tail=30 worker-fast
+  curl -s http://localhost:8000/ready -H "Authorization: Bearer <токен>" | jq .dependencies
+  ```
+
+### 2.7. `/ready` — 503 дольше 10 минут
+* **Симптом**: `/health` — 200, а `/ready` — 503 с `dependencies.*: false`.
+* **Действия**: `database:false` → `docker compose logs postgres` (проверить
+  `DATABASE_URL`/пароли); `redis:false` → `docker compose exec redis redis-cli ping`;
+  `s3:false` → `docker compose logs minio` (ключи, бакеты). Упавший воркер виден
+  в `/ready` не позже ~25 с (heartbeat TTL 20 с). Холодный старт до 2,5 мин — норма.
+
+### 2.8. MinIO: нет бакетов / 403 от S3
+* **Симптом**: задания `by-s3` падают, в логах `api` — ошибки S3.
+* **Диагностика**:
+  ```bash
+  docker compose logs --tail=30 minio
+  docker compose exec minio mc alias set local http://localhost:9000 "$S3_ACCESS_KEY" "$S3_SECRET_KEY"
+  docker compose exec minio mc ls local/
+  ```
+* **Причины**: разошлись `MINIO_ROOT_USER/MINIO_ROOT_PASSWORD` и `S3_ACCESS_KEY`/
+  `S3_SECRET_KEY` (должны совпадать); бакеты `raw-audio`/`exports` не созданы
+  (создаются при старте — смотреть лог `api`/init).
+
+### 2.9. `llm-runtime` (только `local-full`): разборы висят или падают
+* **Симптом**: задания застревают на шаге анализа, в `worker-long` — таймауты
+  обращения к `LOCAL_LLM_URL`.
+* **Диагностика**:
+  ```bash
+  docker compose --profile local-full ps llm-runtime
+  docker compose logs --tail=30 llm-runtime
+  docker compose exec llm-runtime wget -q -O- http://localhost:8080/health
+  ```
+* **Причины**: контейнер не поднят (забыт `--profile local-full`); OOM на хосте
+  < 16 ГБ (лимит 10240M, факт ~3,5–4 ГБ); модель не докачалась
+  (`model-downloader-llm` — смотреть его лог). На профиле `small` разбор идёт
+  rule-адаптером — это штат, а не сбой.
+
 ---
 
-## 3. Сценарий нагрузочного стресс-тестирования
+## 3. Где смотреть логи и метрики
+
+```bash
+docker compose logs -f api worker-long worker-fast worker-callback  # живой хвост
+docker compose logs --tail=100 <сервис> > /tmp/opencode/<сервис>.log  # снять для разбора
+docker stats --no-stream                        # CPU/RAM по контейнерам
+curl -s http://localhost:8000/metrics           # Prometheus: apc_http_requests_total,
+                                                # apc_http_request_duration_seconds, apc_jobs_total,
+                                                # apc_voice_search_duration_seconds, apc_queue_size
+```
+
+Логи — JSON с `request_id` (заголовок `X-Request-Id` приходит и в ответе);
+тексты расшифровок, телефоны и e-mail в логи не пишутся (guard
+`scripts/guards/no_pii_in_logs.py` в `make check`). Очередь живьём:
+`docker compose exec redis redis-cli XLEN jobs:audio:long` и
+`XPENDING jobs:audio:long group:workers`; DLQ — стрим `jobs:audio:dlq`.
+Callback'и — таблица `callback_logs` (см. п.2.3).
+
+---
+
+## 4. Сценарий нагрузочного стресс-тестирования
 
 Скрипт эмуляции параллельной нагрузки (Voice Search параллельно с пакетной транскрибацией):
 

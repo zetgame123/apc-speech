@@ -55,6 +55,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Test Suite Expansion**: Added comprehensive tests covering compliance calculation, emotions breakdown, and transcript downloads, increasing test count to 97 automated tests (`tests/test_compliance_and_emotions.py`).
 
 ### Changed
+- **Голосовой поиск по умолчанию — T-one (ADR-015)**: `VOICE_SEARCH_ENGINE=tone`,
+  `TONE_THREADS=1`, окно `VOICE_SEARCH_RESULT_TIMEOUT_SEC=2.5`; возврат на whisper —
+  `VOICE_SEARCH_ENGINE=whisper`. KenLM не подключается (ADR-014).
+- **Разбор Qwen детерминирован**: `temperature=0.0` + `seed=42`; повтор набора B
+  3 раза — 0 расхождений. Пустые сущности Qwen добиваются правилами
+  (`backfill_entities_from_rules`), `product_category` — по закрытому списку
+  `config/product_categories.yaml`.
+- **Потоки llama.cpp**: `LLAMA_THREADS` с дефолтом 4 (на 8 физических ядрах
+  оптимум `-t 6`, медиана разбора 25,8 с — в норме ≤ 30 с).
+- **Сущности правил**: экстракторы `extract_period` (относительные/сезоны/
+  длительности + `canonical_period`), `extract_budget_rub`, `extract_category`;
+  нормалайзер без склеек цифр, quantity словами + «штук», год — не бюджет.
+- **Флак rate-limit**: управляемые часы в фикстуре вместо wall-clock.
+
+### Measured (стенд: Ryzen 7 8845HS, скрипты репозитория, см. `docs/eval-report.md`)
+- **WER Golos-100**: T-one 16,1 % / 19,6 % (clean/tel), podlodka 18,4 % / 35,2 %,
+  whisper-small 38,2 % / 57,2 %; ориентир ≤ 12 % / ≤ 25 % — мимо по чистой,
+  T-one OK по телефонии. Термины с подсказками 63,6 % против ≥ 90 % — мимо.
+- **WER RuLS-30 / SOVA-26** (профиль small, длинный путь + T-one): см. `docs/eval-report.md` §15.
+- **DER-30**: моно 0,163 / роли 0,94; стерео 0,286 / роли 0,98.
+- **Типы/сущности A120+B25**: Qwen-B accuracy 0,80 / macro-F1 0,67 (промпт v1.5);
+  rules-B 0,60 / 0,53; сущности v16 — см. отчёт §14.
+- **Часовая запись small (2 ядра)**: 3431 с, RTF 0,953 — OK впритык;
+  local-full 8 vCPU выигрыша не даёт (RTF 0,960).
+- **Стоимость провайдера**: 802 + 235 ток./разбор расчётом; факт не измерен (нет ключа).
+
+## [0.1.0] - 2026-10-13
 - **Strict Schema Validation**: Analysis jobs fail with `schema_validation_failed` error when LLM output violates schema, preventing corrupted records in database.
 - **Audio Duration Limit**: Enforced immediate rejection of audio files exceeding `MAX_AUDIO_DURATION_HOURS` right after audio probing.
 - **Cross-Worker Token Revocation**: Made authentication verification asynchronous with real-time revoked token synchronization across all workers via Redis set `revoked_tokens`.
