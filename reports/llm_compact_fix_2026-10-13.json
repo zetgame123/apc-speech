@@ -1,0 +1,41 @@
+{
+  "date": "2026-10-13",
+  "target": "llm-speed fix: v1.3b (сущности извлекай ПОЛНОСТЬЮ), 30 звонков compact30b",
+  "env": {
+    "cpu": "Ryzen 7 8845HS",
+    "freq": "БЕЗ капа (~3.8-3.9 ГГц на момент замера)",
+    "governor": "performance",
+    "cpuset_llm": "4,6 (2 физ. ядра, 10 ГБ)",
+    "image": "llama.cpp server-b5350",
+    "model": "Qwen2.5-7B Q4_K_M",
+    "prompt": "v1.3-ru-compact (исправленный)"
+  },
+  "bug": "v1.3a 'пустые списки не расписывай' подавлял извлечение сущностей (A/B 5 текстов: v13a пустые cities/formats в 3/5, v12 полные)",
+  "main_analysis_server_side_s": {
+    "n": 30,
+    "median": 65.4,
+    "p95": 69.4,
+    "min": 60.8,
+    "max": 79.3
+  },
+  "role_refinement_server_side_s": {
+    "n": 30,
+    "median": 13.2,
+    "p95": 13.9
+  },
+  "note_timing": "server-side prompt+gen из логов llm-runtime (без очереди воркера); wall-дюрации job (created->updated) завышены очередью одного воркера: медиана 1388 с — НЕ использовать",
+  "entities": {
+    "cities_nonempty": "20/30",
+    "formats_nonempty": "14/30",
+    "either": "22/30",
+    "note": "короткие TTS-запросы c4suite, часть без локаций/форматов в тексте — пустота частично корректна"
+  },
+  "summary_len": {
+    "median": 80,
+    "max": 125
+  },
+  "prompt_versions": {
+    "v1.3-ru-compact": 30
+  },
+  "verdict": "сущности восстановлены ценой ~+2-4 с к медиане разбора (61-64 с -> 65 с); ориентир 30 с по-прежнему только GPU"
+}
