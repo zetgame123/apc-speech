@@ -4,6 +4,12 @@
 Движки на уровне движка (без HTTP): whisper-podlodka (длинный путь),
 whisper-small, T-one. Выборка: первые N записей манифеста (детерминировано).
 Аудио и тексты в git не входят. Выход: reports/wer_*.json
+
+Агрегация — корпусная (сумма расстояний / сумма длин НОРМАЛИЗОВАННЫХ
+текстов), как в evaluation/run.py. Взвешивание по длинам сырых строк
+и усреднение округлённых per-file WER — ошибка, исправлена.
+Движки переиспользуются между файлами (раньше модель грузилась заново
+на каждый файл).
 """
 
 import argparse
@@ -12,7 +18,7 @@ import json
 import os
 import time
 
-from evaluation.wer_cer import calculate_wer_cer
+from evaluation.wer_cer import levenshtein_distance, normalize_eval_text
 
 
 def load_manifest(path: str, n: int) -> list[dict]:
@@ -21,51 +27,50 @@ def load_manifest(path: str, n: int) -> list[dict]:
     return manifest[:n]
 
 
-def transcribe_podlodka_or_small(model_path: str, wav_path: str) -> str:
+def make_transcribers() -> dict:
     from app.asr.engine import AsrEngine
-
-    eng = AsrEngine(model_name=model_path)
-    with open(wav_path, "rb") as f:
-        segs, _ = eng.transcribe(
-            io.BytesIO(f.read()),
-            language="ru",
-            beam_size=2,
-            temperature=0.0,
-            vad_filter=True,
-            word_timestamps=False,
-        )
-    return " ".join(s["text"] for s in segs)
-
-
-def transcribe_tone(wav_path: str) -> str:
-    import soundfile as sf
-
     from app.asr.tone_engine import get_tone_engine
 
-    data, sr = sf.read(wav_path, dtype="int16")
-    with open(wav_path, "rb") as f:
-        raw = f.read()
-    # G.711/alaw и прочие PCM-варианты — через PCM16 (как препроцессор в проде).
-    if raw[20:22] != b"\x01\x00":
-        import io
-        import wave
+    podlodka = AsrEngine(model_name="./models/whisper-podlodka-turbo-ct2")
+    small = AsrEngine(model_name="./models/whisper-small")
+    tone = get_tone_engine()
 
-        buf = io.BytesIO()
-        with wave.open(buf, "wb") as w:
-            w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(sr)
-            w.writeframes(data.tobytes())
-        raw = buf.getvalue()
-    segs, _ = get_tone_engine().transcribe(raw, language="ru")
-    return " ".join(s["text"] for s in segs)
+    def _whisper(eng: AsrEngine, wav_path: str) -> str:
+        with open(wav_path, "rb") as f:
+            segs, _ = eng.transcribe(
+                io.BytesIO(f.read()),
+                language="ru",
+                beam_size=2,
+                temperature=0.0,
+                vad_filter=True,
+                word_timestamps=False,
+            )
+        return " ".join(s["text"] for s in segs)
 
+    def _tone(wav_path: str) -> str:
+        import soundfile as sf
 
-ENGINES = {
-    "podlodka": lambda p: transcribe_podlodka_or_small("./models/whisper-podlodka-turbo-ct2", p),
-    "whisper-small": lambda p: transcribe_podlodka_or_small("./models/whisper-small", p),
-    "t-one": transcribe_tone,
-}
+        data, sr = sf.read(wav_path, dtype="int16")
+        with open(wav_path, "rb") as f:
+            raw = f.read()
+        if raw[20:22] != b"\x01\x00":
+            import wave
+
+            buf = io.BytesIO()
+            with wave.open(buf, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(sr)
+                w.writeframes(data.tobytes())
+            raw = buf.getvalue()
+        segs, _ = tone.transcribe(raw, language="ru")
+        return " ".join(s["text"] for s in segs)
+
+    return {
+        "podlodka": lambda p: _whisper(podlodka, p),
+        "whisper-small": lambda p: _whisper(small, p),
+        "t-one": _tone,
+    }
 
 
 def main() -> None:
@@ -74,27 +79,47 @@ def main() -> None:
     parser.add_argument("--n", type=int, default=100)
     parser.add_argument("--engines", default="podlodka,whisper-small,t-one")
     parser.add_argument("--out", default="reports/wer_golos.json")
+    parser.add_argument("--save-hyps", default="")
+    parser.add_argument("--hyps-in", default="")
     args = parser.parse_args()
 
     items = load_manifest(args.manifest, args.n)
+    cached: dict = {}
+    if args.hyps_in and os.path.exists(args.hyps_in):
+        with open(args.hyps_in, encoding="utf-8") as f:
+            cached = json.load(f).get("hyps", {})
+
+    transcribers = make_transcribers() if not cached else {}
+    hyps: dict = {k: v for k, v in cached.items()}
     report: dict = {"n": len(items), "engines": {}}
     for eng_name in args.engines.split(","):
-        fn = ENGINES[eng_name.strip()]
+        eng_name = eng_name.strip()
+        fn = transcribers.get(eng_name) if transcribers else None
         for cond in ("clean", "telephony"):
-            key = "clean" if cond == "clean" else "telephony"
             err_w = ref_w = err_c = ref_c = 0
             per_file = []
             t0 = time.time()
             for item in items:
-                hyp = fn(item[key])
-                wer, cer = calculate_wer_cer(item["reference"], hyp)
-                ref_norm_len = len(item["reference"].split())
-                err_w += wer * ref_norm_len
-                ref_w += ref_norm_len
-                # CER агрегируем взвешенно по длине (приближение, документировано).
-                err_c += cer * len(item["reference"])
-                ref_c += len(item["reference"])
-                per_file.append({"id": item["id"], "wer": wer, "cer": cer})
+                ck = f"{eng_name}/{item['id']}/{cond}"
+                if ck in hyps:
+                    hyp = hyps[ck]
+                else:
+                    assert fn is not None, f"нет кэша {ck} и нет движка"
+                    hyp = fn(item[cond])
+                    hyps[ck] = hyp
+                ref_norm = normalize_eval_text(item["reference"])
+                hyp_norm = normalize_eval_text(hyp)
+                ref_words = ref_norm.split()
+                hyp_words = hyp_norm.split()
+                d_w = levenshtein_distance(ref_words, hyp_words)
+                d_c = levenshtein_distance(list(ref_norm), list(hyp_norm))
+                err_w += d_w
+                ref_w += len(ref_words)
+                err_c += d_c
+                ref_c += len(ref_norm)
+                wer = d_w / len(ref_words) if ref_words else 0.0
+                cer = d_c / len(ref_norm) if ref_norm else 0.0
+                per_file.append({"id": item["id"], "wer": round(wer, 4), "cer": round(cer, 4)})
             dt = time.time() - t0
             report["engines"].setdefault(eng_name, {})[cond] = {
                 "wer": round(err_w / ref_w, 4) if ref_w else 0.0,
@@ -109,6 +134,9 @@ def main() -> None:
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
+    if args.save_hyps:
+        with open(args.save_hyps, "w", encoding="utf-8") as f:
+            json.dump({"hyps": hyps}, f, ensure_ascii=False)
 
 
 if __name__ == "__main__":
