@@ -9,6 +9,9 @@ Qwen идёт в llm-runtime (local-full). Аудио B — TTS (в tmp/, не �
   + точное равенство либо вхождение подстроки (эталон «октябрь» =
   предсказание «на октябрь»; период канонизируется экстрактором
   к именительному падежу месяца);
+- period дополнительно сравнивается через `canonical_period`
+  («три месяца» == «месяца на три» == «на 3 мес.» == «3 месяца»;
+  «на следующий месяц» == «следующий месяц»; «На весну» == «весна»);
 - quantity/budget: приведение к числу через
   `app.llm.local_adapter.coerce_quantity/coerce_budget` (понимают текстовые
   множители: «тысяч» ×1000, «миллион» ×1e6, «полмиллиона» → 500000;
@@ -97,6 +100,17 @@ def _ent_match(field: str, exp, pred_list_or_val) -> bool | None:
     e, g = norm_val(exp), norm_val(pred_list_or_val)
     if e is None and g is None:
         return None
+    if field == "period":
+        from app.llm.local_adapter import canonical_period
+
+        en, gn = canonical_period(exp), canonical_period(pred_list_or_val)
+        if en is not None and gn is not None:
+            return en == gn
+        if en is None and gn is None:
+            # оба — не периоды: fallback на строчное сравнение ниже
+            pass
+        else:
+            return False
     if field == "quantity":
         from app.llm.local_adapter import coerce_quantity
 

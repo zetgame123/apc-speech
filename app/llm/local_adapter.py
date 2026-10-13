@@ -220,29 +220,170 @@ _MONTH_STEM_TO_CANON = {
 # «май» — только точные формы: стем «ма» давал бы ложные «макет», «магазин».
 _MAY_FORMS = re.compile(r"\bмай\b|\bмая\b|\bмае\b|\bмаю\b|\bмаем\b", re.IGNORECASE)
 
+# Сезоны: флексии → каноника (именительный падеж). \b-границы исключают
+# ложные («лето» не стреляет по «билет», «зима» — по «магазин»).
+_SEASON_TO_CANON = (
+    (re.compile(r"\bвесну\b|\bвесн[аыойеу]\b|\bвесной\b"), "весна"),
+    (re.compile(r"\bлето\b|\bлетом\b"), "лето"),
+    (re.compile(r"\bосень\b|\bосенью\b"), "осень"),
+    (re.compile(r"\bзиму\b|\bзимой\b|\bзима\b|\bзиме\b"), "зима"),
+)
 
-def extract_period(text_lower: str) -> str | None:
-    """Период размещения: месяц (канонический), квартал, полгода, диапазон дат.
+# Длительности в месяцах: число (цифры или слово) + единица в любом порядке.
+# Покрывает «на три месяца», «на 3 мес.» (выход нормалайзера) и инверсию
+# «месяца на три». Возвращаем канонику «N <plural>» (3 месяца, 1 месяц,
+# 5 месяцев), чтобы «три месяца» == «на 3 мес.» == «месяца на три».
+_DURATION_WORD_TO_NUM = {
+    "один": 1,
+    "одна": 1,
+    "одно": 1,
+    "два": 2,
+    "две": 2,
+    "три": 3,
+    "четыре": 4,
+    "пять": 5,
+    "шесть": 6,
+    "семь": 7,
+    "восемь": 8,
+    "девять": 9,
+    "десять": 10,
+    "одиннадцать": 11,
+    "двенадцать": 12,
+}
+_DURATION_UNIT_PAT = r"(?:месяц[а-я]*|мес\.?)"
+_DURATION_NUM_PAT = r"(?:\d+|один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать)"
+_DURATION_DIRECT = re.compile(
+    r"\b(" + _DURATION_NUM_PAT + r")\s*" + _DURATION_UNIT_PAT + r"\b",
+    re.IGNORECASE,
+)
+_DURATION_INVERTED = re.compile(
+    _DURATION_UNIT_PAT + r"\s+на\s+(" + _DURATION_NUM_PAT + r")\b",
+    re.IGNORECASE,
+)
 
-    Примеры: «на октябрь» → «октябрь»; «первый квартал» → «первый квартал»;
-    «на полгода» → «полгода»; «с мая по сентябрь» → «с мая по сентябрь».
-    Голые длительности («на три месяца») периодом не считаются.
-    """
-    m = re.search(r"с\s+([а-яё]+)\s+по\s+([а-яё]+)", text_lower)
+
+def _plural_month(n: int) -> str:
+    """Русская плюрализация месяца: 1 месяц, 3 месяца, 5 месяцев."""
+    if n % 10 == 1 and n % 100 != 11:
+        return "месяц"
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return "месяца"
+    return "месяцев"
+
+
+def _duration_num_to_int(raw: str) -> int | None:
+    raw = raw.strip().lower()
+    if raw.isdigit():
+        return int(raw)
+    return _DURATION_WORD_TO_NUM.get(raw)
+
+
+def _extract_duration_months(text_lower: str) -> str | None:
+    """Длительность «N месяцев» каноникой «N <plural>» или None."""
+    m = _DURATION_DIRECT.search(text_lower)
     if m:
-        return m.group(0)
+        n = _duration_num_to_int(m.group(1))
+        if n is not None and 1 <= n <= 120:
+            return f"{n} {_plural_month(n)}"
+    m = _DURATION_INVERTED.search(text_lower)
+    if m:
+        n = _duration_num_to_int(m.group(1))
+        if n is not None and 1 <= n <= 120:
+            return f"{n} {_plural_month(n)}"
+    return None
+
+
+def canonical_period(value: object) -> str | None:
+    """Каноническая форма периода для сравнения эталона и предсказания.
+
+    «на следующий месяц»/«в следующем месяце» → «следующий месяц»;
+    «в следующем квартале» → «следующий квартал»; сезоны → именительный
+    («На весну» → «весна»); длительности → «N <plural>» («три месяца»,
+    «месяца на три», «на 3 мес.» → «3 месяца»); месяцы/кварталы/диапазоны —
+    как в экстракторе. Не период → None.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return None
+    s = str(value).strip().lower().replace("ё", "е")
+    if not s:
+        return None
+    s = re.sub(r"\s+", " ", s)
+    if re.search(r"следующ[а-я]*\s+месяц[а-я]*", s):
+        return "следующий месяц"
+    if re.search(r"следующ[а-я]*\s+квартал[а-я]*", s):
+        return "следующий квартал"
+    for pat, canon in _SEASON_TO_CANON:
+        if pat.search(s):
+            return canon
+    dur = _extract_duration_months(s)
+    if dur is not None:
+        return dur
+    if re.search(r"\bполгода\b|\bпол\s+года\b", s):
+        return "полгода"
+    if re.search(r"\bна\s+год\b", s):
+        return "год"
     m = re.search(
-        r"(первый|второй|второй|третий|четвертый|четвёртый|1-й|2-й|3-й|4-й)\s+квартал",
-        text_lower,
+        r"(первый|второй|третий|четвертый|1-й|2-й|3-й|4-й)\s+квартал[а-я]*",
+        s,
     )
     if m:
         return m.group(0)
-    if re.search(r"\bполгода\b|\bпол\s+года\b", text_lower):
-        return "полгода"
-    if _MAY_FORMS.search(text_lower):
+    m = re.search(r"с\s+([а-я]+)\s+по\s+([а-я]+)", s)
+    if m:
+        return m.group(0)
+    if _MAY_FORMS.search(s):
         return "май"
     for stem, canon in _MONTH_STEM_TO_CANON.items():
-        if re.search(r"\b" + stem + r"[а-яё]*\b", text_lower):
+        if re.search(r"\b" + stem + r"[а-я]*\b", s):
+            return canon
+    return None
+
+
+def extract_period(text_lower: str) -> str | None:
+    """Период размещения каноникой: месяц, квартал, полгода, диапазон,
+    относительный период, сезон, длительность.
+
+    Примеры: «на октябрь» → «октябрь»; «первый квартал» →
+    «первый квартал»; «на полгода» → «полгода»;
+    «с мая по сентябрь» → «с мая по сентябрь»;
+    «на следующий месяц» → «следующий месяц»;
+    «в следующем квартале» → «следующий квартал»;
+    «На весну» → «весна»; «месяца на три» → «3 месяца».
+    По ADR-021/022 длительности — тоже период (старое правило
+    «голые длительности не считаются» отменено).
+    """
+    if not isinstance(text_lower, str):
+        return None
+    s = text_lower.lower()
+    m = re.search(r"с\s+([а-яё]+)\s+по\s+([а-яё]+)", s)
+    if m:
+        return m.group(0)
+    if re.search(r"следующ[а-яё]*\s+квартал[а-яё]*", s):
+        return "следующий квартал"
+    m = re.search(
+        r"(первый|второй|третий|четвертый|четвёртый|1-й|2-й|3-й|4-й)\s+квартал",
+        s,
+    )
+    if m:
+        return m.group(0).replace("ё", "е")
+    if re.search(r"следующ[а-яё]*\s+месяц[а-яё]*", s):
+        return "следующий месяц"
+    for pat, canon in _SEASON_TO_CANON:
+        if pat.search(s):
+            return canon
+    dur = _extract_duration_months(s)
+    if dur is not None:
+        return dur
+    if re.search(r"\bполгода\b|\bпол\s+года\b", s):
+        return "полгода"
+    if re.search(r"\bна\s+год\b", s):
+        return "год"
+    if _MAY_FORMS.search(s):
+        return "май"
+    for stem, canon in _MONTH_STEM_TO_CANON.items():
+        if re.search(r"\b" + stem + r"[а-яё]*\b", s):
             return canon
     return None
 
