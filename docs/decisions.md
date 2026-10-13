@@ -189,3 +189,16 @@
     `License: apache-2.0` — скачивание разрешено, коммерческих ограничений нет.
   - Qwen2.5-3B-Instruct-GGUF: карточка `License: qwen-research` (не Apache!) —
     НЕ скачивать, вопрос 6 в `questions.md`.
+
+## ADR-017: Лицензии оценочных наборов Common Voice ru и Golos (2026-10-13)
+
+* **Статус**: Принято (только для оценки)
+* **Контекст**: C10-2: открытые наборы для WER.
+* **Решение**:
+  - Common Voice ru (mozilla-foundation/common_voice_17_0): **CC0 1.0**
+    (commonvoice.mozilla.org) — можно всё, включая коммерческое.
+  - Golos (salute-developers/golos, SberDevices): **кастомная лицензия**,
+    reworking CC BY-SA 4.0 («Public license with attribution and conditions
+    reserved», проверено текстом `license/en_us.pdf` 2026-10-13; NC-клаузулы
+    нет). Используем **только для внутренней оценки WER** (метрики, не данные);
+    аудио/тексты не коммитим и не распространяем (иначе сработал бы share-alike).
