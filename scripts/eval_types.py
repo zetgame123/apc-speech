@@ -3,6 +3,18 @@
 
 Метрики: accuracy + macro-F1 типа; precision/recall/F1 сущностей.
 Qwen идёт в llm-runtime (local-full). Аудио B — TTS (в tmp/, не в git).
+
+Правила сопоставления сущностей (симметричны для эталона и предсказания):
+- city/format/period/category: нормализация (нижний регистр, ё→е, trim)
+  + точное равенство либо вхождение подстроки (эталон «октябрь» =
+  предсказание «на октябрь»; период канонизируется экстрактором
+  к именительному падежу месяца);
+- quantity/budget: приведение к числу через
+  `app.llm.local_adapter.coerce_quantity/coerce_budget` (понимают текстовые
+  множители: «тысяч» ×1000, «миллион» ×1e6, «полмиллиона» → 500000;
+  «200 тысяч рублей» → 200000, а не 200 как при наивном выкидывании букв);
+- оба пусто (None/[] с обеих сторон) — пара пропускается (не TP/FP);
+  иначе совпало → TP, иначе одновременно FP+FN (микро-подсчёт на парах).
 """
 
 import argparse
@@ -64,14 +76,14 @@ PRED_KEY = {
 
 
 def _num(value):
-    import re
+    """Числовое значение суммы/количества с текстовыми множителями.
 
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return value
-    digits = re.sub("[^0-9]", "", str(value))
-    return int(digits) if digits else None
+    «200 тысяч рублей» → 200000 (наивный вариант давал 200 и обнулял
+    метрику даже при верном предсказании 200000).
+    """
+    from app.llm.local_adapter import coerce_budget
+
+    return coerce_budget(value)
 
 
 def _ent_match(field: str, exp, pred_list_or_val) -> bool | None:
@@ -85,7 +97,14 @@ def _ent_match(field: str, exp, pred_list_or_val) -> bool | None:
     e, g = norm_val(exp), norm_val(pred_list_or_val)
     if e is None and g is None:
         return None
-    if field in ("quantity", "budget"):
+    if field == "quantity":
+        from app.llm.local_adapter import coerce_quantity
+
+        en, gn = coerce_quantity(exp), coerce_quantity(pred_list_or_val)
+        if en is None and gn is None:
+            return None
+        return en == gn
+    if field == "budget":
         en, gn = _num(exp), _num(pred_list_or_val)
         if en is None and gn is None:
             return None

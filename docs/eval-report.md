@@ -16,7 +16,7 @@
 | 3 | Термины с подсказками (whisper-small, TTS-20) | ≥ 90 % | 63,6 % с подсказками (61,4 % без) | мимо |
 | 4 | DER-30 (collar 0,25 с) + роли | ориентира нет | моно 0,163 / роли 0,94; стерео 0,286 / роли 0,98 | измерено |
 | 5 | Типы: accuracy / macro-F1 (A120+B25) | ориентира нет | rules 0,67/0,59 (A), 0,56/0,48 (B); Qwen 0,67/0,50 (Asub-30), 0,68/0,60 (B); ASR-шум −0,08…−0,12 | измерено |
-| 5 | Сущности F1 (city/format; quantity/period/budget/category) | ориентира нет | city 0,73–1,0; format 0,39–0,56; остальные 0,0 (не извлекаются) | честно: нули |
+| 5 | Сущности F1 (п.1, 2026-10-13) | ориентира нет | rules-A: period 1,0 / budget 1,0 / category 1,0 (было 0,0); rules-B: 0,67 / 0,38 / 0,0 — остаток только неполнота эталонов B; Qwen v1.4: Asub budget 1,0 / period 0,4 / category 0,0; B budget 0,33 / period 0,25; quantity везде 0 (эталоны A/B все None) | частично (нули: quantity по построению, Qwen-category — галлюцинации) |
 | 6 | Часовая запись, small 2 ядра | ≤ 60 мин | 3431 с (57,2 мин), RTF 0,953; ASR 75 %, диаризация 545 с, LLM ~205 с | OK впритык (без капа) |
 | 6 | Часовая запись, local-full 8 vCPU | в 2 раза быстрее на 4 (по ТЗ) | 3456 с, RTF 0,960 — выигрыша нет | мимо (см. узкие места) |
 | 6 | Пик RAM часовки | — | worker-long 2106 МБ (лимит 2112 — впритык), llm 3467 МБ | внимание: лимит |
@@ -54,6 +54,78 @@ A каждый 4-й (30 шт.) + весь B; ASR-шум — TTS B → whisper-sm
 `target_period`/`product_category` в None, текстовые числительные
 («двести тысяч») скорер не сводит к числам, Qwen поля чаще не заполняет.
 Это дефект покрытия, а не метрики — зафиксирован, не припудрен.
+
+#### 5.1. П.1: диагноз нулей period/budget/category (2026-10-13, промпт v1.4)
+
+Зонд 10 диалогов (a000–a009): Qwen v1.3 во всех 10 вернул
+`target_period=null, budget_rub=null, product_category=null` —
+даже при явных «на октябрь», «200 тысяч рублей», «автосалон» в тексте
+(`reports/probe_qwen10_out.json`). Правила ДО: оба поля жёстко `None`,
+бюджет — только `r"бюджет|до …000 руб"`.
+
+| id | period: эталон / правила / Qwen | budget: эталон / правила / Qwen | category: эталон / правила / Qwen |
+|---|---|---|---|
+| a000 pricing | октябрь / None→октябрь / null→null | 200 тысяч рублей / None→200000 / null→null | None / None / null |
+| a001 availability | октябрь / None→октябрь / null→null | None / None / null | None / None / null |
+| a002 inventory | None / None / null | None / None / null | None / None / null |
+| a003 specs | None / None / null | None / None / null | None / None / null |
+| a004 order_status | None / None / null | None / None / null | None / None / null |
+| a005 production | None / None / null | None / None / null | None / None / null |
+| a006 documents | None / None / null | 200 тысяч рублей / None→200000 / null→null | автосалон / None→автосалон / null→null |
+| a007 complaint | None / None / null | None / None / null | None / None / null |
+| a008 partnership | None / None / null | None / None / null | None / None / null |
+| a009 programmat. | октябрь / None→октябрь / null→null | 200 тысяч рублей / None→200000 / null→null | None / None / null |
+
+(«→» — ДО/ПОСЛЕ исправления; Qwen-колонка — v1.3/v1.4. Полный построчный
+вывод зонда — в `reports/probe_qwen10_out.json`.)
+
+Три причины, все подтверждены:
+1. **Путь правил** (`app/llm/local_adapter.py::_analyze_via_rules`): поля
+   `target_period`/`product_category` были жёстко `None`; бюджет ловился
+   только с префиксами «бюджет/до». Исправление: экстракторы
+   `extract_period` (месяц канонически, квартал, полгода, диапазон
+   «с мая по сентябрь»), `extract_budget_rub` (число+валюта, «полмиллиона»
+   → 500000, «двести тысяч» без валюты → 200000),
+   `extract_category` (словарь `PRODUCT_CATEGORY_DICT`).
+   Юнит-тесты: `tests/test_entities_extraction.py` (28 шт.: период-месяц,
+   период-диапазон, бюджет число+валюта, бюджет словами, категория из словаря,
+   анти-ложняки «макет≠май», «2 поверхности≠бюджет»).
+2. **Путь Qwen** (схема + промпт v1.3-ru-compact): схема поля имеет, но промпт
+   не задавал формат (число в рублях? месяц? словарь?) — модель ставила null.
+   Исправление: явный блок «Сущности entities» (v1.4-ru-entities):
+   quantity — целое; period — месяц/квартал/срок; budget_rub — ЧИСЛОМ
+   («двести тысяч» → 200000); category — бизнес клиента.
+3. **Оценщик** (`scripts/eval_types.py::_num`): выкидывал буквы —
+   «200 тысяч рублей» → 200 ≠ 200000, верное предсказание считалось ошибкой.
+   Исправление: симметричное приведение обеих сторон через
+   `coerce_quantity`/`coerce_budget` (тысяч ×1000, миллион ×1e6,
+   полмиллиона → 500000). Правила сопоставления описаны в docstring оценщика:
+   city/format/period/category — нормализация (регистр, ё→е) + точное
+   равенство/подстрока; quantity/budget — численное равенство после
+   приведения; оба пусто — пара пропускается.
+
+Перебрано вариантов промпта: 2 (v1.3 base, v1.4 +блок сущностей;
+вариант 3 с примерами пар — в п.2).
+
+Итог пересчёта (новый оценщик; precision/recall/F1 — в `reports/types_eval.json`):
+- rules-A: period 1,0 / budget 1,0 / category 1,0 (было 0,0/0,0/0,0);
+- rules-B: period 0,67 / budget 0,38 / category 0,0 — все 8 расхождений
+  проверены вручную: текст сущность содержит, эталон B — None
+  («выйдет примерно двести тысяч», «на двести тысяч, застройщик»,
+  «пятьдесят тысяч», «щиты от восьмидесяти тысяч», «на полгода»).
+  Аннотированных позитивов rules на B не пропустил ни одного;
+- Qwen v1.4 Asub: budget 0,0→1,0, period 0,0→0,4 (путает месяцы:
+  ноябрь→октябрь, «месяц», «first_quarter»), category 0,0 (модель
+  переполняет: «застройщик»/«суперсайт»/«formats» в чужих местах);
+- Qwen v1.4 B: budget 0,33, period 0,25, category 0,0 (те же галлюцинации
+  + английские «next_month»/«spring»);
+- побочка v1.4: cities/formats у Qwen просели (Asub city 1,0→0,63,
+  format 0,5→0,1; B city 0,96→0,27) — модель тратит вывод на новые поля
+  и роняет списки; чинится уточнением блока в v1.5 (п.2);
+- quantity: везде 0,0 — эталоны A/B все None (в текстах количества есть:
+  «2 поверхности»), по построению; не чинилось, эталоны не правились;
+- asr_*-секции в `reports/types_eval.json` — из HEAD (старый код),
+  ASR-шум в п.1–2 не перемерялся.
 
 ### 6. Время (`reports/hour_small_uncapped.json`, `reports/hour_localfull.json`)
 Часовка — конкат 15 моно-диалогов DER-набора, ровно 3600 с, 115 МБ.

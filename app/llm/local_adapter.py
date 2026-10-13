@@ -55,7 +55,11 @@ def coerce_quantity(value: Any) -> int | None:
 
 
 def coerce_budget(value: Any) -> float | int | None:
-    """Мягкое приведение entities.budget_rub к number|null (аналог quantity)."""
+    """Мягкое приведение entities.budget_rub к number|null (аналог quantity).
+
+    Понимает текстовые множители: «тысяч» (×1000), «миллион» (×1e6),
+    «миллиард» (×1e9), «пол-» (×0.5: «полмиллиона» → 500000).
+    """
     if value is None:
         return None
     if isinstance(value, bool):
@@ -75,6 +79,9 @@ def coerce_budget(value: Any) -> float | int | None:
             return float(nospace.replace(",", "."))
         except ValueError:
             pass
+        scaled = _parse_scaled_amount(s)
+        if scaled is not None:
+            return scaled
         normed = RussianTextNormalizer().normalize(s)
         digit_run = re.search(r"\d[\d\s]*[.,]?\d*", normed)
         if digit_run:
@@ -86,6 +93,216 @@ def coerce_budget(value: Any) -> float | int | None:
         if s in NUMBER_WORDS:
             return NUMBER_WORDS[s]
         return None
+    return None
+
+
+_AMOUNT_MULTIPLIERS = (
+    (re.compile(r"миллиард[а-я]*"), 1_000_000_000),
+    (re.compile(r"миллион[а-я]*"), 1_000_000),
+    (re.compile(r"млрд\.?"), 1_000_000_000),
+    (re.compile(r"млн\.?"), 1_000_000),
+    (re.compile(r"тысяч[а-я]*|тыс\.?"), 1_000),
+)
+
+
+def _parse_scaled_amount(s: str) -> float | int | None:
+    """Число с русским множителем: «двести тысяч» → 200000, «полмиллиона» → 500000.
+
+    Возвращает None, если множителя нет или числовая часть не распознана.
+    """
+    mult = 1
+    rest = s
+    for pat, factor in _AMOUNT_MULTIPLIERS:
+        m = pat.search(s)
+        if m:
+            mult = factor
+            rest = (s[: m.start()] + " " + s[m.end() :]).strip()
+            break
+    else:
+        return None
+    if re.search(r"\bполутора\b|\bполторы\b|\bполтора\b", rest):
+        base = 1.5
+        rest = re.sub(r"\bполутора\b|\bполторы\b|\bполтора\b", " ", rest)
+        rest = re.sub(r"\bрубл[а-яё]*\b", " ", rest)
+        rest = re.sub(r"[^0-9а-яё\s.,]", " ", rest)
+        rest = re.sub(r"\s+", " ", rest).strip()
+        if rest:
+            return None
+        result = base * mult
+        return int(result) if float(result).is_integer() else result
+    half = bool(re.search(r"\bпол[уы]?\b", rest))
+    rest = re.sub(r"\bпол[уы]?\b", " ", rest)
+    rest = re.sub(r"\bрубл[а-яё]*\b", " ", rest)
+    rest = re.sub(r"[^0-9а-яё\s.,]", " ", rest)
+    rest = re.sub(r"\s+", " ", rest).strip()
+    if not rest:
+        base: float | None = 0.5 if half else 1.0
+    else:
+        digits = re.sub(r"\s+", "", rest)
+        try:
+            base = int(digits)
+        except ValueError:
+            try:
+                base = float(digits.replace(",", "."))
+            except ValueError:
+                base = _sum_number_words(rest)
+                if base is None:
+                    return None
+                if half:
+                    base += 0.5
+                elif base == 0:
+                    base = 1.0
+    result = base * mult
+    if half and not rest:
+        result = 0.5 * mult
+    return int(result) if float(result).is_integer() else result
+
+
+def _sum_number_words(rest: str) -> float | None:
+    total = 0
+    found = False
+    for w in rest.split():
+        if w in NUMBER_WORDS:
+            total += NUMBER_WORDS[w]
+            found = True
+        elif w.isdigit():
+            total += int(w)
+            found = True
+    return total if found else None
+
+
+# Словарь категорий бизнеса клиента: каноническая форма -> алиасы в нижнем регистре.
+# Покрывает эталоны оценочного набора (автосалон, мебельный магазин, кафе,
+# фитнес-центр, застройщик) + базовые категории реальных звонков.
+PRODUCT_CATEGORY_DICT: dict[str, list[str]] = {
+    "автосалон": ["автосалон"],
+    "мебельный магазин": ["мебельный магазин", "мебельный"],
+    "кафе": ["кафе"],
+    "фитнес-центр": ["фитнес-центр", "фитнес центр", "фитнес"],
+    "застройщик": ["застройщик"],
+    "ресторан": ["ресторан"],
+    "гостиница": ["гостиница", "отель"],
+    "автосервис": ["автосервис"],
+    "салон красоты": ["салон красоты"],
+    "аптека": ["аптека"],
+}
+
+# Канонические месяцы для нормализации периода (именительный падеж).
+RU_MONTHS_CANON = [
+    "январь",
+    "февраль",
+    "март",
+    "апрель",
+    "май",
+    "июнь",
+    "июль",
+    "август",
+    "сентябрь",
+    "октябрь",
+    "ноябрь",
+    "декабрь",
+]
+
+_MONTH_STEM_TO_CANON = {
+    "январ": "январь",
+    "феврал": "февраль",
+    "март": "март",
+    "апрел": "апрель",
+    "июн": "июнь",
+    "июл": "июль",
+    "август": "август",
+    "сентябр": "сентябрь",
+    "октябр": "октябрь",
+    "ноябр": "ноябрь",
+    "декабр": "декабрь",
+}
+
+# «май» — только точные формы: стем «ма» давал бы ложные «макет», «магазин».
+_MAY_FORMS = re.compile(r"\bмай\b|\bмая\b|\bмае\b|\bмаю\b|\bмаем\b", re.IGNORECASE)
+
+
+def extract_period(text_lower: str) -> str | None:
+    """Период размещения: месяц (канонический), квартал, полгода, диапазон дат.
+
+    Примеры: «на октябрь» → «октябрь»; «первый квартал» → «первый квартал»;
+    «на полгода» → «полгода»; «с мая по сентябрь» → «с мая по сентябрь».
+    Голые длительности («на три месяца») периодом не считаются.
+    """
+    m = re.search(r"с\s+([а-яё]+)\s+по\s+([а-яё]+)", text_lower)
+    if m:
+        return m.group(0)
+    m = re.search(
+        r"(первый|второй|второй|третий|четвертый|четвёртый|1-й|2-й|3-й|4-й)\s+квартал",
+        text_lower,
+    )
+    if m:
+        return m.group(0)
+    if re.search(r"\bполгода\b|\bпол\s+года\b", text_lower):
+        return "полгода"
+    if _MAY_FORMS.search(text_lower):
+        return "май"
+    for stem, canon in _MONTH_STEM_TO_CANON.items():
+        if re.search(r"\b" + stem + r"[а-яё]*\b", text_lower):
+            return canon
+    return None
+
+
+def extract_category(text_lower: str) -> str | None:
+    """Категория бизнеса клиента из словаря (каноническая форма) или None."""
+    for canon, aliases in PRODUCT_CATEGORY_DICT.items():
+        for alias in aliases:
+            if alias in text_lower:
+                return canon
+    return None
+
+
+def extract_budget_rub(text_lower: str) -> float | int | None:
+    """Бюджет в рублях: число+валюта, сгруппированные цифры, текстовые суммы.
+
+    Примеры: «200 000 руб.» → 200000; «полмиллиона рублей» → 500000;
+    «миллион рублей» → 1000000; «на двести тысяч» (без валюты) → 200000.
+    Голые малые числа без валюты/множителя бюджетом не считаются.
+    """
+    normed = RussianTextNormalizer().normalize(text_lower).lower()
+    m = re.search(
+        r"(\d[\d\s]*\d|\d)\s*(миллиард[а-я]*|миллион[а-я]*|млрд\.?|млн\.?|тысяч[а-я]*|тыс\.?|руб\.?)",
+        normed,
+    )
+    if m:
+        num = re.sub(r"\s+", "", m.group(1))
+        try:
+            base = float(num.replace(",", "."))
+        except ValueError:
+            base = None
+        if base is not None:
+            unit = m.group(2)
+            if re.match(r"миллиард|млрд", unit):
+                base *= 1_000_000_000
+            elif re.match(r"миллион|млн", unit):
+                base *= 1_000_000
+            elif re.match(r"тысяч|тыс", unit):
+                base *= 1_000
+            return int(base) if float(base).is_integer() else base
+    m = re.search(r"\b\d{1,3}(?:\s\d{3})+\b", normed)
+    if m:
+        try:
+            return int(re.sub(r"\s+", "", m.group(0)))
+        except ValueError:
+            pass
+    for pat in (
+        r"пол[уы]?\s*миллиард[а-я]*",
+        r"пол[уы]?\s*миллион[а-я]*",
+        r"полутора\s*миллион[а-я]*",
+        r"\bмиллиард[а-я]*",
+        r"\bмиллион[а-я]*",
+    ):
+        if re.search(pat, text_lower):
+            val = _parse_scaled_amount(re.search(pat, text_lower).group(0))  # type: ignore[union-attr]
+            if val is not None:
+                return val
+            if "миллиард" in pat:
+                return 1_000_000_000
+            return 1_000_000
     return None
 
 
@@ -484,7 +701,7 @@ def normalize_analysis_dict(parsed: dict[str, Any], transcript: str = "") -> dic
 
     # 7. Metadata
     parsed["schema_version"] = "1.0.0"
-    parsed["prompt_version"] = "v1.3-ru-compact"
+    parsed["prompt_version"] = "v1.4-ru-entities"
     if not parsed.get("summary"):
         parsed["summary"] = "Деловой разговор представителя компании и клиента."
 
@@ -577,10 +794,16 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         prompt = (
             "Ты — русскоязычный аналитик деловых телефонных звонков (реклама, продажи, услуги, сервис, запись клиентов). "
             "Проанализируй диалог менеджера и клиента и заполни JSON строго по схеме.\n"
-            "ЭКОНОМЬ ТОКЕНЫ (компактный ответ v1.3): summary — 1-2 предложения, до 200 символов; "
+            "ЭКОНОМЬ ТОКЕНЫ (компактный ответ v1.4): summary — 1-2 предложения, до 200 символов; "
             "what в agreements — коротко; НЕ заполняй deterministic_speech_metrics, client_emotion и score "
             "(их считают правила). Сущности (cities, formats и остальные поля) извлекай ПОЛНОСТЬЮ, "
             "экономия их не касается.\n"
+            "Сущности entities — заполняй ВСЕ, что названо в диалоге (null — только если нет в тексте):\n"
+            "- quantity: целое число (штуки, поверхности, стороны) или null\n"
+            "- target_period: месяц («октябрь»), квартал («первый квартал»), срок («полгода») или null\n"
+            "- budget_rub: ЧИСЛОМ в рублях («двести тысяч» → 200000, «полмиллиона» → 500000, "
+            "«миллион» → 1000000) или null\n"
+            "- product_category: бизнес клиента («автосалон», «кафе», «застройщик») или null\n"
             "ВАЖНО по полям категории, результата и ролей:\n"
             "- inquiry_type ОБЯЗАТЕЛЬНО должен быть одним из английских слагов: "
             "'pricing', 'availability', 'inventory_search', 'specs', 'order_status', "
@@ -806,15 +1029,7 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
         text_norm = normalizer.normalize(text)
         text_lower = text_norm.lower()
 
-        budget_rub = None
-        budget_match = re.search(r"бюджет.*?(\d[\d\s]*000)\s*руб", text_lower)
-        if not budget_match:
-            budget_match = re.search(r"до\s+(\d[\d\s]*000)\s*руб", text_lower)
-        if budget_match:
-            try:
-                budget_rub = int(re.sub(r"\s+", "", budget_match.group(1)))
-            except ValueError:
-                pass
+        budget_rub = extract_budget_rub(text_lower)
 
         quantity = None
         qty_match = re.search(r"(\d+)\s*(щит|сторон|поверхност|экран)", text_lower)
@@ -823,6 +1038,9 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                 quantity = int(qty_match.group(1))
             except ValueError:
                 pass
+
+        target_period = extract_period(text_lower)
+        product_category = extract_category(text_lower)
 
         # 1. Determine inquiry type
         detected_type = "other"
@@ -969,7 +1187,7 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
 
         return StructuredAnalysis(
             schema_version="1.0.0",
-            prompt_version="v1.3-ru-compact",
+            prompt_version="v1.4-ru-entities",
             summary=summary,
             call_result="follow_up_scheduled" if next_step else "info_provided",
             inquiry_type=detected_type,
@@ -977,9 +1195,9 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                 "cities": cities,
                 "formats": formats,
                 "quantity": quantity,
-                "target_period": None,
+                "target_period": target_period,
                 "budget_rub": budget_rub,
-                "product_category": None,
+                "product_category": product_category,
             },
             agreements=agreements,
             sentiment={

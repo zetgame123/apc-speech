@@ -149,7 +149,7 @@ class Agreement(BaseModel):
 
 class StructuredAnalysis(BaseModel):
     schema_version: str = "1.0.0"
-    prompt_version: str = "v1.3-ru-compact"
+    prompt_version: str = "v1.4-ru-entities"
     summary: str
     call_result: Literal[
         "success_deal",

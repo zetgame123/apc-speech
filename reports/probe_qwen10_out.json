@@ -1,0 +1,234 @@
+[
+  {
+    "id": "a000",
+    "type": "pricing",
+    "expected_entities": {
+      "city": "Балашиха",
+      "format": "щит 3 на 6",
+      "quantity": null,
+      "period": "октябрь",
+      "budget": "200 тысяч рублей",
+      "category": null
+    },
+    "qwen_entities": {
+      "cities": [
+        "Балашиха"
+      ],
+      "formats": [
+        "щит 3 на 6"
+      ],
+      "quantity": null,
+      "target_period": null,
+      "budget_rub": null,
+      "product_category": null
+    }
+  },
+  {
+    "id": "a001",
+    "type": "availability",
+    "expected_entities": {
+      "city": "Балашиха",
+      "format": "щит 3 на 6",
+      "quantity": null,
+      "period": "октябрь",
+      "budget": null,
+      "category": null
+    },
+    "qwen_entities": {
+      "cities": [
+        "Балашиха"
+      ],
+      "formats": [
+        "щит"
+      ],
+      "quantity": null,
+      "target_period": null,
+      "budget_rub": null,
+      "product_category": null
+    }
+  },
+  {
+    "id": "a002",
+    "type": "inventory_search",
+    "expected_entities": {
+      "city": "Балашиха",
+      "format": "щит 3 на 6",
+      "quantity": null,
+      "period": null,
+      "budget": null,
+      "category": null
+    },
+    "qwen_entities": {
+      "cities": [
+        "Балашиха"
+      ],
+      "formats": [],
+      "quantity": null,
+      "target_period": null,
+      "budget_rub": null,
+      "product_category": null
+    }
+  },
+  {
+    "id": "a003",
+    "type": "specs",
+    "expected_entities": {
+      "city": "Балашиха",
+      "format": "щит 3 на 6",
+      "quantity": null,
+      "period": null,
+      "budget": null,
+      "category": null
+    },
+    "qwen_entities": {
+      "cities": [
+        "Балашиха"
+      ],
+      "formats": [
+        "щит 3 на 6"
+      ],
+      "quantity": null,
+      "target_period": null,
+      "budget_rub": null,
+      "product_category": null
+    }
+  },
+  {
+    "id": "a004",
+    "type": "order_status",
+    "expected_entities": {
+      "city": "Балашиха",
+      "format": null,
+      "quantity": null,
+      "period": null,
+      "budget": null,
+      "category": null
+    },
+    "qwen_entities": {
+      "cities": [
+        "Балашиха"
+      ],
+      "formats": [],
+      "quantity": null,
+      "target_period": null,
+      "budget_rub": null,
+      "product_category": null
+    }
+  },
+  {
+    "id": "a005",
+    "type": "production",
+    "expected_entities": {
+      "city": "Балашиха",
+      "format": "щит 3 на 6",
+      "quantity": null,
+      "period": null,
+      "budget": null,
+      "category": null
+    },
+    "qwen_entities": {
+      "cities": [
+        "Балашиха"
+      ],
+      "formats": [
+        "печать"
+      ],
+      "quantity": null,
+      "target_period": null,
+      "budget_rub": null,
+      "product_category": null
+    }
+  },
+  {
+    "id": "a006",
+    "type": "documents_billing",
+    "expected_entities": {
+      "city": "Балашиха",
+      "format": null,
+      "quantity": null,
+      "period": null,
+      "budget": "200 тысяч рублей",
+      "category": "автосалон"
+    },
+    "qwen_entities": {
+      "cities": [
+        "Балашиха"
+      ],
+      "formats": [],
+      "quantity": null,
+      "target_period": null,
+      "budget_rub": null,
+      "product_category": null
+    }
+  },
+  {
+    "id": "a007",
+    "type": "complaint",
+    "expected_entities": {
+      "city": "Балашиха",
+      "format": null,
+      "quantity": null,
+      "period": null,
+      "budget": null,
+      "category": null
+    },
+    "qwen_entities": {
+      "cities": [
+        "Балашиха"
+      ],
+      "formats": [],
+      "quantity": null,
+      "target_period": null,
+      "budget_rub": null,
+      "product_category": null
+    }
+  },
+  {
+    "id": "a008",
+    "type": "partnership_supply",
+    "expected_entities": {
+      "city": "Балашиха",
+      "format": "щит 3 на 6",
+      "quantity": null,
+      "period": null,
+      "budget": null,
+      "category": null
+    },
+    "qwen_entities": {
+      "cities": [
+        "Балашиха"
+      ],
+      "formats": [
+        "щит 3 на 6"
+      ],
+      "quantity": null,
+      "target_period": null,
+      "budget_rub": null,
+      "product_category": null
+    }
+  },
+  {
+    "id": "a009",
+    "type": "programmatic_digital",
+    "expected_entities": {
+      "city": "Балашиха",
+      "format": "экран",
+      "quantity": null,
+      "period": "октябрь",
+      "budget": "200 тысяч рублей",
+      "category": null
+    },
+    "qwen_entities": {
+      "cities": [
+        "Балашиха"
+      ],
+      "formats": [
+        "программатик"
+      ],
+      "quantity": null,
+      "target_period": null,
+      "budget_rub": null,
+      "product_category": null
+    }
+  }
+]

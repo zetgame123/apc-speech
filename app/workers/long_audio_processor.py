@@ -349,7 +349,7 @@ async def process_job(job_id: str, data: dict):
         if is_answering_machine:
             analysis_result = {
                 "schema_version": "1.0.0",
-                "prompt_version": "v1.3-ru-compact",
+                "prompt_version": "v1.4-ru-entities",
                 "summary": "Автоответчик или голосовая почта. Разговор не состоялся.",
                 "call_result": "unclear_spam",
                 "inquiry_type": "spam_irrelevant",

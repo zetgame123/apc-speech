@@ -17,7 +17,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": { "type": "string", "enum": ["1.0.0"] },
-    "prompt_version": { "type": "string", "enum": ["v1.2-ru-outdoor", "v1.3-ru-compact"] },
+    "prompt_version": { "type": "string", "enum": ["v1.2-ru-outdoor", "v1.3-ru-compact", "v1.4-ru-entities"] },
     "summary": { "type": "string", "maxLength": 1000 },
     "call_result": {
       "type": "string",
