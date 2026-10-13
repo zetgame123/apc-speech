@@ -39,6 +39,20 @@ def test_currency_normalization():
     assert normalizer.normalize("до 100к") == "до 100 000 руб."
 
 
+def test_no_glue_between_grouped_digits_and_next_line():
+    """Склейка «200 000Менеджер:» (b014): разделитель после тысяч без валюты
+    не должен съедаться — иначе групповая цифра не срабатывает в бюджете."""
+    normalizer = RussianTextNormalizer()
+    assert (
+        normalizer.normalize("В Подольске, на двести тысяч\nМенеджер: Отменяю")
+        == "В Подольске, на 200 000 Менеджер: Отменяю"
+    )
+    assert (
+        normalizer.normalize("джой две тысячи четвертый год это часть чего")
+        == "джой 2 000 четвертый год это часть чего"
+    )
+
+
 def test_metro_stations_capitalization():
     normalizer = RussianTextNormalizer()
 

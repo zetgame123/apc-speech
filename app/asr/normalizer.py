@@ -410,7 +410,7 @@ class RussianTextNormalizer:
             (re.compile(r"\b(\d+)\s+тысяч\s+рублей\b", re.IGNORECASE), r"\1 000 руб."),
             (
                 re.compile(
-                    rf"\b({_NUM_PHRASE_PAT})\s*тысяч[аеиу]?\s*(рублей|рубля|руб\.?)?\b",
+                    rf"\b({_NUM_PHRASE_PAT})\s*тысяч[аеиу]?(?:\s+(рублей|рубля|руб\.?))?\b",
                     re.IGNORECASE,
                 ),
                 lambda m: (
@@ -1084,7 +1084,12 @@ class RussianTextNormalizer:
         for pattern, replacement in self.city_patterns:
             res = pattern.sub(replacement, res)
 
-        # Clean-up: remove double dots (e.g. руб..) and excessive spaces
+        # Clean-up: remove double dots (e.g. руб..) and excessive spaces.
+        # Разделяем склейки вида «200 000Менеджер» (групповые цифры + слово без
+        # пробела): иначе групповая цифра не срабатывает в extract_budget_rub.
+        # Страховка от шаблонов, съевших разделитель (см. thousands выше):
+        # затрагивает только стык цифра→буква, «3×6»/«1.2×1.8» не трогает.
+        res = re.sub(r"(\d)([А-Яа-яЁёA-Za-z])", r"\1 \2", res)
         res = re.sub(r"руб\.\.+", "руб.", res)
         res = re.sub(r"\s+", " ", res).strip()
 

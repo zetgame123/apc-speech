@@ -448,13 +448,26 @@ def extract_formats(text_lower: str) -> list[str]:
 
 
 def extract_quantity(text_lower: str) -> int | None:
-    """Количество (штуки/поверхности/стороны) или None."""
-    qty_match = re.search(r"(\d+)\s*(щит|сторон|поверхност|экран)", text_lower)
+    """Количество (штуки/поверхности/стороны/щиты/экраны) или None.
+
+    Число — цифрами или словом («два штук» → 2, эталон b008/b023).
+    Без единицы количества («есть один», «один свободен», «сторона Б»,
+    «пара вариантов») — None по ADR-021: ответы менеджера не считаются.
+    """
+    qty_match = re.search(
+        r"\b(\d+|один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять"
+        r"|десять|одиннадцать|двенадцать)\s*"
+        r"(щит[а-я]*|сторон[а-я]*|поверхност[а-я]*|экран[а-я]*|штук[а-я]*|шт\.?)\b",
+        text_lower,
+    )
     if qty_match:
-        try:
-            return int(qty_match.group(1))
-        except ValueError:
-            return None
+        raw = qty_match.group(1)
+        if raw.isdigit():
+            try:
+                return int(raw)
+            except ValueError:
+                return None
+        return {"один": 1, "одна": 1, "одно": 1, "два": 2, "две": 2}.get(raw, NUMBER_WORDS.get(raw))
     return None
 
 
@@ -533,10 +546,19 @@ def extract_budget_rub(text_lower: str) -> float | int | None:
             return int(base) if float(base).is_integer() else base
     m = re.search(r"\b\d{1,3}(?:\s\d{3})+\b", normed)
     if m:
-        try:
-            return int(re.sub(r"\s+", "", m.group(0)))
-        except ValueError:
-            pass
+        # Год («две тысячи четвертый год» → «2 000 четвертый год») — не бюджет:
+        # тысячи + порядковое/год в исходном тексте отменяют ветку групповых цифр
+        # (иначе чинка склеек нормалайзера дала бы FP 2000 на Golos-294).
+        if not re.search(
+            r"тысяч[а-я]*\s+(перв|втор|трет|четверт|пят|шест|седьм|восьм|девят|десят"
+            r"|одиннадцат|двенадцат|тринадцат|четырнадцат|пятнадцат|шестнадцат"
+            r"|семнадцат|восемнадцат|девятнадцат|двадцат|тридцат|год\b)",
+            text_lower,
+        ):
+            try:
+                return int(re.sub(r"\s+", "", m.group(0)))
+            except ValueError:
+                pass
     for pat in (
         r"пол[уы]?\s*миллиард[а-я]*",
         r"пол[уы]?\s*миллион[а-я]*",

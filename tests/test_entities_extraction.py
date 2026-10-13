@@ -116,6 +116,38 @@ def test_extract_budget_ignores_small_bare_numbers():
     assert extract_budget_rub("просто звонок") is None
 
 
+def test_extract_budget_year_is_not_budget():
+    # «две тысячи четвертый год» — год (Golos-294), а не деньги,
+    # даже после чинки склеек нормалайзера («2 000 четвертый год»).
+    assert extract_budget_rub("джой две тысячи четвертый год это часть чего") is None
+    # А «на двести тысяч» без валюты — бюджет (эталон b014, ADR-021).
+    assert (
+        extract_budget_rub("Клиент: В Подольске, на двести тысяч\nМенеджер: Отменяю".lower())
+        == 200000
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("взять 2 поверхности", 2),
+        ("Это экраны, два штук", 2),
+        ("нужны две поверхности", 2),
+        ("сторона Б сойдёт", None),  # сторона ≠ количество (ADR-021)
+        ("Есть один, бронирую за вами", None),  # наличие менеджера (ADR-021)
+        ("Один свободен", None),  # наличие менеджера (ADR-021)
+        ("Есть пара вариантов", None),  # vague (ADR-021)
+        ("просто звонок", None),
+    ],
+)
+def test_extract_quantity_words_and_no_manager_counts(text, expected):
+    from app.asr.normalizer import RussianTextNormalizer
+    from app.llm.local_adapter import extract_quantity
+
+    normed = RussianTextNormalizer().normalize(text).lower()
+    assert extract_quantity(normed) == expected
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
