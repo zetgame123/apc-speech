@@ -93,12 +93,12 @@ class Settings(BaseSettings):
         default=None, alias="VOICE_SEARCH_INITIAL_PROMPT"
     )
     voice_search_hotwords: str | None = Field(default=None, alias="VOICE_SEARCH_HOTWORDS")
-    # Движок быстрого пути: "whisper" (дефолт) или "tone" (эксперимент T-one, ADR-011).
+    # Движок быстрого пути: "tone" (дефолт) или "whisper" (через переменную).
     voice_search_engine: str = Field(default="tone", alias="VOICE_SEARCH_ENGINE")
     # Каталог весов T-one (model.onnx тянет model-downloader) и потоки ORT
-    # (0 — дефолт onnxruntime; ограничение также через OMP_NUM_THREADS).
+    # (1 — оптимум под 2 ядра cpuset; больше — только с ростом ядер, см. README).
     tone_model_dir: str = Field(default="./models/t-one", alias="TONE_MODEL_DIR")
-    tone_threads: int = Field(default=0, alias="TONE_THREADS")
+    tone_threads: int = Field(default=1, alias="TONE_THREADS")
     # inter-потоки ORT (0 — не трогать; при intra>0 код ставит 1 как раньше).
     tone_inter_threads: int = Field(default=0, alias="TONE_INTER_THREADS")
     # Оптимизации графа ORT: all (дефолт ORT и текущий факт), basic, extended, disabled.

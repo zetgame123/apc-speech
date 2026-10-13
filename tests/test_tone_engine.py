@@ -244,3 +244,15 @@ def test_fuzzy_oov_only_protects_vocab_words(monkeypatch, tmp_path):
     assert eng._apply_fuzzy_terms("подскажите ли") == "подскажите ли"
     # OOV-слово правим: суперсайта нет в navec
     assert "суперсайт" in eng._apply_fuzzy_terms("суперсайта")
+
+
+def test_tone_threads_default_is_one_explicit(monkeypatch):
+    """C10-0: дефолт TONE_THREADS=1 задан явно (не дефолт ORT)."""
+    from app.core.config import get_settings
+
+    monkeypatch.delenv("TONE_THREADS", raising=False)
+    get_settings.cache_clear()
+    try:
+        assert get_settings().tone_threads == 1
+    finally:
+        get_settings.cache_clear()
