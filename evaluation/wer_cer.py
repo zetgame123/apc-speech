@@ -11,8 +11,10 @@ def normalize_eval_text(text: str) -> str:
         return ""
     # 1. Apply ITN normalizer (converts "три на шесть" to "3×6", numbers, etc.)
     t = normalizer.normalize(text)
-    # 2. Lowercase and remove punctuation except standard word characters
-    t = re.sub(r"[^\w\s×]", " ", t.lower())
+    # 2. Lowercase, fold ё->е (орфографический вариант, не фонема), and remove
+    # punctuation except standard word characters. Fold здесь, а не в
+    # продуктовом нормалайзере: видимый текст хранит ё.
+    t = re.sub(r"[^\w\s×]", " ", t.lower().replace("ё", "е"))
     # 3. Collapse multiple spaces
     t = re.sub(r"\s+", " ", t).strip()
     return t
