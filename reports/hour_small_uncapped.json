@@ -1,0 +1,115 @@
+{
+  "label": "small-uncapped",
+  "audio_sec": 3600.0,
+  "job_id": "ef209ea2-2aee-4192-b4eb-8750400d9ce2",
+  "job_status": "succeeded",
+  "wall_sec": 3546.0,
+  "rtf": 0.985,
+  "timeline": [
+    {
+      "t": 0.0,
+      "status": "queued",
+      "step": "uploaded",
+      "progress": 0
+    },
+    {
+      "t": 68.2,
+      "status": "running",
+      "step": "asr_transcription",
+      "progress": 25
+    },
+    {
+      "t": 409.1,
+      "status": "running",
+      "step": "asr_transcription_chunk_1_of_9",
+      "progress": 28
+    },
+    {
+      "t": 681.9,
+      "status": "running",
+      "step": "asr_transcription_chunk_2_of_9",
+      "progress": 31
+    },
+    {
+      "t": 1091.1,
+      "status": "running",
+      "step": "asr_transcription_chunk_3_of_9",
+      "progress": 35
+    },
+    {
+      "t": 1295.7,
+      "status": "running",
+      "step": "asr_transcription_chunk_4_of_9",
+      "progress": 38
+    },
+    {
+      "t": 1704.8,
+      "status": "running",
+      "step": "asr_transcription_chunk_5_of_9",
+      "progress": 41
+    },
+    {
+      "t": 1909.4,
+      "status": "running",
+      "step": "asr_transcription_chunk_6_of_9",
+      "progress": 45
+    },
+    {
+      "t": 2114.0,
+      "status": "running",
+      "step": "asr_transcription_chunk_7_of_9",
+      "progress": 48
+    },
+    {
+      "t": 2454.9,
+      "status": "running",
+      "step": "asr_transcription_chunk_8_of_9",
+      "progress": 51
+    },
+    {
+      "t": 2727.7,
+      "status": "running",
+      "step": "mono_diarization",
+      "progress": 55
+    },
+    {
+      "t": 3273.2,
+      "status": "running",
+      "step": "llm_speaker_refinement",
+      "progress": 58
+    },
+    {
+      "t": 3341.4,
+      "status": "running",
+      "step": "semantic_analysis",
+      "progress": 80
+    },
+    {
+      "t": 3477.8,
+      "status": "succeeded",
+      "step": "completed",
+      "progress": 100
+    }
+  ],
+  "peak_ram_mib": {
+    "apc_small-worker-long-1": 2106.4,
+    "apc_small-llm-runtime-1": 3467.3,
+    "apc_small-api-1": 210.3
+  },
+  "env": {
+    "cpu": "Ryzen 7 8845HS",
+    "mhz": [
+      "3767.909",
+      "3660.935"
+    ],
+    "governor": "performance",
+    "cpuset": {
+      "apc_small-worker-long-1": "4,6/2214592512",
+      "apc_small-llm-runtime-1": "4,6/10737418240",
+      "apc_small-api-1": "4,6/402653184"
+    }
+  },
+  "server_wall_sec": 3431.0,
+  "server_rtf": 0.953,
+  "note_timing": "server_wall/rtf — первичны (created->updated джобы, без загрузки и лага опроса); wall_sec/rtf скрипта завышены лагом поллинга 60с (~+115с); метки стадий квантованы опросом ±60с"
+}
