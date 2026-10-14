@@ -130,7 +130,6 @@
 * **Решение**: всё из таблицы со статусом «Да» допущено; slovnet/navec-веса и MinIO —
   вопросы человеку. `soxr` (LGPL) допустим как немодифицированное колесо.
 
-
 ## ADR-013: Сумма CPU-лимитов 2,5 при 2 vCPU (2026-10-11)
 
 * **Статус**: Принято (осознанный риск)
@@ -305,3 +304,41 @@
   (месяцы/кварталы/полгода/диапазоны без изменений; тесты
   `tests/test_entities_extraction.py`); «билет»≠«лето», «макет»≠«май» —
   границы `\b` + тесты-антиложняки.
+
+## ADR-023: Лицензии MinIO / navec / slovnet / CAM++ и заменяемость S3 (2026-10-14)
+
+* **Статус**: Принято (верификация пользователя: MinIO — AGPLv3, navec — MIT,
+  CAM++ — Apache 2.0; slovnet-веса — вопрос остаётся открытым, см. ниже)
+* **Контекст**: AGENTS.md п.5 требует записи лицензии каждой модели/библиотеки
+  в `decisions.md`. Вопросы были открыты в `docs/questions.md` (п.0–3, раздел
+  «Лицензии — к юристу») и `docs/gap-report.md` (§9). Проверено 2026-10-14:
+  код — чтением `app/storage/s3.py`, `pyproject.toml`, `uv.lock`, файлов
+  `dist-info/LICENSE` в `.venv`; веса — содержимым tar-баллонов и карточками
+  репозиториев; образ MinIO — `docker manifest inspect` по закреплённому digest.
+* **Решение**:
+
+| Компонент | Лицензия | Как используется | Последствия для поставки |
+|---|---|---|---|
+| MinIO (образ `elestio/minio:latest@sha256:25348a…c556d4bd`, немодифицированный апстрим `minio/minio`) | **AGPLv3** (верифицировано пользователем; с 2021, до этого Apache 2.0) | **Отдельный контейнер** в `docker-compose.yml` (сервис `minio`, сеть `backend`, без опубликованных портов). Код ходит в хранилище **только через стандартный S3-клиент** `boto3` (`app/storage/s3.py`: `put_object`/`get_object`/`download_file`/`upload_file`/`delete_object`/`head_object`/`generate_presigned_url`/`list_objects_v2`/`copy`/`list_buckets`; MinIO-специфичных вызовов и SDK `minio` в `app/`/`scripts/` нет — подтверждено grep и тестом `tests/test_s3_compat.py`) | Наш код — отдельная программа за стандартным протоколом S3; немодифицированный образ не требует раскрытия нашего кода. Но сетевая клаузула AGPL (§13) действует при модификации образа — поставка в закрытый продукт только **после акцепта заказчиком/юристом** либо **с заменой хранилища** (см. ниже). Без одного из двух — СТОП для поставки |
+| navec 0.10.0 (код + веса `navec_news_v1_1B_250K_300d_100q.tar`) | **MIT** (верифицировано пользователем; код: `LICENSE` в `navec-0.10.0.dist-info`, репозиторий `natasha/navec`) | **Библиотека + веса**: код — зависимость `natasha→navec`; веса — бандл внутри колеса `natasha-1.6.0` (`data/emb/`), грузятся локально через `NewsEmbedding` для NER/OOV-защиты (`app/pii/masker.py`, `app/asr/tone_engine.py`, `app/asr/term_fixer.py`) | Допущено в закрытый продукт без ограничений |
+| slovnet 0.6.0 (код) | **MIT** — проверено по файлам пакета, не по аналогии: `LICENSE` в `slovnet-0.6.0.dist-info`, `METADATA License: MIT`, `LICENSE` в репозитории `natasha/slovnet` (проверено 2026-10-14) | **Библиотека**: зависимость `natasha→slovnet`, NER через `NewsNERTagger` (`app/pii/masker.py`) | Код допущен |
+| slovnet-веса (`slovnet_ner_news_v1.tar`, бандл колеса `natasha`) | **Явного гранта не найдено — вопрос ОТКРЫТ** | **Веса**: бандл внутри колеса `natasha-1.6.0` (`data/model/`); внутри tar только `meta.json`/`model.json`/`arrays/*`, файла лицензии нет; в репозитории `natasha/slovnet` веса раздаются ссылками на Yandex Cloud без отдельного текста лицензии | До ответа — допущение «по месту публикации» (как в ADR-012); в поставку — только после подтверждения автора/юриста. Не закрывать по аналогии с navec |
+| CAM++ (`models/campplus.onnx`, 28 283 928 байт, `sha256:dd1740aa1e1ffa3895f96aef2166b8af2bb2ad09c00769dd275ee36aef6a2a7f`) | **Apache 2.0** (верифицировано пользователем; зеркала HF маркированы `apache-2.0`, код апстрима 3D-Speaker — Apache 2.0) | **Веса**: файл, скачиваемый `scripts/download_models.py` (`CAMPPLUS_URLS`: `https://huggingface.co/welcomyou/campplus-3dspeaker-200k-onnx/resolve/main/campplus_cn_en_common_200k.onnx` с fallback `https://huggingface.co/hb123xyz/campplus_cn_en_common_200k/resolve/main/campplus_cn_en_common_200k.onnx`), инференс локально через `onnxruntime` | Допущено в закрытый продукт. Оговорка provenance сохраняется: зеркала неофициальные; при смене весов лицензию и хэш сверять заново (`sha256sum models/campplus.onnx`) |
+
+* **Замена S3-совместимого хранилища (без изменений кода)**: `app/storage/s3.py`
+  использует только стандартный API `boto3` против `S3_ENDPOINT_URL`
+  (дефолт `http://minio:9000`), ключи `S3_ACCESS_KEY`/`S3_SECRET_KEY`
+  (= `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`), бакеты `S3_BUCKET_AUDIO`
+  (`raw-audio`) / `S3_BUCKET_EXPORTS` (`exports`), регион `S3_REGION` — всё через
+  env (см. `app/core/config.py:52-58`, `.env.example`). Для замены достаточно:
+  1) поднять любое S3-совместимое хранилище (Garage, SeaweedFS, Ceph RGW —
+  лицензию выбранного проверить отдельно); 2) указать его endpoint/ключи/бакеты
+  в `.env`; 3) при желании переопределить образ через `MINIO_IMAGE` в `.env`
+  или заменить сервис `minio` в `docker-compose.yml` (имя хоста `minio` —
+  только дефолт `S3_ENDPOINT_URL`, не зашито в код). Замечание: `aioboto3`
+  объявлен в `pyproject.toml`, но в `app/`/`scripts/` не импортируется —
+  фактический клиент только синхронный `boto3`.
+* **Последствия**: закрыты вопросы MinIO (как техфакт заменяемости; юридический
+  акцепт — за заказчиком), navec, CAM++; открыт остаётся только slovnet-веса.
+  Проверка digest MinIO (`docker manifest inspect …@sha256:25348a…` — есть
+  `linux/amd64`, 2026-10-14) и процедура `docker save` — в `docs/runbook.md` §5.
