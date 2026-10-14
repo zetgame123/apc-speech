@@ -2,6 +2,7 @@ import os
 import tempfile
 
 import numpy as np
+import pytest
 import soundfile as sf
 
 from app.diarization.mono_diarizer import MonoDiarizer
@@ -142,10 +143,16 @@ def test_mono_diarizer_real_speech_monologue_and_dialogue():
     dialogue_wav = "data/evaluation_suite/sample_dialogue_01_telephony_8k.wav"
     monologue_wav = "data/evaluation_suite/voice10_monologue.wav"
 
-    if not os.path.exists(dialogue_wav) or not os.path.exists(monologue_wav):
-        return
+    missing = [p for p in (dialogue_wav, monologue_wav) if not os.path.exists(p)]
+    if missing:
+        pytest.skip(f"нет аудиоданных: {missing}")
 
     diarizer = MonoDiarizer(num_speakers=2)
+    if diarizer.campplus_session is None:
+        pytest.skip(
+            "нет весов CAM++ (models/campplus.onnx): тест проверяет нейронный путь; "
+            "запасной акустический путь покрыт синтетическими тестами выше"
+        )
 
     # 1. Real dialogue should yield 2 speakers
     dialogue_segs = [

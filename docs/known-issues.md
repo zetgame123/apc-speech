@@ -470,3 +470,33 @@ cpuset 4,6. Дефолт whisper не менялся, ветка не созда
   причина**: объём счёта (~8 с/файл podlodka на 2 ядрах при капе
   3 ГГц; полный SOVA-тест — порядка 5–6 ч одного движка).
   Common Voice ru — без изменений (пуст на Hub).
+
+## 30. CI без весов: какой путь диаризации работает и что в CI не гоняется (2026-10-14)
+
+* Путь диаризации определяется наличием `models/campplus.onnx` (в git его
+  нет, `download_models.py` в CI скачивает его ПОСЛЕ тестов):
+  * локально (веса есть): нейронный путь CAM++ — монолог унифицируется,
+    `test_mono_diarizer_real_speech_monologue_and_dialogue` зелёный;
+  * в CI (весов нет): запасной акустический путь (`mono_diarizer.py:546`):
+    3 сегмента монолога принудительно кластеризуются в 2 кластера,
+    sep центроидов **10,95** против порога унификации 1,4 — монолог делится
+    на 2 спикера, тест красный (воспроизведено локально скрытием весов).
+* Решение: запасной путь НЕ подгонялся (поднять порог до ~11 — значит убить
+  детекцию диалогов, включая асимметричный тест; чинить — только по
+  размеченным данным, отдельным пунктом). Тест явно скипается маркером
+  с причиной, когда `campplus_session is None`. Молчаливый `return` при
+  отсутствии файлов заменён на `pytest.skip` с причиной — это был
+  единственный такой случай в сюите (проверено grep по `tests/`).
+* В CI честно не проверяются (SKIPPED с причиной, не молча):
+  * `test_mono_diarizer_real_speech_monologue_and_dialogue` — нет весов
+    CAM++; запасной путь покрыт синтетическими тестами диаризации;
+  * 3× `test_golos_regression` — нет данных Golos (`data/eval_external/`
+    gitignored, ADR-017). Локально: сначала данные, потом тесты:
+    `uv run python scripts/download_eval_data.py --no-cv --no-ruls --no-sova`,
+    затем `uv run pytest tests/test_golos_regression.py`.
+* Про 202 в `test_upload_corrupt_audio_rejected_by_probe`: на текущем коде
+  не воспроизводится ни с ffprobe, ни без него — `probe_audio` fail-closed
+  (`FileNotFoundError` от отсутствующего ffprobe → `AppError` 400
+  `invalid_audio`, мусор → 400 тем же путём). Путь отсутствия ffprobe
+  зафиксирован тестом `test_upload_without_ffprobe_fails_closed`; в workflow
+  есть дымовая проверка `ffprobe -version` (ffprobe идёт в пакете ffmpeg).
