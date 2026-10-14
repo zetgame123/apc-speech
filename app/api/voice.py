@@ -275,6 +275,17 @@ async def voice_search(
 
         try:
             segments, meta = await asyncio.to_thread(_sync_process, audio_bytes, language)
+        except FileNotFoundError as e:
+            # Весов T-one нет (чистый клон/CI без models/): модель временно
+            # недоступна — это 503 с Retry-After, а не 500. Сообщение по-русски,
+            # без путей и деталей окружения (PII/секреты не утекают).
+            logger.error("voice_search_model_missing", error=str(e))
+            raise AppError(
+                error="voice_model_unavailable",
+                message="Модель голосового поиска недоступна, повторите запрос позже",
+                status_code=503,
+                headers={"Retry-After": "5"},
+            ) from e
         except Exception as e:
             logger.error("voice_search_transcribe_error", error=str(e))
             raise AppError(

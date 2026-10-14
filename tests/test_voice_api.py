@@ -287,3 +287,43 @@ def test_asr_model_missing_local_fallback(monkeypatch):
         mock_whisper.assert_called_once()
         args, kwargs = mock_whisper.call_args
         assert args[0] == "small"
+
+
+@pytest.mark.asyncio
+async def test_voice_search_missing_weights_returns_503_with_retry_after(monkeypatch, tmp_path):
+    """Без models/t-one/model.onnx — 503 с сообщением по-русски и Retry-After, а не 500.
+
+    Сквозной путь дефолтного tone-движка: каталог весов подменяется пустым,
+    синглтон движка сбрасывается, transcribe мокается только в лимитере/очереди.
+    """
+    import app.asr.tone_engine as tone_module
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "voice_search_engine", "tone")
+    monkeypatch.setattr(settings, "voice_search_use_worker", False)
+    monkeypatch.setattr(settings, "tone_model_dir", str(tmp_path))
+    monkeypatch.setattr(tone_module, "_tone_engine_instance", None)
+
+    fake_redis = MagicMock()
+    fake_redis.incr = AsyncMock(return_value=1)
+    fake_redis.expire = AsyncMock(return_value=None)
+    fake_redis.sismember = AsyncMock(return_value=False)
+    mock_queue = MagicMock()
+    mock_queue.get_client = AsyncMock(return_value=fake_redis)
+    monkeypatch.setattr("app.api.rate_limit.get_queue", lambda: mock_queue)
+    monkeypatch.setattr("app.api.voice.get_queue", lambda: mock_queue)
+    monkeypatch.setattr("app.core.security.get_queue", lambda: mock_queue)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(
+            "/v1/voice/search?namespace=test_msk",
+            content=make_wav_bytes(),
+            headers={"Authorization": "Bearer dev-token", "Content-Type": "audio/wav"},
+        )
+        assert resp.status_code == 503
+        data = resp.json()
+        assert set(data) == {"error", "message", "details"}
+        assert data["error"] == "voice_model_unavailable"
+        assert isinstance(data["message"], str) and data["message"]
+        assert "Retry-After" in resp.headers
