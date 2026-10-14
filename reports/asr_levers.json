@@ -1,0 +1,299 @@
+{
+  "n": 25,
+  "machine": {
+    "asr_threads": "2",
+    "cap_khz": 3000000,
+    "cpu4_mhz": 2994.3,
+    "cpu6_mhz": 2994.4
+  },
+  "datasets": {
+    "golos": {
+      "A_base": {
+        "clean": {
+          "wer": 0.1104,
+          "rtf": 2.786,
+          "wall": 219.8,
+          "dur": 78.9
+        },
+        "telephony": {
+          "wer": 0.2662,
+          "rtf": 2.663,
+          "wall": 210.1,
+          "dur": 78.9
+        }
+      },
+      "B_beam1": {
+        "clean": {
+          "wer": 0.1104,
+          "rtf": 2.777,
+          "wall": 219.1,
+          "dur": 78.9
+        },
+        "telephony": {
+          "wer": 0.2662,
+          "rtf": 2.67,
+          "wall": 210.7,
+          "dur": 78.9
+        }
+      },
+      "F_vadfast": {
+        "clean": {
+          "wer": 0.1104,
+          "rtf": 2.79,
+          "wall": 220.1,
+          "dur": 78.9
+        },
+        "telephony": {
+          "wer": 0.2857,
+          "rtf": 2.63,
+          "wall": 207.5,
+          "dur": 78.9
+        }
+      },
+      "W_nowords": {
+        "clean": {
+          "wer": 0.1104,
+          "rtf": 2.631,
+          "wall": 207.6,
+          "dur": 78.9
+        },
+        "telephony": {
+          "wer": 0.2662,
+          "rtf": 2.469,
+          "wall": 194.8,
+          "dur": 78.9
+        }
+      },
+      "G_novad": {
+        "clean": {
+          "wer": 0.0909,
+          "rtf": 2.513,
+          "wall": 198.3,
+          "dur": 78.9
+        },
+        "telephony": {
+          "wer": 0.2013,
+          "rtf": 2.482,
+          "wall": 195.8,
+          "dur": 78.9
+        }
+      },
+      "chunks_A": {
+        "clean": {
+          "x1": {
+            "wer": 0.1558,
+            "rtf": 0.376
+          },
+          "x3": {
+            "wer": 0.1039,
+            "rtf": 0.398
+          },
+          "dur": 78.9
+        },
+        "telephony": {
+          "x1": {
+            "wer": 0.2078,
+            "rtf": 0.38
+          },
+          "x3": {
+            "wer": 0.1883,
+            "rtf": 0.395
+          },
+          "dur": 78.9
+        }
+      }
+    },
+    "ruls": {
+      "A_base": {
+        "clean": {
+          "wer": 0.0919,
+          "rtf": 1.241,
+          "wall": 206.9,
+          "dur": 166.7
+        },
+        "telephony": {
+          "wer": 0.1003,
+          "rtf": 1.247,
+          "wall": 207.8,
+          "dur": 166.7
+        }
+      },
+      "B_beam1": {
+        "clean": {
+          "wer": 0.0891,
+          "rtf": 1.243,
+          "wall": 207.2,
+          "dur": 166.7
+        },
+        "telephony": {
+          "wer": 0.0975,
+          "rtf": 1.225,
+          "wall": 204.2,
+          "dur": 166.7
+        }
+      },
+      "F_vadfast": {
+        "clean": {
+          "wer": 0.0919,
+          "rtf": 1.244,
+          "wall": 207.2,
+          "dur": 166.7
+        },
+        "telephony": {
+          "wer": 0.1031,
+          "rtf": 1.231,
+          "wall": 205.2,
+          "dur": 166.7
+        }
+      },
+      "W_nowords": {
+        "clean": {
+          "wer": 0.0919,
+          "rtf": 1.233,
+          "wall": 205.5,
+          "dur": 166.7
+        },
+        "telephony": {
+          "wer": 0.1003,
+          "rtf": 1.231,
+          "wall": 205.2,
+          "dur": 166.7
+        }
+      },
+      "G_novad": {
+        "clean": {
+          "wer": 0.0947,
+          "rtf": 1.239,
+          "wall": 206.5,
+          "dur": 166.7
+        },
+        "telephony": {
+          "wer": 0.1003,
+          "rtf": 1.239,
+          "wall": 206.5,
+          "dur": 166.7
+        }
+      },
+      "chunks_A": {
+        "clean": {
+          "x1": {
+            "wer": 0.1114,
+            "rtf": 0.379
+          },
+          "x3": {
+            "wer": 0.1003,
+            "rtf": 0.424
+          },
+          "dur": 166.7
+        },
+        "telephony": {
+          "x1": {
+            "wer": 0.1114,
+            "rtf": 0.383
+          },
+          "x3": {
+            "wer": 0.0864,
+            "rtf": 0.428
+          },
+          "dur": 166.7
+        }
+      }
+    },
+    "sova": {
+      "A_base": {
+        "clean": {
+          "wer": 0.0954,
+          "rtf": 1.877,
+          "wall": 202.0,
+          "dur": 107.6
+        },
+        "telephony": {
+          "wer": 0.1411,
+          "rtf": 1.856,
+          "wall": 199.7,
+          "dur": 107.6
+        }
+      },
+      "B_beam1": {
+        "clean": {
+          "wer": 0.0996,
+          "rtf": 1.864,
+          "wall": 200.5,
+          "dur": 107.6
+        },
+        "telephony": {
+          "wer": 0.1411,
+          "rtf": 1.837,
+          "wall": 197.6,
+          "dur": 107.6
+        }
+      },
+      "F_vadfast": {
+        "clean": {
+          "wer": 0.0954,
+          "rtf": 1.864,
+          "wall": 200.6,
+          "dur": 107.6
+        },
+        "telephony": {
+          "wer": 0.1369,
+          "rtf": 1.871,
+          "wall": 201.3,
+          "dur": 107.6
+        }
+      },
+      "W_nowords": {
+        "clean": {
+          "wer": 0.0954,
+          "rtf": 1.815,
+          "wall": 195.2,
+          "dur": 107.6
+        },
+        "telephony": {
+          "wer": 0.1411,
+          "rtf": 1.829,
+          "wall": 196.8,
+          "dur": 107.6
+        }
+      },
+      "G_novad": {
+        "clean": {
+          "wer": 0.0954,
+          "rtf": 1.85,
+          "wall": 199.1,
+          "dur": 107.6
+        },
+        "telephony": {
+          "wer": 0.1411,
+          "rtf": 1.864,
+          "wall": 200.5,
+          "dur": 107.6
+        }
+      },
+      "chunks_A": {
+        "clean": {
+          "x1": {
+            "wer": 0.1743,
+            "rtf": 0.369
+          },
+          "x3": {
+            "wer": 0.1743,
+            "rtf": 0.522
+          },
+          "dur": 107.6
+        },
+        "telephony": {
+          "x1": {
+            "wer": 0.1826,
+            "rtf": 0.373
+          },
+          "x3": {
+            "wer": 0.1743,
+            "rtf": 0.514
+          },
+          "dur": 107.6
+        }
+      }
+    }
+  }
+}
