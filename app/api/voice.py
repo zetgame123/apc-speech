@@ -279,7 +279,7 @@ async def voice_search(
             # Весов T-one нет (чистый клон/CI без models/): модель временно
             # недоступна — это 503 с Retry-After, а не 500. Сообщение по-русски,
             # без путей и деталей окружения (PII/секреты не утекают).
-            logger.error("voice_search_model_missing", error=str(e))
+            logger.error("voice_search_model_missing")
             raise AppError(
                 error="voice_model_unavailable",
                 message="Модель голосового поиска недоступна, повторите запрос позже",

@@ -481,6 +481,30 @@ cpuset 4,6. Дефолт whisper не менялся, ветка не созда
     3 сегмента монолога принудительно кластеризуются в 2 кластера,
     sep центроидов **10,95** против порога унификации 1,4 — монолог делится
     на 2 спикера, тест красный (воспроизведено локально скрытием весов).
+    Команда воспроизведения (нужен `data/evaluation_suite/voice10_monologue.wav`;
+    веса CAM++ не трогаются — fallback принуждается в памяти, `campplus_session=None`):
+    ```sh
+    APP_ENV=test DEV_TOKEN=dev-token uv run python - <<'EOF'
+    import numpy as np
+    from sklearn.cluster import AgglomerativeClustering
+    from app.diarization.mono_diarizer import MonoDiarizer
+    d = MonoDiarizer(num_speakers=2)
+    d.campplus_session = None  # запасной путь, как в CI без models/campplus.onnx
+    y = d._load_audio_mono("data/evaluation_suite/voice10_monologue.wav")
+    sr = 16000
+    feats = [d._extract_segment_features(y[int(s * sr):int(e * sr)], sr)
+             for s, e in ((0.0, 3.0), (3.5, 6.5), (7.0, 9.8))]
+    X_raw = np.array(feats)
+    std = np.std(X_raw, axis=0); std[std == 0] = 1.0
+    X = (X_raw - np.mean(X_raw, axis=0)) / std
+    X[:, 0] *= 3.5; X[:, 1] *= 1.5  # те же веса, что в mono_diarizer.py:551-552
+    labels = AgglomerativeClustering(n_clusters=2, metric="euclidean",
+                                     linkage="ward").fit_predict(X)
+    c0 = np.mean(X[labels == 0], axis=0); c1 = np.mean(X[labels == 1], axis=0)
+    print("labels:", labels.tolist(), "sep:", round(float(np.linalg.norm(c0 - c1)), 2))
+    # ожидалось: labels: [1, 0, 0] sep: 10.95 (порог унификации 1.4)
+    EOF
+    ```
 * Решение: запасной путь НЕ подгонялся (поднять порог до ~11 — значит убить
   детекцию диалогов, включая асимметричный тест; чинить — только по
   размеченным данным, отдельным пунктом). Тест явно скипается маркером

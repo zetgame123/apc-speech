@@ -301,15 +301,30 @@ async def test_upload_without_ffprobe_fails_closed(mock_infra, monkeypatch, tmp_
     """Без ffprobe в PATH загрузка отклоняется 4xx единой формой, а не 202.
 
     Fail-closed: если валидатор недоступен, файл нельзя признать годным
-    и тащить в S3/очередь — отказываем сразу (B8).
+    и тащить в S3/очередь — отказываем сразу (B8). Файл заведомо валидный
+    (тот же генератор, что даёт 202 при наличии ffprobe), поэтому отказ
+    доказывает именно отсутствие валидатора, а не битость входа.
     """
-    monkeypatch.setenv("PATH", str(tmp_path))  # пустой каталог: ffprobe не резолвится
+    valid_wav = make_wav_bytes(duration_sec=1)
+    headers = {"Authorization": "Bearer dev-token"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # Позитивный контроль: с ffprobe в PATH тот же валидный файл — 202.
+        ok = await ac.post(
+            "/v1/jobs/upload",
+            files={"file": ("valid.wav", valid_wav, "audio/wav")},
+            data={"namespace": "test_probe"},
+            headers=headers,
+        )
+        assert ok.status_code == 202
+
+        # Другое содержимое (иначе сработает дедупликация по хэшу и вернётся 200).
+        other_wav = make_wav_bytes(duration_sec=2)
+        monkeypatch.setenv("PATH", str(tmp_path))  # пустой каталог: ffprobe не резолвится
         resp = await ac.post(
             "/v1/jobs/upload",
-            files={"file": ("fake.wav", b"NOT-AUDIO" * 1000, "audio/wav")},
-            data={"namespace": "test_msk"},
-            headers={"Authorization": "Bearer dev-token"},
+            files={"file": ("valid2.wav", other_wav, "audio/wav")},
+            data={"namespace": "test_probe"},
+            headers=headers,
         )
         assert resp.status_code in (400, 413, 422)
         data = resp.json()
