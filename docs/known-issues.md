@@ -527,6 +527,21 @@ cpuset 4,6. Дефолт whisper не менялся, ветка не созда
     gitignored, ADR-017). Локально: сначала данные, потом тесты:
     `uv run python scripts/download_eval_data.py --no-cv --no-ruls --no-sova`,
     затем `uv run pytest tests/test_golos_regression.py`.
+
+## 31. Fail-closed проверка аудио против версий ffprobe (2026-10-14)
+
+* Причина 202 из п.30: `probe_audio` смотрел только на exit-код ffprobe.
+  `ffprobe 6.1.1-3ubuntu5` (apt в `ubuntu:24.04`, тот же в CI) опознаёт
+  мусор как `amr_nb` с duration 13,8 с и exit 0; `n9.0.1` тот же мусор
+  отвергает с exit 1. Плюс пустой `format` без duration давал 0.0 без отказа.
+* Чинка (`app/asr/preprocessor.py::probe_audio`): файл принимается, только
+  если есть ≥ 1 поток с `codec_type=audio`, duration конечна и > 0
+  (отсутствие, `N/A`, 0 — 400 `invalid_audio`) и первые 2 с декодируются
+  `ffmpeg -xerror` с exit 0 (мусор-as-amr и обрезки роняют декодер на обеих
+  версиях: exit 69/183 против 0 у валидного wav). Все отказы — единый слаг
+  400 `invalid_audio`. Тесты: мусор/пустой/обрезанный через HTTP + моки веток
+  разбора + валидный wav как положительный контроль
+  (`tests/test_foundation_b3_b6_b8.py`). Старый тест не ослаблялся.
 * 202 в `test_upload_corrupt_audio_rejected_by_probe` — **воспроизведён**
   2026-10-14, причина — версия ffprobe (чинка следующим коммитом):
   * Локально (Arch, ffprobe **n9.0.1**): мусор `b"NOT-AUDIO"*1000` под именем

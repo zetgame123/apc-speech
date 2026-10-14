@@ -296,6 +296,149 @@ async def test_upload_corrupt_audio_rejected_by_probe(mock_infra):
         assert resp.status_code in (400, 413, 422)
 
 
+def make_empty_wav_bytes(sample_rate=16000):
+    """Корректный заголовок WAV без данных: потоков ffprobe хватает, duration нет."""
+    return struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF",
+        36,
+        b"WAVE",
+        b"fmt ",
+        16,
+        1,
+        1,
+        sample_rate,
+        sample_rate * 2,
+        2,
+        16,
+        b"data",
+        0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_upload_garbage_rejected_with_invalid_audio_envelope(mock_infra):
+    """Мусор под видом wav — ровно 400 invalid_audio в единой форме (fail-closed)."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(
+            "/v1/jobs/upload",
+            files={"file": ("fake.wav", b"NOT-AUDIO" * 1000, "audio/wav")},
+            data={"namespace": "test_probe_garbage"},
+            headers={"Authorization": "Bearer dev-token"},
+        )
+        assert resp.status_code == 400
+        data = resp.json()
+        assert set(data) == {"error", "message", "details"}
+        assert data["error"] == "invalid_audio"
+        assert isinstance(data["message"], str) and data["message"]
+
+
+@pytest.mark.asyncio
+async def test_upload_empty_container_rejected(mock_infra):
+    """Пустой контейнер (заголовок без данных, duration нет) — 400 invalid_audio."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(
+            "/v1/jobs/upload",
+            files={"file": ("empty.wav", make_empty_wav_bytes(), "audio/wav")},
+            data={"namespace": "test_probe_empty"},
+            headers={"Authorization": "Bearer dev-token"},
+        )
+        assert resp.status_code == 400
+        data = resp.json()
+        assert set(data) == {"error", "message", "details"}
+        assert data["error"] == "invalid_audio"
+
+
+@pytest.mark.asyncio
+async def test_upload_truncated_wav_rejected(mock_infra):
+    """Обрезанный wav (половина байт) — 400 invalid_audio, а не 202."""
+    full = make_wav_bytes(duration_sec=1)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(
+            "/v1/jobs/upload",
+            files={"file": ("cut.wav", full[: len(full) // 2], "audio/wav")},
+            data={"namespace": "test_probe_truncated"},
+            headers={"Authorization": "Bearer dev-token"},
+        )
+        assert resp.status_code == 400
+        data = resp.json()
+        assert set(data) == {"error", "message", "details"}
+        assert data["error"] == "invalid_audio"
+
+
+@pytest.mark.asyncio
+async def test_upload_valid_wav_accepted_as_control(mock_infra):
+    """Положительный контроль: валидный wav той же генерации — 202."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(
+            "/v1/jobs/upload",
+            files={"file": ("ok.wav", make_wav_bytes(duration_sec=1), "audio/wav")},
+            data={"namespace": "test_probe_control"},
+            headers={"Authorization": "Bearer dev-token"},
+        )
+        assert resp.status_code == 202
+
+
+def test_probe_audio_rejects_bad_probe_output(monkeypatch):
+    """Ветки разбора ffprobe-вывода: нет потоков / нет аудио / duration нет, N/A, 0.
+
+    Моки subprocess: ffprobe отдаёт заданный JSON, декодер успешен — отказ
+    обязан прийти именно из валидации заголовков, одинаково на любой версии.
+    """
+    import json as jsonlib
+
+    from app.asr import preprocessor as pre_mod
+    from app.core.errors import AppError
+
+    audio_stream = {
+        "codec_name": "pcm_s16le",
+        "codec_type": "audio",
+        "channels": 1,
+        "sample_rate": "16000",
+    }
+    variants = {
+        "no_streams": {"streams": [], "format": {"duration": "1.000000"}},
+        "video_only": {
+            "streams": [{"codec_name": "png", "codec_type": "video"}],
+            "format": {"duration": "1.000000"},
+        },
+        "duration_missing": {"streams": [audio_stream], "format": {}},
+        "duration_na": {"streams": [audio_stream], "format": {"duration": "N/A"}},
+        "duration_zero": {"streams": [audio_stream], "format": {"duration": "0.000000"}},
+    }
+    good_decode = MagicMock()
+    good_decode.returncode = 0
+
+    for name, payload in variants.items():
+        probe_out = MagicMock()
+        probe_out.stdout = jsonlib.dumps(payload)
+        probe_out.returncode = 0
+
+        def fake_run(cmd, **kwargs):
+            return probe_out if cmd[0] == "ffprobe" else good_decode
+
+        monkeypatch.setattr(pre_mod.subprocess, "run", fake_run)
+        with pytest.raises(AppError) as exc_info:
+            pre_mod.AudioPreprocessor().probe_audio("/tmp/whatever.wav")
+        assert exc_info.value.error == "invalid_audio", name
+        assert exc_info.value.status_code == 400, name
+
+    # Положительный контроль мока: корректный вывод даёт словарь, а не исключение.
+    probe_out = MagicMock()
+    probe_out.stdout = jsonlib.dumps(
+        {"streams": [audio_stream], "format": {"duration": "1.000000"}}
+    )
+    probe_out.returncode = 0
+
+    def fake_run_ok(cmd, **kwargs):
+        return probe_out if cmd[0] == "ffprobe" else good_decode
+
+    monkeypatch.setattr(pre_mod.subprocess, "run", fake_run_ok)
+    info = pre_mod.AudioPreprocessor().probe_audio("/tmp/whatever.wav")
+    assert info["duration"] == 1.0
+    assert info["channels"] == 1
+
+
 @pytest.mark.asyncio
 async def test_upload_without_ffprobe_fails_closed(mock_infra, monkeypatch, tmp_path):
     """Без ffprobe в PATH загрузка отклоняется 4xx единой формой, а не 202.
