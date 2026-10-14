@@ -3,44 +3,60 @@
 #
 # Что делает:
 #   1. Проверяет, что рабочее дерево репозитория чистое (проверяем коммит, а не черновик).
-#   2. Клонирует репозиторий в новую пустую папку /tmp/opencode/apc-clean-<дата>.
-#   3. В клоне выполняет ТОЛЬКО шаги из README «Быстрый старт»:
+#   2. Проверяет свободное место (нужно не менее 15 ГБ) и свободный порт,
+#      падает с понятной причиной до клона/сборки.
+#   3. Клонирует репозиторий в новую пустую папку на ДИСКЕ
+#      ${CLEAN_CHECK_BASE:-${XDG_CACHE_HOME:-~/.cache}/apc-clean}/apc-clean-<дата>
+#      (не в /tmp: там tmpfs в RAM, а клон + модели занимают ~3-7 ГБ).
+#      В том же каталоге лежат и временные файлы прогона (логи, образцы).
+#   4. В клоне выполняет ТОЛЬКО шаги из README «Быстрый старт»:
 #      cp .env.example .env + APP_ENV=development, DEV_TOKEN, CALLBACK_SIGNING_SECRET.
-#   4. Холодный старт: docker compose up -d --build, ожидание 8/8 healthy.
-#   5. Выполняет docs/acceptance-requests.md по шагам, пишет сводку PASS/FAIL/WARN.
-#   6. Пишет отчёт в reports/clean_machine_<дата>.md РЕПОЗИТОРИЯ-ИСТОЧНИКА
+#   5. Холодный старт: docker compose up -d --build, ожидание 8/8 healthy.
+#      При падении печатает последние 40 строк лога и имя упавшего сервиса.
+#   6. Выполняет docs/acceptance-requests.md по шагам, пишет сводку PASS/FAIL/WARN.
+#   7. Пишет отчёт в reports/clean_machine_<дата>.md РЕПОЗИТОРИЯ-ИСТОЧНИКА
 #      (без секретов и без текстов расшифровок — только коды, тайминги, счётчики).
-#   7. Гасит стенд командой `docker compose down` БЕЗ -v (данные томов не трогаем).
+#   8. Гасит стенд командой `docker compose -p <свой-project> down -v`
+#      (только тома/сети этого прогона; чужой рабочий стек не трогает)
+#      и удаляет временный клон и временные файлы прогона.
 #
 # Единственное отступление от README: хост-порт api переназначен на 8001
-# (override-файл в /tmp, клон не правится), потому что 8000 на этой машине
-# занят рабочим стеком. Сам контейнер слушает 8000, как по README.
-# sudo не используется.
+# (override-файл во временном каталоге прогона, клон не правится), потому что 8000
+# на этой машине занят рабочим стеком. Сам контейнер слушает 8000, как по README.
+# Порт переопределяется через CLEAN_CHECK_HOST_PORT. sudo не используется.
 #
 # Использование:
 #   bash scripts/clean_machine_check.sh
+#   CLEAN_CHECK_BASE=/data/clean bash scripts/clean_machine_check.sh
 # Код выхода: 0 — все шаги PASS (WARN допустимы), 1 — есть FAIL либо стенд не встал.
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STAMP="$(date +%Y-%m-%d_%H%M)"
-CLONE_DIR="/tmp/opencode/apc-clean-${STAMP}"
+# База на диске, а не в /tmp (там tmpfs в RAM, а клон + скачанные модели
+# занимают ~3-7 ГБ). Переопределение: CLEAN_CHECK_BASE=/data/clean.
+BASE_DIR="${CLEAN_CHECK_BASE:-${XDG_CACHE_HOME:-$HOME/.cache}/apc-clean}"
+CLONE_DIR="${BASE_DIR}/apc-clean-${STAMP}"
+RUN_TMP="${BASE_DIR}/run-${STAMP}"
 # Уникальный project name на прогон = свежие именованные тома (БД/S3) вместо
 # переиспользования томов прошлого прогона: иначе контент-дедуп (C9) вернёт 200
 # за чужое задание, а чистка прошлого прогона уже удалила его звонок (каскад
-# ложных FAIL). Старые тома не удаляем (down без -v).
+# ложных FAIL).
 PROJECT="apc-clean-${STAMP//[_]/-}"
-HOST_PORT="8001"
+HOST_PORT="${CLEAN_CHECK_HOST_PORT:-8001}"
 BASE="http://localhost:${HOST_PORT}"
 NS="clean_msk"
 REPORT="${REPO_ROOT}/reports/clean_machine_${STAMP}.md"
-UPLOG="/tmp/opencode/clean_check_${STAMP}.up.log"
-RAWLOG="/tmp/opencode/clean_check_${STAMP}.log"
+UPLOG="${RUN_TMP}/up.log"
+RAWLOG="${RUN_TMP}/check.log"
+MIN_DISK_GB=15
+mkdir -p "${BASE_DIR}" "${RUN_TMP}"
 : > "${RAWLOG}"
 FAIL=0
 WARN=0
 UP_OK=1
-OVERRIDE_YML="$(mktemp)"
+COMPOSE=""
+OVERRIDE_YML="$(mktemp "${RUN_TMP}/override-XXXXXX.yml")"
 echo "лог сборки/старта: ${UPLOG}" | tee "${RAWLOG}"
 
 pass() { echo "PASS: $1" | tee -a "${RAWLOG}"; }
@@ -48,6 +64,68 @@ fail() { echo "FAIL: $1" | tee -a "${RAWLOG}"; FAIL=$((FAIL + 1)); }
 warn() { echo "WARN: $1" | tee -a "${RAWLOG}"; WARN=$((WARN + 1)); }
 info() { echo "$1" | tee -a "${RAWLOG}"; }
 sleep_between() { sleep 2; }
+
+# Последние 40 строк лога сборки/старта + имя упавшего сервиса + его хвост.
+# COMPOSE задаётся ниже (после .env); вызывается только после старта.
+dump_failure_diagnostics() {
+  info "--- последние 40 строк лога сборки/старта (${UPLOG}) ---"
+  tail -n 40 "${UPLOG}" 2>/dev/null | tee -a "${RAWLOG}" || true
+  info "--- состояние сервисов проекта ${PROJECT} ---"
+  ${COMPOSE} ps 2>&1 | tee -a "${RAWLOG}" || true
+  # Нездоровые/упавшие сервисы: всё, кроме healthy и одноразовых
+  # alembic-migrate/model-downloader (им положено быть exited).
+  local bad
+  bad="$(${COMPOSE} ps --format json 2>/dev/null | python3 -c '
+import json, sys
+bad = []
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        s = json.loads(line)
+    except ValueError:
+        continue
+    if not isinstance(s, dict):
+        continue
+    svc = s.get("Service", "?")
+    if s.get("Health") == "healthy":
+        continue
+    if s.get("State") == "exited" and (
+        s.get("ExitCode", 0) == 0
+        or svc in ("alembic-migrate", "model-downloader")
+    ):
+        continue
+    bad.append(svc)
+print(" ".join(bad))
+' 2>/dev/null || true)"
+  if [ -n "${bad}" ]; then
+    info "упавшие/нездоровые сервисы: ${bad}"
+    local svc
+    for svc in ${bad}; do
+      info "--- последние 40 строк лога сервиса ${svc} ---"
+      ${COMPOSE} logs --no-color --tail=40 "${svc}" 2>&1 | tee -a "${RAWLOG}" || true
+    done
+  else
+    info "упавшие сервисы не опознаны (все healthy/exited-0 либо ps недоступен)"
+  fi
+}
+
+# Снос только своего стенда: ${COMPOSE} всегда содержит -p ${PROJECT},
+# поэтому down -v удаляет лишь тома/сети этого прогона; рабочий стек
+# (другой project name) не затрагивается. rm -rf — только внутри BASE_DIR.
+cleanup_run() {
+  if [ -n "${COMPOSE}" ] && [ -d "${CLONE_DIR}" ]; then
+    (cd "${CLONE_DIR}" && ${COMPOSE} down -v >>"${RAWLOG}" 2>&1) || true
+  fi
+  rm -f "${OVERRIDE_YML}" 2>/dev/null || true
+  case "${CLONE_DIR}" in
+    "${BASE_DIR}/"*) rm -rf "${CLONE_DIR}" || true ;;
+  esac
+  case "${RUN_TMP}" in
+    "${BASE_DIR}/"*) rm -rf "${RUN_TMP}" || true ;;
+  esac
+}
 
 # code_of <outfile> <curl-args...>: curl c записью тела в файл и печатью кода;
 # при 429 ждёт окно лимита (11 с) и повторяет один раз.
@@ -62,19 +140,44 @@ code_of() {
   echo "${code}"
 }
 
-# --- 0. Чистота дерева и свободный порт -------------------------------------
+# --- 0. Чистота дерева, место на диске, свободный порт, нужные команды --------
+# Порядок: сначала дешёвые проверки с понятной причиной падения, чтобы не
+# упираться в долгое «compose up неуспешен дважды» из-за занятого порта
+# или переполненного диска.
 cd "${REPO_ROOT}"
 # Проверяем только трекаемые файлы: нетронутый скрипт в рабочей копии на клон
 # не влияет (клон содержит только закоммиченный HEAD, чей SHA пишется в отчёт).
 if [ -n "$(git status --porcelain | grep -v '^??')" ]; then
-  echo "FAIL: рабочее дерево нечистое — проверяем только закоммиченное состояние" | tee "${RAWLOG}"
+  echo "FAIL: рабочее дерево нечистое — проверяем только закоммиченное состояние"
   exit 1
 fi
 HEAD_SHA="$(git rev-parse --short HEAD)"
-if (curl -s -m 2 -o /dev/null "http://localhost:${HOST_PORT}/health"); then
-  echo "FAIL: порт ${HOST_PORT} уже занят" | tee "${RAWLOG}"
+
+# Место: клон + модели (~3-7 ГБ) + сборка; нужно не менее MIN_DISK_GB.
+AVAIL_KB="$(df -k --output=avail "${BASE_DIR}" 2>/dev/null | tail -n 1 | tr -d ' ' || true)"
+if ! [[ "${AVAIL_KB}" =~ ^[0-9]+$ ]]; then
+  echo "FAIL: не могу проверить свободное место на ${BASE_DIR} (df неуспешен)"
   exit 1
 fi
+if [ "${AVAIL_KB}" -lt "$((MIN_DISK_GB * 1024 * 1024))" ]; then
+  echo "FAIL: на ${BASE_DIR} свободно ~$((AVAIL_KB / 1024 / 1024)) ГБ, нужно не менее ${MIN_DISK_GB} ГБ (клон + модели + сборка). Освободите место или задайте CLEAN_CHECK_BASE=<каталог-на-диске-с-местом>"
+  exit 1
+fi
+
+# Порт: занят — либо рабочим стеком, либо чужим процессом. /dev/tcp ловит
+# и не-HTTP занятие (curl один его бы пропустил).
+port_busy() { (echo > "/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1; }
+if port_busy "${HOST_PORT}" || (curl -s -m 2 -o /dev/null "http://localhost:${HOST_PORT}/health"); then
+  echo "FAIL: порт ${HOST_PORT} уже занят (возможно, рабочим стеком). Освободите порт или задайте CLEAN_CHECK_HOST_PORT=<свободный-порт>"
+  exit 1
+fi
+
+for _cmd in git docker curl python3 ffmpeg; do
+  if ! command -v "${_cmd}" >/dev/null 2>&1; then
+    echo "FAIL: нет команды ${_cmd} в PATH — установите и повторите"
+    exit 1
+  fi
+done
 
 # --- 1. Клон в новую пустую папку -------------------------------------------
 mkdir -p "${CLONE_DIR}"
@@ -83,7 +186,7 @@ if [ -n "$(ls -A "${CLONE_DIR}")" ]; then
   exit 1
 fi
 git clone -q "${REPO_ROOT}" "${CLONE_DIR}" >>"${RAWLOG}" 2>&1 \
-  || { echo "FAIL: git clone" | tee -a "${RAWLOG}"; exit 1; }
+  || { echo "FAIL: git clone" | tee -a "${RAWLOG}"; cleanup_run; exit 1; }
 cd "${CLONE_DIR}"
 info "клон: ${REPO_ROOT}@${HEAD_SHA} -> ${CLONE_DIR}"
 
@@ -95,7 +198,7 @@ sed -i 's/^APP_ENV=.*/APP_ENV=development/' .env
 sed -i 's/^DEV_TOKEN=.*/DEV_TOKEN=__SET_BY_CHECK_SCRIPT__/' .env
 sed -i 's/^CALLBACK_SIGNING_SECRET=.*/CALLBACK_SIGNING_SECRET=__SET_BY_CHECK_SCRIPT__/' .env
 # Подстановка секретов без засветки в лог: python, не sed с секретом в argv-ле?
-# (argv виден в ps; файл .env живёт только в /tmp-клоне, в отчёт секреты не идут).
+# (argv виден в ps; файл .env живёт только во временном клоне, в отчёт секреты не идут).
 python3 - "${TOKEN}" "${SECRET}" <<'EOF'
 import sys
 p = ".env"
@@ -104,7 +207,7 @@ s = s.replace("__SET_BY_CHECK_SCRIPT__", sys.argv[1], 1)
 s = s.replace("__SET_BY_CHECK_SCRIPT__", sys.argv[2], 1)
 open(p, "w").write(s)
 EOF
-grep -q '^APP_ENV=development$' .env || { echo "FAIL: .env APP_ENV" | tee -a "${RAWLOG}"; exit 1; }
+grep -q '^APP_ENV=development$' .env || { echo "FAIL: .env APP_ENV" | tee -a "${RAWLOG}"; cleanup_run; exit 1; }
 
 # Override только для хост-порта (см. шапку скрипта). !override — заменить
 # маппинг целиком: без него compose добавляет 8001:8000 к штатному 8000:8000,
@@ -157,7 +260,7 @@ print(n)
 done
 info "healthy/exited сервисов: ${healthy}/8"
 if [ "${healthy}" != "8" ]; then
-  ${COMPOSE} ps >>"${RAWLOG}" 2>&1
+  dump_failure_diagnostics
   fail "холодный старт: ${healthy}/8 (лимит 40 мин)"
 else
   pass "холодный старт: 8/8 healthy"
@@ -188,13 +291,13 @@ else fail "0c GET /metrics"; fi
 sleep_between
 
 # Шаг 1. Приём аудио.
-curl -s -H "$(auth)" "${BASE}/v1/voice/sample-audio" -o /tmp/opencode/clean_sample.wav
-if python3 -c "import sys; assert open('/tmp/opencode/clean_sample.wav','rb').read(4)==b'RIFF'" 2>/dev/null; then
+curl -s -H "$(auth)" "${BASE}/v1/voice/sample-audio" -o "${RUN_TMP}/clean_sample.wav"
+if python3 -c "import sys; assert open('${RUN_TMP}/clean_sample.wav','rb').read(4)==b'RIFF'" 2>/dev/null; then
   pass "1 sample-audio: валидный wav"
 else fail "1 sample-audio"; fi
 sleep_between
 UP_RAW="$(curl -s -w '\n%{http_code}' -X POST "${BASE}/v1/jobs/upload" -H "$(auth)" \
-  -F "namespace=${NS}" -F "file=@/tmp/opencode/clean_sample.wav" \
+  -F "namespace=${NS}" -F "file=@${RUN_TMP}/clean_sample.wav" \
   -F "external_id=clean-001" -F "direction=inbound" -F "manager_id=mgr-1" -F "client_id=cli-1")"
 CODE1="$(echo "${UP_RAW}" | tail -1)"
 UP1="$(echo "${UP_RAW}" | head -n -1)"
@@ -204,36 +307,36 @@ if [ "${CODE1}" = "202" ] && [ -n "${JOB}" ] && echo "${UP1}" | grep -q status_u
 else fail "1a upload (код ${CODE1})"; fi
 sleep_between
 UPA="$(curl -s -X POST "${BASE}/v1/jobs/upload" -H "$(auth)" -H "Idempotency-Key: clean-001" \
-  -F "namespace=${NS}" -F "file=@/tmp/opencode/clean_sample.wav")"
+  -F "namespace=${NS}" -F "file=@${RUN_TMP}/clean_sample.wav")"
 UPB="$(curl -s -X POST "${BASE}/v1/jobs/upload" -H "$(auth)" -H "Idempotency-Key: clean-001" \
-  -F "namespace=${NS}" -F "file=@/tmp/opencode/clean_sample.wav")"
+  -F "namespace=${NS}" -F "file=@${RUN_TMP}/clean_sample.wav")"
 if [ "$(echo "${UPA}" | jget job_id)" = "$(echo "${UPB}" | jget job_id)" ] \
   && [ -n "$(echo "${UPA}" | jget job_id)" ]; then
   pass "1b идемпотентность: повтор тем же ключом — тот же job_id"
 else fail "1b идемпотентность"; fi
 sleep_between
 # SSRF-защита: приватный адрес обязан отклоняться 4xx-конвертом.
-SSRF_CODE="$(code_of /tmp/opencode/clean_ssrf.json -X POST "${BASE}/v1/jobs/by-url" \
+SSRF_CODE="$(code_of "${RUN_TMP}/clean_ssrf.json" -X POST "${BASE}/v1/jobs/by-url" \
   -H "$(auth)" -H "Content-Type: application/json" \
   -d "{\"namespace\":\"${NS}\",\"url\":\"http://127.0.0.1:9/call.wav\"}")"
 if echo "${SSRF_CODE}" | grep -qE '^(400|422)$' \
-  && python3 -c 'import json; d=json.load(open("/tmp/opencode/clean_ssrf.json")); assert set(d)=={"error","message","details"}'; then
+  && python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert set(d)=={"error","message","details"}' "${RUN_TMP}/clean_ssrf.json"; then
   pass "1в SSRF-блок: приватный URL -> ${SSRF_CODE} + конверт"
 else fail "1в SSRF-блок (код ${SSRF_CODE})"; fi
 sleep_between
-BYURL_CODE="$(code_of /tmp/opencode/clean_byurl.json -X POST "${BASE}/v1/jobs/by-url" \
+BYURL_CODE="$(code_of "${RUN_TMP}/clean_byurl.json" -X POST "${BASE}/v1/jobs/by-url" \
   -H "$(auth)" -H "Content-Type: application/json" \
   -d "{\"namespace\":\"${NS}\",\"url\":\"https://example.com/call.wav\"}")"
 if echo "${BYURL_CODE}" | grep -qE '^(202|400|422)$' \
-  && python3 -c 'import json; json.load(open("/tmp/opencode/clean_byurl.json"))'; then
+  && python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "${RUN_TMP}/clean_byurl.json"; then
   pass "1в by-url публичный: код ${BYURL_CODE}, валидный JSON"
 else fail "1в by-url публичный (код ${BYURL_CODE})"; fi
 sleep_between
-S3_CODE="$(code_of /tmp/opencode/clean_bys3.json -X POST "${BASE}/v1/jobs/by-s3" \
+S3_CODE="$(code_of "${RUN_TMP}/clean_bys3.json" -X POST "${BASE}/v1/jobs/by-s3" \
   -H "$(auth)" -H "Content-Type: application/json" \
   -d "{\"namespace\":\"${NS}\",\"s3_key\":\"no-such-key.wav\",\"s3_bucket\":\"raw-audio\"}")"
 if echo "${S3_CODE}" | grep -qE '^(400|404|422)$' \
-  && python3 -c 'import json; d=json.load(open("/tmp/opencode/clean_bys3.json")); assert set(d)=={"error","message","details"}'; then
+  && python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert set(d)=={"error","message","details"}' "${RUN_TMP}/clean_bys3.json"; then
   pass "1г by-s3 отсутствующий ключ -> ${S3_CODE} + конверт"
 else fail "1г by-s3 (код ${S3_CODE})"; fi
 sleep_between
@@ -272,7 +375,7 @@ sleep_between
 # Шаг 4. Голосовой поиск (фиксируем латентность; 503-timeout — документированное поведение).
 V_START="$(date +%s%N)"
 V_RESP="$(curl -s -w '\n%{http_code}' -X POST "${BASE}/v1/voice/search?namespace=${NS}&language=ru" \
-  -H "$(auth)" -F "file=@/tmp/opencode/clean_sample.wav;type=audio/wav")"
+  -H "$(auth)" -F "file=@${RUN_TMP}/clean_sample.wav;type=audio/wav")"
 V_CODE="$(echo "${V_RESP}" | tail -1)"
 V_BODY="$(echo "${V_RESP}" | head -n -1)"
 V_MS="$(( ($(date +%s%N) - V_START) / 1000000 ))"
@@ -305,19 +408,19 @@ if [ "${SUM_CODE}" = "200" ]; then pass "6a analytics/summary 200"; else fail "6
 sleep_between
 # Пейлоад через файл (кириллица в argv бьётся на некоторых шеллах; тексты
 # синтетические, не из расшифровок).
-cat > /tmp/opencode/clean_texts.json <<'EOF'
+cat > "${RUN_TMP}/clean_texts.json" <<'EOF'
 {"namespace": "demo_outdoor_msk",
  "texts": ["щиты 3х6 в Балашихе на октябрь", "узнать прайс на суперсайт"]}
 EOF
 CLU="$(curl -s -X POST "${BASE}/v1/texts/analyze" -H "$(auth)" -H "Content-Type: application/json" \
-  --data-binary "@/tmp/opencode/clean_texts.json")"
+  --data-binary "@${RUN_TMP}/clean_texts.json")"
 if echo "${CLU}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("clusters") is not None' 2>/dev/null; then
   pass "6b texts/analyze 200 + кластеры"
 else fail "6b texts/analyze"; fi
 sleep_between
-CSV_CODE="$(code_of /tmp/opencode/clean_export.csv \
+CSV_CODE="$(code_of "${RUN_TMP}/clean_export.csv" \
   "${BASE}/v1/analytics/export_csv?namespace=${NS}&date_from=2026-09-01T00:00:00Z" -H "$(auth)")"
-if [ "${CSV_CODE}" = "200" ] && [ -s /tmp/opencode/clean_export.csv ]; then
+if [ "${CSV_CODE}" = "200" ] && [ -s "${RUN_TMP}/clean_export.csv" ]; then
   pass "6c export_csv 200 + непустой CSV"
 else fail "6c export_csv (${CSV_CODE})"; fi
 sleep_between
@@ -360,11 +463,11 @@ sleep_between
 # Отдельный синтетический файл: повтор sample.wav дал бы 200 по контент-дедупу (C9),
 # а здесь проверяется именно создание задания — нужен другой хэш.
 ffmpeg -y -v error -f lavfi -i "sine=frequency=440:duration=3" \
-  -ar 16000 -ac 1 -c:a pcm_s16le /tmp/opencode/clean_callback.wav \
+  -ar 16000 -ac 1 -c:a pcm_s16le "${RUN_TMP}/clean_callback.wav" \
   || { fail "9 синтез wav для callback"; CB_CODE="000"; }
-if [ -f /tmp/opencode/clean_callback.wav ]; then
+if [ -f "${RUN_TMP}/clean_callback.wav" ]; then
 CB_CODE="$(code_of /dev/null -X POST "${BASE}/v1/jobs/upload" -H "$(auth)" \
-  -F "namespace=${NS}" -F "file=@/tmp/opencode/clean_callback.wav" \
+  -F "namespace=${NS}" -F "file=@${RUN_TMP}/clean_callback.wav" \
   -F "callback_url=https://example.com/hook")"
 if [ "${CB_CODE}" = "202" ]; then pass "9 upload с callback_url 202"; else fail "9 callback job (${CB_CODE})"; fi
 fi
@@ -388,7 +491,8 @@ curl -s -o /dev/null -X DELETE \
 info "чистка периодом выполнена (best-effort)"
 
 else
-  fail "холодный старт: compose up неуспешен дважды (см. лог сборки)"
+  dump_failure_diagnostics
+  fail "холодный старт: compose up неуспешен дважды (диагностика выше: хвост лога + упавшие сервисы)"
 fi
 
 # --- 4. Отчёт (без секретов и текстов) -----------------------------------------
@@ -418,16 +522,18 @@ fi
     echo "**Итог: приёмка НЕ пройдена целиком (FAIL=${FAIL}, WARN=${WARN}).**"
   fi
 } > "${REPORT}"
-# Страховка: секреты в отчёт попасть не должны (токен/сикрет — только в /tmp-клоне).
+# Страховка: секреты в отчёт попасть не должны (токен/сикрет — только во временном клоне).
 if grep -qE "${TOKEN}|${SECRET}" "${REPORT}"; then
   echo "FAIL: секрет попал в отчёт" | tee -a "${RAWLOG}"
   FAIL=$((FAIL + 1))
 fi
 
-# --- 5. Гашение стенда (без -v) -------------------------------------------------
-cd "${CLONE_DIR}"
-${COMPOSE} down >>"${RAWLOG}" 2>&1 || true
-rm -f "${OVERRIDE_YML}"
+# --- 5. Гашение стенда и удаление временных данных -------------------------------
+# down -v ограничен своим project name (см. cleanup_run): удаляются только
+# тома/сети этого прогона, чужой рабочий стек не затрагивается.
+# Затем удаляются временный клон и временные файлы прогона (RUN_TMP с логами —
+# после того, как отчёт уже собран; в отчёт секреты и тексты не входят).
+cleanup_run
 
-echo "отчёт: ${REPORT}; FAIL=${FAIL} WARN=${WARN}; клон оставлен: ${CLONE_DIR}"
+echo "отчёт: ${REPORT}; FAIL=${FAIL} WARN=${WARN}; клон и тома прогона удалены"
 [ "${FAIL}" = "0" ]
