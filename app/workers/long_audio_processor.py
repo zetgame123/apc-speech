@@ -174,6 +174,7 @@ async def process_job(job_id: str, data: dict):
                 segs, _ = asr_engine.transcribe(
                     chunk["data"],
                     language=target_lang,
+                    beam_size=1,
                     initial_prompt=hints_prompt,
                     hotwords=hints_prompt,
                 )
@@ -196,6 +197,7 @@ async def process_job(job_id: str, data: dict):
                 segs, _ = asr_engine.transcribe(
                     chunk["data"],
                     language=target_lang,
+                    beam_size=1,
                     initial_prompt=hints_prompt,
                     hotwords=hints_prompt,
                 )
@@ -243,6 +245,7 @@ async def process_job(job_id: str, data: dict):
                 segs, _ = asr_engine.transcribe(
                     chunk["data"],
                     language=target_lang,
+                    beam_size=1,
                     initial_prompt=hints_prompt,
                     hotwords=hints_prompt,
                 )
