@@ -297,6 +297,27 @@ async def test_upload_corrupt_audio_rejected_by_probe(mock_infra):
 
 
 @pytest.mark.asyncio
+async def test_upload_without_ffprobe_fails_closed(mock_infra, monkeypatch, tmp_path):
+    """Без ffprobe в PATH загрузка отклоняется 4xx единой формой, а не 202.
+
+    Fail-closed: если валидатор недоступен, файл нельзя признать годным
+    и тащить в S3/очередь — отказываем сразу (B8).
+    """
+    monkeypatch.setenv("PATH", str(tmp_path))  # пустой каталог: ffprobe не резолвится
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(
+            "/v1/jobs/upload",
+            files={"file": ("fake.wav", b"NOT-AUDIO" * 1000, "audio/wav")},
+            data={"namespace": "test_msk"},
+            headers={"Authorization": "Bearer dev-token"},
+        )
+        assert resp.status_code in (400, 413, 422)
+        data = resp.json()
+        assert set(data) == {"error", "message", "details"}
+        assert isinstance(data["message"], str) and data["message"]
+
+
+@pytest.mark.asyncio
 async def test_voice_queue_unavailable_returns_503_with_retry_after(monkeypatch):
     """Очередь голосового поиска недоступна — 503 + Retry-After (B4/B6)."""
     from app.core.config import get_settings

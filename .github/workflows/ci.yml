@@ -18,6 +18,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg curl
+          # ffprobe идёт в пакете ffmpeg; загрузка валидируется им (fail-closed, B8)
+          ffprobe -version
 
       - name: Install uv package manager
         uses: astral-sh/setup-uv@v3
