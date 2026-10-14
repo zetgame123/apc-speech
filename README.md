@@ -123,18 +123,21 @@ curl -s -X POST "$BASE/v1/voice/search?namespace=outdoor_msk&language=ru" \
 | `MAX_PENDING_JOBS` | `100` | Сверх лимита `queued`/`running` — `429` + `Retry-After` |
 | `PENDING_DOWNLOAD_TIMEOUT_SEC` | `600` | Зависшие `pending_download` уходят в `failed` с callback |
 | `VOICE_SEARCH_MAX_DURATION_SEC` | `60` | Максимум синхронного запроса |
-| `VOICE_SEARCH_MODEL_NAME` / `VOICE_SEARCH_BEAM_SIZE` | `small` / `1` | Путь whisper быстрого поиска³ |
+| `VOICE_SEARCH_MODEL_NAME` / `VOICE_SEARCH_BEAM_SIZE` | `./models/whisper-small` / `1` | Локальный путь whisper small (качает model-downloader); compose уважает `.env`, без него — тот же пин³ |
 | `VOICE_SEARCH_ENGINE` | `tone` | `tone` (дефолт, T-one) или `whisper` |
 | `VOICE_SEARCH_MAX_CONCURRENCY` / `VOICE_SEARCH_QUEUE_WAIT_SEC` | `1` / `0.1` | Переполнение — `503` + `Retry-After` |
 | `VOICE_SEARCH_USE_WORKER` / `VOICE_SEARCH_RESULT_TIMEOUT_SEC` | `true` / `2.5` | Отдельная очередь `worker-fast`; ожидание ответа⁴ |
 | `VOICE_SEARCH_BEAM_MIN` | `2` | Нижняя граница beam (диагностика, не менять) |
-| `TONE_MODEL_DIR` / `TONE_MODEL_FILE` / `TONE_THREADS` | `./models/t-one` / `model.onnx` / `1` | T-one; потоков — по числу физических ядер, `OMP_NUM_THREADS` держать 1 |
+| `VOICE_SEARCH_INITIAL_PROMPT` / `VOICE_SEARCH_HOTWORDS` | unset (встроенные) | Переопределение подсказок декодера; пустая строка = выкл; только для замеров |
+| `TONE_MODEL_DIR` / `TONE_MODEL_FILE` / `TONE_THREADS` | `./models/t-one` / `model.onnx` / `1` | T-one; потоков — по числу физических ядер. `OMP_NUM_THREADS` — не сервисный env: compose выставляет его из `ASR_THREADS` (воркеры пинят 1) |
 | `TONE_INTER_THREADS` / `TONE_GRAPH_OPT` / `TONE_DISABLE_ARENA` / `TONE_DISABLE_MEM_PATTERN` | `0` / `all` / `false` / `false` | Тонкие ручки onnxruntime (не менять) |
 | `TONE_FUZZY_THRESHOLD` | `0.0` | Нечёткие термины выключены (эксперимент показал вред) |
+| `TONE_FUZZY_OOV_ONLY` | `false` | Нечёткая замена только для слов вне словаря (в паре с порогом выше) |
 | `TONE_DECODE` / `TONE_BEAM_WIDTH` / `TONE_HOTWORD_WEIGHT` | `greedy` / `10` / `3.0` | Декодер T-one (дефолт greedy) |
 | `DIARIZATION_MIN_SPEAKER_DISTANCE` | `0.18` | Порог разделения спикеров |
 | `LOCAL_LLM_URL` / `LOCAL_LLM_MODEL` | `http://llm-runtime:8080/v1` / `qwen2.5-7b-instruct` | Локальный LLM-рантайм (`local-full`) |
 | `LLAMA_THREADS` | `4` | Потоки llama.cpp; на 8+ физических ядрах можно 6 |
+| `LOCAL_LLM_JSON_MODE` | `json_schema` | Режим constrained decoding (`json_object` — слабее, только для замеров) |
 | `LLM_EXTERNAL_PROVIDER_ENABLED` / `_URL` / `_API_KEY` / `_MODEL` | `false` / `""` / `""` / `gpt-4o-mini` | Внешний разбор только маскированного текста; по умолчанию выключен |
 | `RETENTION_AUDIO_DAYS` / `RETENTION_TEXT_DAYS` | `14` / `365` | Аудио в MinIO / тексты в Postgres |
 | `RATE_LIMIT_REQUESTS_PER_WINDOW` / `RATE_LIMIT_WINDOW_SEC` | `5` / `10` | Опрос статусов — не чаще 1 запроса в 3–5 с⁴ |
@@ -142,7 +145,7 @@ curl -s -X POST "$BASE/v1/voice/search?namespace=outdoor_msk&language=ru" \
 
 ¹ Кодовый дефолт `APP_ENV` — `development`; в примере стоит `production`, скрипт чистой машины ставит `development`.
 ² Пустой `DEV_TOKEN` в `.env` compose превращает в `dev-token` (подстановка `${DEV_TOKEN:-dev-token}`); кодовый дефолт тот же.
-³ При движке `tone` whisper-small не грузится. ⁴ Без `.env` compose подставляет свои дефолты: `RATE_LIMIT_REQUESTS_PER_WINDOW=30`, `VOICE_SEARCH_RESULT_TIMEOUT_SEC=2.4`, `VOICE_SEARCH_BEAM_SIZE=2`, `ASR_THREADS=4`; с `.env` из примера действуют значения примера. `LOCAL_LLM_URL`, `S3_*`, `REDIS_URL`, `DATABASE_URL` в коде по умолчанию указывают на localhost — в compose их перекрывают значения примера.
+³ При движке `tone` whisper-small не грузится. ⁴ Без `.env` compose подставляет свои дефолты: `RATE_LIMIT_REQUESTS_PER_WINDOW=30`, `VOICE_SEARCH_RESULT_TIMEOUT_SEC=2.4`, `VOICE_SEARCH_BEAM_SIZE=2`, `ASR_THREADS=4`, `VOICE_SEARCH_MODEL_NAME=./models/whisper-small`; с `.env` из примера действуют значения примера. `LOCAL_LLM_URL`, `S3_*`, `REDIS_URL`, `DATABASE_URL` в коде по умолчанию указывают на localhost — в compose их перекрывают значения примера.
 
 ---
 

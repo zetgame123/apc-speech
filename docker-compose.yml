@@ -175,7 +175,7 @@ services:
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
       - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
       - ASR_MODEL_NAME=${ASR_MODEL_NAME:-./models/whisper-podlodka-turbo-ct2}
-      - VOICE_SEARCH_MODEL_NAME=./models/whisper-small
+      - VOICE_SEARCH_MODEL_NAME=${VOICE_SEARCH_MODEL_NAME:-./models/whisper-small}
       - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-2}
       - VOICE_SEARCH_USE_WORKER=true
       - VOICE_SEARCH_RESULT_TIMEOUT_SEC=${VOICE_SEARCH_RESULT_TIMEOUT_SEC:-2.4}
@@ -322,7 +322,7 @@ services:
       - APP_PROFILE=${APP_PROFILE:-small}
       - APP_ENV=${APP_ENV:-development}
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
-      - VOICE_SEARCH_MODEL_NAME=./models/whisper-small
+      - VOICE_SEARCH_MODEL_NAME=${VOICE_SEARCH_MODEL_NAME:-./models/whisper-small}
       - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-2}
       # BLAS-потоки поджаты под CPU-квоту 0.5 (см. комментарий у worker-long).
       - OMP_NUM_THREADS=1
