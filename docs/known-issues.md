@@ -527,9 +527,14 @@ cpuset 4,6. Дефолт whisper не менялся, ветка не созда
     gitignored, ADR-017). Локально: сначала данные, потом тесты:
     `uv run python scripts/download_eval_data.py --no-cv --no-ruls --no-sova`,
     затем `uv run pytest tests/test_golos_regression.py`.
-* Про 202 в `test_upload_corrupt_audio_rejected_by_probe`: на текущем коде
-  не воспроизводится ни с ffprobe, ни без него — `probe_audio` fail-closed
-  (`FileNotFoundError` от отсутствующего ffprobe → `AppError` 400
-  `invalid_audio`, мусор → 400 тем же путём). Путь отсутствия ffprobe
-  зафиксирован тестом `test_upload_without_ffprobe_fails_closed`; в workflow
-  есть дымовая проверка `ffprobe -version` (ffprobe идёт в пакете ffmpeg).
+* 202 в `test_upload_corrupt_audio_rejected_by_probe` — **воспроизведён**
+  2026-10-14, причина — версия ffprobe (чинка следующим коммитом):
+  * Локально (Arch, ffprobe **n9.0.1**): мусор `b"NOT-AUDIO"*1000` под именем
+    `fake.wav` → `Invalid data found when processing input`, exit 1, stdout
+    `{}` → `probe_audio` кидает `AppError` 400 `invalid_audio`. Тест зелёный.
+  * CI-подобно (`docker run --rm ubuntu:24.04`, ffmpeg из apt,
+    ffprobe **6.1.1-3ubuntu5**): те же 9000 байт опознаются как `amr_nb`
+    (audio, 8 кГц, моно), exit **0**, `format.duration="13.846125"`, в stderr
+    лишь `Corrupt bitstream` → `probe_audio` возвращал успех → upload **202**.
+    Вывод выше — старый код смотрел только на exit-код и игнорировал
+    возвращённый словарь (пустые потоки / duration 0 тоже проходили).
