@@ -92,18 +92,10 @@ def cmd_merge(partial_path: str, report_path: str = "reports/types_eval.json") -
     partial = json.load(open(partial_path, encoding="utf-8"))
     report = json.load(open(report_path, encoding="utf-8"))
     before = {k: v for k, v in report.items() if not k.startswith("asr_")}
-    rows_r = [
-        {"expected": v["expected_type"], "pred": v["rules_type"]} for v in partial.values()
-    ]
-    pairs_r = [
-        (v["expected_entities"], v["rules_entities"]) for v in partial.values()
-    ]
-    rows_q = [
-        {"expected": v["expected_type"], "pred": v["qwen_type"]} for v in partial.values()
-    ]
-    pairs_q = [
-        (v["expected_entities"], v["qwen_entities"]) for v in partial.values()
-    ]
+    rows_r = [{"expected": v["expected_type"], "pred": v["rules_type"]} for v in partial.values()]
+    pairs_r = [(v["expected_entities"], v["rules_entities"]) for v in partial.values()]
+    rows_q = [{"expected": v["expected_type"], "pred": v["qwen_type"]} for v in partial.values()]
+    pairs_q = [(v["expected_entities"], v["qwen_entities"]) for v in partial.values()]
     report["asr_rules_B"] = {
         "types": score_types(rows_r),
         "entities": score_entities(pairs_r),
