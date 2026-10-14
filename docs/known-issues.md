@@ -542,6 +542,29 @@ cpuset 4,6. Дефолт whisper не менялся, ветка не созда
   400 `invalid_audio`. Тесты: мусор/пустой/обрезанный через HTTP + моки веток
   разбора + валидный wav как положительный контроль
   (`tests/test_foundation_b3_b6_b8.py`). Старый тест не ослаблялся.
+
+## 32. Локальный прогон сюиты в CI-подобном контейнере (2026-10-14)
+
+* Команда (чистый клон из ro-маунта, `uv run`, без моделей — весовые тесты
+  скипаются сами, см. п.30; `sudo`/`down -v` не используются):
+  ```sh
+  docker run --rm -v /home/zet/Projects/oc/apc-speech:/src:ro ubuntu:24.04 bash -c "
+  set -e
+  apt-get update -qq && apt-get install -y -qq ffmpeg curl git python3 ca-certificates
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH=\$HOME/.local/bin:\$PATH
+  git config --global --add safe.directory '/src/.git'  # точный путь из ошибки git, иначе clone падает 128
+  git clone -q /src /tmp/apc-clean  # ro-маунт чужого uid
+  cd /tmp/apc-clean
+  uv python install 3.12
+  uv sync --extra dev
+  APP_ENV=development DEV_TOKEN=dev-token uv run pytest tests/ -q
+  "
+  ```
+* Проверка 2026-10-14: ffprobe 6.1.1-3ubuntu5, полный `pytest tests/` —
+  **315 passed, 4 skipped** за ~40 с (скипы — штатные без весов/данных из
+  п.30: диаризация CAM++ + 3× Golos; 315+4=319 локальных). Мусор отклоняется
+  декодером, регрессии нет.
 * 202 в `test_upload_corrupt_audio_rejected_by_probe` — **воспроизведён**
   2026-10-14, причина — версия ffprobe (чинка следующим коммитом):
   * Локально (Arch, ffprobe **n9.0.1**): мусор `b"NOT-AUDIO"*1000` под именем
