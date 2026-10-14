@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -153,6 +153,17 @@ class Settings(BaseSettings):
     # Rate Limiting
     rate_limit_requests_per_window: int = Field(default=5, alias="RATE_LIMIT_REQUESTS_PER_WINDOW")
     rate_limit_window_sec: int = Field(default=10, alias="RATE_LIMIT_WINDOW_SEC")
+
+    @field_validator("s3_endpoint_url", "s3_access_key", "s3_secret_key", mode="before")
+    @classmethod
+    def _empty_s3_uses_default(cls, v: object, info: ValidationInfo) -> object:
+        # E6 (2026-10-13): свежий `cp .env.example .env` даёт пустые S3_*=""
+        # (env_file перекрывает дефолт пустой строкой) — api не мог создать
+        # бакеты (InvalidAccessKeyId) и /ready отвечал 503 s3:false.
+        # Пустое значение считаем незаданным, как compose-форма `:-`.
+        if isinstance(v, str) and not v.strip():
+            return cls.model_fields[info.field_name].default
+        return v
 
 
 @lru_cache

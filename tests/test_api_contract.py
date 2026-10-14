@@ -185,3 +185,19 @@ async def test_texts_analyze_masks_pii_in_response():
         assert "ivan.petrov@example.com" not in dumped
         assert "4111" not in dumped
         assert "[EMAIL]" in dumped or "[КАРТА]" in dumped
+
+
+@pytest.mark.asyncio
+async def test_analytics_and_calls_accept_aware_dates():
+    # E6 (2026-10-14): aware-даты (с Z) против naive created_at роняли
+    # Postgres (500). Проверяем 200 на всех ручках с date_from/date_to.
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        headers = {"Authorization": "Bearer dev-token"}
+        params = "date_from=2026-09-01T00:00:00Z&date_to=2026-10-14T00:00:00Z"
+        for url in (
+            f"/v1/analytics/summary?namespace=test_msk&{params}",
+            f"/v1/analytics/export_csv?namespace=test_msk&{params}",
+            f"/v1/calls?namespace=test_msk&{params}",
+        ):
+            resp = await client.get(url, headers=headers)
+            assert resp.status_code == 200, (url, resp.text[:200])

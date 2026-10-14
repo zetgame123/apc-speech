@@ -19,6 +19,15 @@ router = APIRouter(prefix="/v1", tags=["analytics"])
 clustering_engine = TopicClusteringEngine()
 
 
+def _naive(dt: datetime | None) -> datetime | None:
+    # E6 (2026-10-14): Call.created_at в БД naive; aware-даты из запроса
+    # (с Z) роняли Postgres «can't subtract offset-naive and offset-aware»
+    # (500 на summary/export_csv). Та же чинка, что в DELETE /v1/data/delete.
+    if dt is not None and dt.tzinfo is not None:
+        return dt.replace(tzinfo=None)
+    return dt
+
+
 class TextAnalyzeRequest(BaseModel):
     namespace: str
     texts: list[str]
@@ -47,9 +56,9 @@ async def get_analytics_summary(
     if manager_id:
         call_query = call_query.where(Call.manager_id == manager_id)
     if date_from:
-        call_query = call_query.where(Call.created_at >= date_from)
+        call_query = call_query.where(Call.created_at >= _naive(date_from))
     if date_to:
-        call_query = call_query.where(Call.created_at <= date_to)
+        call_query = call_query.where(Call.created_at <= _naive(date_to))
 
     calls = (await db.execute(call_query)).scalars().all()
     total_calls = len(calls)
@@ -230,9 +239,9 @@ async def export_analytics_csv(
     if inquiry_type:
         call_query = call_query.where(Analysis.inquiry_type == inquiry_type)
     if date_from:
-        call_query = call_query.where(Call.created_at >= date_from)
+        call_query = call_query.where(Call.created_at >= _naive(date_from))
     if date_to:
-        call_query = call_query.where(Call.created_at <= date_to)
+        call_query = call_query.where(Call.created_at <= _naive(date_to))
 
     results = (await db.execute(call_query)).all()
 

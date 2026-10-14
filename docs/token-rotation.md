@@ -23,6 +23,11 @@ echo "В .env: $HASH"
 
 ## 2. Ротация API-токена (перекрытие, без простоя обработки)
 
+```bash
+BASE=http://localhost:8000
+NS=outdoor_msk
+```
+
 1. Добавьте хэш нового токена **рядом со старым** в `.env`:
    ```env
    API_TOKENS_HASHED="<хеш_старого>:admin+write+read:outdoor_msk,<хеш_нового>:admin+write+read:outdoor_msk"
@@ -35,14 +40,15 @@ echo "В .env: $HASH"
    `worker-long`/`worker-callback` их продолжают. Синхронные `voice/search`,
    попавшие в окно рестарта, получат ошибку соединения — повторите их.
    Окно планируйте на низкую нагрузку.
-3. Проверьте оба токена:
+3. Проверьте оба токена запросом, требующим авторизации
+   (`/ready` публичный и для этого не годится):
    ```bash
-   curl -s -o /dev/null -w "old:%{http_code}\n" http://localhost:8000/ready \
-     -H "Authorization: Bearer <старый_токен>"
-   curl -s -o /dev/null -w "new:%{http_code}\n" http://localhost:8000/ready \
-     -H "Authorization: Bearer $TOKEN"
+   curl -s -o /dev/null -w "old:%{http_code}\n" \
+     "$BASE/v1/calls?namespace=$NS&limit=1" -H "Authorization: Bearer <старый_токен>"
+   curl -s -o /dev/null -w "new:%{http_code}\n" \
+     "$BASE/v1/calls?namespace=$NS&limit=1" -H "Authorization: Bearer $TOKEN"
    ```
-   (оба — 200; `/ready` требует авторизации).
+   (оба — 200; отозванный/чужой — 401/403).
 4. Переключите клиентов на новый токен постепенно.
 5. Отзовите старый **мгновенно, без перезапуска**:
    ```bash

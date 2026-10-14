@@ -1,7 +1,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.main import app
 
 
@@ -145,3 +145,20 @@ def test_redact_url_for_log_keeps_scheme_and_host():
     assert redact_url_for_log("http://127.0.0.1:9/hook") == "http://127.0.0.1:9"
     assert redact_url_for_log("not a url") == "<invalid-url>"
     assert redact_url_for_log("") == "<invalid-url>"
+
+
+def test_empty_s3_env_falls_back_to_defaults():
+    # E6 (2026-10-13): свежий `cp .env.example .env` даёт S3_*="" — пустая
+    # строка не должна перекрывать дефолт, иначе /ready 503 s3:false.
+    s = Settings.model_validate(
+        {
+            "S3_ENDPOINT_URL": "",
+            "S3_ACCESS_KEY": "   ",
+            "S3_SECRET_KEY": "",
+        }
+    )
+    assert s.s3_endpoint_url == "http://localhost:9000"
+    assert s.s3_access_key == "minio_admin"
+    assert s.s3_secret_key == "minio_secret_pass"
+    s2 = Settings.model_validate({"S3_ACCESS_KEY": "custom"})
+    assert s2.s3_access_key == "custom"

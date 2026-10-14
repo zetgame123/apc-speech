@@ -15,6 +15,14 @@ router = APIRouter(prefix="/v1/calls", tags=["calls"])
 _pii_masker = PiiMasker()
 
 
+def _naive(dt: datetime | None) -> datetime | None:
+    # E6 (2026-10-14): Call.created_at в БД naive; aware-даты из запроса
+    # роняли Postgres (см. чинку в app/api/analytics.py).
+    if dt is not None and dt.tzinfo is not None:
+        return dt.replace(tzinfo=None)
+    return dt
+
+
 def _sanitize_words(words: list[dict] | None) -> list[dict] | None:
     if not words:
         return words
@@ -230,9 +238,9 @@ async def list_calls(
     if manager_id:
         query = query.where(Call.manager_id == manager_id)
     if date_from:
-        query = query.where(Call.created_at >= date_from)
+        query = query.where(Call.created_at >= _naive(date_from))
     if date_to:
-        query = query.where(Call.created_at <= date_to)
+        query = query.where(Call.created_at <= _naive(date_to))
 
     # Fulltext search: find calls whose transcript segments contain the query string
     if q:

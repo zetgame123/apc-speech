@@ -40,7 +40,8 @@ curl -s -X POST "$BASE/v1/jobs/upload" -H "Authorization: Bearer $TOKEN" \
   -F "manager_id=mgr-1" -F "client_id=cli-1" | jq .
 # 202, есть job_id и status_url
 
-# 1б. идемпотентность: повтор с тем же Idempotency-Key — то же задание:
+# 1б. идемпотентность: повтор с тем же Idempotency-Key — то же задание
+# (тот же job_id; явный ключ и контент-хэш — разные ключи, см. R-08 в CHANGELOG):
 curl -s -X POST "$BASE/v1/jobs/upload" -H "Authorization: Bearer $TOKEN" \
   -H "Idempotency-Key: acc-001" \
   -F "namespace=$NS" -F "file=@/tmp/opencode/sample.wav" | jq .job_id
@@ -66,7 +67,7 @@ for i in $(seq 1 40); do
   echo "$S"; [ "$S" = "succeeded" ] && break; sleep 5
 done
 curl -s "$BASE/v1/jobs/$JOB?namespace=$NS" -H "Authorization: Bearer $TOKEN" | jq .
-# status=succeeded, progress=1.0; сегменты — в транскрипте ниже
+# status=succeeded, progress=100; сегменты — в транскрипте ниже
 ```
 
 ## 3. Говорящие (brief п.3)
@@ -134,8 +135,10 @@ for F in json text srt vtt; do
     -H "Authorization: Bearer $TOKEN" | head -c 300; echo
 done
 curl -s "$BASE/v1/calls?namespace=$NS&limit=5" -H "Authorization: Bearer $TOKEN" | jq .
-curl -s "$BASE/v1/calls?namespace=$NS&q=щит&limit=5" -H "Authorization: Bearer $TOKEN" | jq .
-# курсорная пагинация: next_cursor → ?cursor=...; чужой namespace — 403
+# поиск: не-ASCII запрос кодировать (%D1%89...), иначе соединение рвётся на уровне HTTP:
+curl -s "$BASE/v1/calls?namespace=$NS&q=%D1%89%D0%B8%D1%82&limit=5" -H "Authorization: Bearer $TOKEN" | jq .
+# курсорная пагинация: next_cursor → ?cursor=...; чужой namespace при скоуп-токенах
+# (production) — 403; DEV_TOKEN в dev-режиме видит все namespace (см. README)
 ```
 
 ## 9. Задания и callback'и (brief п.9)

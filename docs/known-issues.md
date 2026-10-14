@@ -403,3 +403,31 @@ cpuset 4,6. Дефолт whisper не менялся, ветка не созда
 * `docs/acceptance-requests.md`: curl на каждую функцию brief п.1–10
   (проверены полями `openapi.yaml`/кода, сквозной прогон — в E6).
 * `CHANGELOG.md`: срез 0.1.0 + Measured-блок со стендовыми цифрами.
+
+## 26. Прогон чистой машины E6 (2026-10-14, клон + холодный старт + приёмка)
+
+* Стенд: клон в `/tmp/opencode/apc-clean`, только README + `.env.example`
+  (`APP_ENV=development`, `DEV_TOKEN`, `CALLBACK_SIGNING_SECRET`),
+  `APP_PROFILE=small docker compose up -d --build`. Все 8 сервисов healthy,
+  `/ready` 200, приёмка `docs/acceptance-requests.md` пройдена: upload →
+  `succeeded` (~50 с холодным воркером) → транскрипт (json/text/srt/vtt) →
+  разбор по схеме → voice/search 1059 мс (в SLA 2,5 с) → history →
+  texts/analyze → summary/CSV → идемпотентность (тот же job_id) →
+  SSRF-блок → revoke/revoked → удаление (запись/период) → dashboard 200 →
+  bitrix `missing_record_url`.
+* Найдено и исправлено (коммит E6):
+  1. `model-downloader` падал OOM (exit 137): лимит 512M против ~2,8 ГБ
+     записи (page cache считается в cgroup). Лимиты 2G / 6G (llm),
+     в steady-state не считаются (джобы одноразовые).
+  2. Пустые `S3_*=""` из `.env.example` перекрывали дефолты → `s3:false`,
+     `/ready` 503. Валидатор в `app/core/config.py` (пустое = дефолт,
+     как compose `:-`) + тест; комментарий в `.env.example`.
+  3. `GET /v1/analytics/summary` и `export_csv` с aware-датами (Z) — 500
+     (naive/aware в Postgres). Та же чинка, что в C7-удалении; заодно
+     `GET /v1/calls`. Регрессия-тест с Z-датами на трёх ручках.
+  4. `GET /v1/voice/sample-audio` — 404 в compose: `data/` не смонтирована
+     в `api`. Добавлен read-only маунт `./data:/app/data:ro`.
+* Не дефекты: конфликт порта 8000 с leftover-стеком `apc_small` (посторонний,
+  api после `--force-recreate` взял порт); `q=` с кириллицей надо кодировать
+  (зафиксировано в acceptance); DEV_TOKEN в dev-режиме видит все namespace
+  (403 — только для скоуп-токенов, acceptance уточнён).

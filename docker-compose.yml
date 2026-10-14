@@ -116,7 +116,12 @@ services:
       resources:
         limits:
           cpus: '1.0'
-          memory: 512M
+          # 2G: джоб пишет ~2,8 ГБ весов (small), page cache записи считается
+          # в лимит cgroup — с 512M холодный старт падал OOM (exit 137) на
+          # скачивании podlodka (E6, 2026-10-13). Джоб одноразовый: воркеры
+          # стартуют после service_completed_successfully, в steady-state
+          # сумму профиля small не увеличивает.
+          memory: 2G
 
   # Скачивает веса Qwen2.5-7B-Instruct GGUF (~4.4 ГБ) для профиля local-full.
   # Активен только при `docker compose --profile local-full up`.
@@ -137,7 +142,9 @@ services:
       resources:
         limits:
           cpus: '1.0'
-          memory: 512M
+          # 6G: Qwen-веса ~4,4 ГБ одним проходом, та же причина, что у
+          # model-downloader выше (E6, 2026-10-13). Только local-full.
+          memory: 6G
 
   api:
     build:
@@ -184,6 +191,9 @@ services:
       - ./config:/app/config:ro
       - ./schemas:/app/schemas:ro
       - ./scripts:/app/scripts:ro
+      # E6 (2026-10-13): без этого GET /v1/voice/sample-audio отвечал 404
+      # sample_not_found — образцы data/evaluation_suite лежат только на хосте.
+      - ./data:/app/data:ro
     ports:
       - "8000:8000"
     healthcheck:
