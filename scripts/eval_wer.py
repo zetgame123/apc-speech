@@ -13,7 +13,6 @@ whisper-small, T-one. Выборка: первые N записей манифе
 """
 
 import argparse
-import io
 import json
 import os
 import time
@@ -27,15 +26,12 @@ def load_manifest(path: str, n: int) -> list[dict]:
     return manifest[:n]
 
 
-def make_transcribers() -> dict:
-    from app.asr.engine import AsrEngine
-    from app.asr.tone_engine import get_tone_engine
+def _whisper_fn(eng) -> object:
+    import io
 
-    podlodka = AsrEngine(model_name="./models/whisper-podlodka-turbo-ct2")
-    small = AsrEngine(model_name="./models/whisper-small")
-    tone = get_tone_engine()
+    from app.asr.engine import AsrEngine  # noqa: F401  (тип для читаемости)
 
-    def _whisper(eng: AsrEngine, wav_path: str) -> str:
+    def _whisper(wav_path: str) -> str:
         with open(wav_path, "rb") as f:
             segs, _ = eng.transcribe(
                 io.BytesIO(f.read()),
@@ -46,6 +42,12 @@ def make_transcribers() -> dict:
                 word_timestamps=False,
             )
         return " ".join(s["text"] for s in segs)
+
+    return _whisper
+
+
+def _tone_fn(tone) -> object:
+    import io
 
     def _tone(wav_path: str) -> str:
         import soundfile as sf
@@ -66,11 +68,37 @@ def make_transcribers() -> dict:
         segs, _ = tone.transcribe(raw, language="ru")
         return " ".join(s["text"] for s in segs)
 
-    return {
-        "podlodka": lambda p: _whisper(podlodka, p),
-        "whisper-small": lambda p: _whisper(small, p),
-        "t-one": _tone,
-    }
+    return _tone
+
+
+def make_transcribers(only: str = "") -> dict:
+    """Ленивые конструкторы движков: модель грузится при первом обращении.
+
+    only — подмножество через запятую (чтобы не грузить whisper-small,
+    когда меряются только podlodka/t-one). Нужно для чанков/продолжения:
+    недостающие гипотезы достраиваются, имеющиеся берутся из кэша.
+    """
+    from app.asr.engine import AsrEngine
+    from app.asr.tone_engine import get_tone_engine
+
+    wanted = [e.strip() for e in only.split(",")] if only else []
+    loaded: dict = {}
+
+    def _get(name: str):
+        if name not in loaded:
+            if name == "t-one":
+                loaded[name] = _tone_fn(get_tone_engine())
+            else:
+                model = (
+                    "./models/whisper-podlodka-turbo-ct2"
+                    if name == "podlodka"
+                    else "./models/whisper-small"
+                )
+                loaded[name] = _whisper_fn(AsrEngine(model_name=model))
+        return loaded[name]
+
+    names = wanted or ["podlodka", "whisper-small", "t-one"]
+    return {name: (lambda p, n=name: _get(n)(p)) for name in names}
 
 
 def main() -> None:
@@ -89,7 +117,7 @@ def main() -> None:
         with open(args.hyps_in, encoding="utf-8") as f:
             cached = json.load(f).get("hyps", {})
 
-    transcribers = make_transcribers() if not cached else {}
+    transcribers = make_transcribers(only=args.engines)
     hyps: dict = {k: v for k, v in cached.items()}
     report: dict = {"n": len(items), "engines": {}}
     for eng_name in args.engines.split(","):
@@ -107,6 +135,11 @@ def main() -> None:
                     assert fn is not None, f"нет кэша {ck} и нет движка"
                     hyp = fn(item[cond])
                     hyps[ck] = hyp
+                    # Чекпоинт: сброс кэша каждые 10 файлов, чтобы обрыв
+                    # не терял прогресс (продолжение — тем же --hyps-in).
+                    if args.save_hyps and len(hyps) % 10 == 0:
+                        with open(args.save_hyps, "w", encoding="utf-8") as f:
+                            json.dump({"hyps": hyps}, f, ensure_ascii=False)
                 ref_norm = normalize_eval_text(item["reference"])
                 hyp_norm = normalize_eval_text(hyp)
                 ref_words = ref_norm.split()
