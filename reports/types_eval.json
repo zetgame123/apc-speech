@@ -174,15 +174,14 @@
   "asr_rules_B": {
     "types": {
       "n": 25,
-      "accuracy": 0.48,
-      "macro_f1": 0.3981,
+      "accuracy": 0.52,
+      "macro_f1": 0.4361,
       "confusion": {
         "pricing>inventory_search": 2,
         "complaint>inventory_search": 2,
         "order_status>production": 2,
         "documents_billing>other": 2,
         "partnership_supply>programmatic_digital": 2,
-        "other>inventory_search": 1,
         "pricing>other": 1,
         "complaint>documents_billing": 1
       }
@@ -194,45 +193,45 @@
         "f1": 0.636
       },
       "format": {
-        "p": 0.529,
-        "r": 0.529,
-        "f1": 0.529
+        "p": 0.824,
+        "r": 0.824,
+        "f1": 0.824
       },
       "quantity": {
-        "p": 0.0,
-        "r": 0.0,
-        "f1": 0.0
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
       },
       "period": {
-        "p": 0.0,
-        "r": 0.0,
-        "f1": 0.0
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
       },
       "budget": {
-        "p": 0.0,
-        "r": 0.0,
-        "f1": 0.0
+        "p": 0.778,
+        "r": 0.778,
+        "f1": 0.778
       },
       "category": {
-        "p": 0.0,
-        "r": 0.0,
-        "f1": 0.0
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
       }
     }
   },
   "asr_qwen_B": {
     "types": {
       "n": 25,
-      "accuracy": 0.56,
-      "macro_f1": 0.4732,
+      "accuracy": 0.68,
+      "macro_f1": 0.5177,
       "confusion": {
-        "complaint>pricing": 2,
-        "specs>other": 2,
         "documents_billing>pricing": 2,
-        "production>inventory_search": 1,
-        "partnership_supply>order_status": 2,
+        "production>pricing": 1,
+        "partnership_supply>inventory_search": 1,
+        "spam_irrelevant>other": 1,
         "other>pricing": 1,
-        "complaint>documents_billing": 1
+        "production>inventory_search": 1,
+        "partnership_supply>pricing": 1
       }
     },
     "entities": {
@@ -242,29 +241,29 @@
         "f1": 0.87
       },
       "format": {
-        "p": 0.389,
-        "r": 0.389,
-        "f1": 0.389
+        "p": 0.824,
+        "r": 0.824,
+        "f1": 0.824
       },
       "quantity": {
-        "p": 0.0,
-        "r": 0.0,
-        "f1": 0.0
+        "p": 0.4,
+        "r": 0.4,
+        "f1": 0.4
       },
       "period": {
-        "p": 0.0,
-        "r": 0.0,
-        "f1": 0.0
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
       },
       "budget": {
-        "p": 0.0,
-        "r": 0.0,
-        "f1": 0.0
+        "p": 0.778,
+        "r": 0.778,
+        "f1": 0.778
       },
       "category": {
-        "p": 0.0,
-        "r": 0.0,
-        "f1": 0.0
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
       }
     }
   }
