@@ -61,3 +61,5 @@ tmp/
 *.m4a
 *.webm
 gitleaks*
+*.ses
+:memory:*

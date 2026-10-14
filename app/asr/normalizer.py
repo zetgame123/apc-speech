@@ -42,6 +42,113 @@ NUMBER_WORDS = {
     "девятьсот": 900,
 }
 
+RUSSIAN_ORDINALS = {
+    "первое": 1,
+    "первого": 1,
+    "второе": 2,
+    "второго": 2,
+    "третье": 3,
+    "третьего": 3,
+    "четвертое": 4,
+    "четвёртое": 4,
+    "четвертого": 4,
+    "четвёртого": 4,
+    "пятое": 5,
+    "пятого": 5,
+    "шестое": 6,
+    "шестого": 6,
+    "седьмое": 7,
+    "седьмого": 7,
+    "восьмое": 8,
+    "восьмого": 8,
+    "девятое": 9,
+    "девятого": 9,
+    "десятое": 10,
+    "десятого": 10,
+    "одиннадцатое": 11,
+    "одиннадцатого": 11,
+    "двенадцатое": 12,
+    "двенадцатого": 12,
+    "тринадцатое": 13,
+    "тринадцатого": 13,
+    "четырнадцатое": 14,
+    "четырнадцатого": 14,
+    "пятнадцатое": 15,
+    "пятнадцатого": 15,
+    "шестнадцатое": 16,
+    "шестнадцатого": 16,
+    "семнадцатое": 17,
+    "семнадцатого": 17,
+    "восемнадцатое": 18,
+    "восемнадцатого": 18,
+    "девятнадцатое": 19,
+    "девятнадцатого": 19,
+    "двадцатое": 20,
+    "двадцатого": 20,
+    "двадцать первое": 21,
+    "двадцать первого": 21,
+    "двадцать второе": 22,
+    "двадцать второго": 22,
+    "двадцать третье": 23,
+    "двадцать третьего": 23,
+    "двадцать четвертое": 24,
+    "двадцать четвёртое": 24,
+    "двадцать четвертого": 24,
+    "двадцать четвёртого": 24,
+    "двадцать пятое": 25,
+    "двадцать пятого": 25,
+    "двадцать шестое": 26,
+    "двадцать шестого": 26,
+    "двадцать седьмое": 27,
+    "двадцать седьмого": 27,
+    "двадцать восьмое": 28,
+    "двадцать восьмого": 28,
+    "двадцать девятое": 29,
+    "двадцать девятого": 29,
+    "тридцатое": 30,
+    "тридцатого": 30,
+    "тридцать первое": 31,
+    "тридцать первого": 31,
+}
+
+RUSSIAN_MONTHS = (
+    r"(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)"
+)
+
+_WORDS_PAT = "|".join(
+    sorted(list(NUMBER_WORDS.keys()) + ["одна", "две", "ноль"], key=len, reverse=True)
+)
+_NUM_PHRASE_PAT = rf"(?:(?:{_WORDS_PAT})\s*)+"
+
+SPOKEN_PHONE_PATTERN = re.compile(
+    r"\b(плюс\s+семь|восемь)\s+"
+    r"((?:девятьсот|восемьсот|семьсот|шестьсот|пятьсот|четыреста|триста|двести|сто|\d+)(?:\s+(?:[а-я]+|\d+)){0,2})\s+"
+    r"((?:девятьсот|восемьсот|семьсот|шестьсот|пятьсот|четыреста|триста|двести|сто|\d+)(?:\s+(?:[а-я]+|\d+)){0,2})\s+"
+    r"((?:девяносто|восемьдесят|семьдесят|шестьдесят|пятьдесят|сорок|тридцать|двадцать|\d+)(?:\s+(?:[а-я]+|\d+))?)\s+"
+    r"((?:девяносто|восемьдесят|семьдесят|шестьдесят|пятьдесят|сорок|тридцать|двадцать|\d+)(?:\s+(?:[а-я]+|\d+))?)\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_spoken_phone_group(g: str, length: int) -> str:
+    parts = g.strip().split()
+    total = 0
+    for p in parts:
+        if p.isdigit():
+            total += int(p)
+        elif p.lower() in NUMBER_WORDS:
+            total += NUMBER_WORDS[p.lower()]
+    return str(total).zfill(length)
+
+
+def _spoken_phone_normalizer(m: re.Match) -> str:
+    prefix = "+7" if "плюс" in m.group(1).lower() or "семь" in m.group(1).lower() else "8"
+    g1 = _parse_spoken_phone_group(m.group(2), 3)
+    g2 = _parse_spoken_phone_group(m.group(3), 3)
+    g3 = _parse_spoken_phone_group(m.group(4), 2)
+    g4 = _parse_spoken_phone_group(m.group(5), 2)
+    return f"{prefix} {g1} {g2} {g3} {g4}"
+
 
 class RussianTextNormalizer:
     def __init__(self):
@@ -91,8 +198,29 @@ class RussianTextNormalizer:
                 lambda m: "призматрон" + (m.group(1) or ""),
             ),
             (
-                re.compile(r"\bбигборд(ы|ов|а|ам|ами|ах)?\b", re.IGNORECASE),
-                lambda m: "билборд" + (m.group(1) or ""),
+                re.compile(
+                    r"\b(?:сити|сети|сеть)[-\s]*(?:борд|борт|бор)(ы|ов|а|ам|ами|ах|ом|у|е)?\b",
+                    re.IGNORECASE,
+                ),
+                lambda m: (
+                    ("Ситиборд" if m.group(0)[0].isupper() else "ситиборд") + (m.group(1) or "")
+                ),
+            ),
+            (
+                re.compile(
+                    r"\bcity[-\s]*boards?\b",
+                    re.IGNORECASE,
+                ),
+                lambda m: "ситиборды" if m.group(0).lower().endswith("s") else "ситиборд",
+            ),
+            (
+                re.compile(
+                    r"\b(?:бил|билл|биг)[-\s]*(?:борд|борт)(ы|ов|а|ам|ами|ах|ом|у|е)?\b",
+                    re.IGNORECASE,
+                ),
+                lambda m: (
+                    ("Билборд" if m.group(0)[0].isupper() else "билборд") + (m.group(1) or "")
+                ),
             ),
             (
                 re.compile(
@@ -280,6 +408,15 @@ class RussianTextNormalizer:
             (re.compile(r"\b(\d{1,3})\s*000\s*(?:рублей|рубля)\b", re.IGNORECASE), r"\1 000 руб."),
             # General: X тысяч рублей -> X 000 руб.
             (re.compile(r"\b(\d+)\s+тысяч\s+рублей\b", re.IGNORECASE), r"\1 000 руб."),
+            (
+                re.compile(
+                    rf"\b({_NUM_PHRASE_PAT})\s*тысяч[аеиу]?(?:\s+(рублей|рубля|руб\.?))?\b",
+                    re.IGNORECASE,
+                ),
+                lambda m: (
+                    f"{sum(NUMBER_WORDS.get(w, 0) for w in m.group(1).lower().split())} 000{' руб.' if m.group(2) else ''}"
+                ),
+            ),
             (re.compile(r"\b(\d+)\s+рублей\b", re.IGNORECASE), r"\1 руб."),
             (re.compile(r"\b(\d+)\s+рубля\b", re.IGNORECASE), r"\1 руб."),
             (re.compile(r"\b(\d+)\s+рубль\b", re.IGNORECASE), r"\1 руб."),
@@ -291,6 +428,13 @@ class RussianTextNormalizer:
 
         # Dates
         self.date_patterns = [
+            (
+                re.compile(
+                    rf"\b({'|'.join(sorted(RUSSIAN_ORDINALS.keys(), key=len, reverse=True))})\s+({RUSSIAN_MONTHS})\b",
+                    re.IGNORECASE,
+                ),
+                lambda m: f"{RUSSIAN_ORDINALS[m.group(1).lower()]} {m.group(2).lower()}",
+            ),
             (re.compile(r"\bпервое\s+октября\b", re.IGNORECASE), "1 октября"),
             (re.compile(r"\bдвадцать\s+шестой\s+год\b", re.IGNORECASE), "2026 г."),
             (re.compile(r"\bс\s+мая\s+по\s+сентябрь\b", re.IGNORECASE), "с мая по сентябрь"),
@@ -299,6 +443,10 @@ class RussianTextNormalizer:
         # Phone
         self.phone_patterns = [
             (
+                SPOKEN_PHONE_PATTERN,
+                _spoken_phone_normalizer,
+            ),
+            (
                 re.compile(r"\bплюс\s+семь\s+девятьсот\s+двадцать\s+шесть\b", re.IGNORECASE),
                 "+7 926",
             ),
@@ -306,6 +454,15 @@ class RussianTextNormalizer:
 
         # Domain acoustic homophones
         self.homophone_patterns = [
+            # Devoiced "раз-раз" (microphone test phrase acoustic artifact)
+            (
+                re.compile(r"\bрас[- ]рас\b", re.IGNORECASE),
+                lambda m: "Раз-раз" if m.group(0)[0].isupper() else "раз-раз",
+            ),
+            (
+                re.compile(r"\bрасслаз\b", re.IGNORECASE),
+                lambda m: "Раз-раз" if m.group(0)[0].isupper() else "раз-раз",
+            ),
             (
                 re.compile(
                     r"\bсчет(а|ов|ам|ами|ах)?\s+(3×6|6×3|5×12|4×12|ситиборд|билборд|экран|призматрон|суперсайт)",
@@ -331,9 +488,50 @@ class RussianTextNormalizer:
                 r"\1 щиты",
             ),
             (re.compile(r"\b(лещиты|лищиты)\b", re.IGNORECASE), "щиты"),
-            (re.compile(r"\bсчетов\s+в\s+([А-Яа-яA-Za-z]+)", re.IGNORECASE), r"щитов в \1"),
-            (re.compile(r"\bсчета\s+на\s+([А-Яа-яA-Za-z]+)", re.IGNORECASE), r"щиты на \1"),
-            (re.compile(r"\bсчет\s+на\s+([А-Яа-яA-Za-z]+)", re.IGNORECASE), r"щит на \1"),
+            (
+                re.compile(
+                    r"\bсчетов\s+в\s+(москв[а-я]*|балаших[а-я]*|химк[а-я]*|мытищ[а-я]*|подольск[а-я]*|люберц[а-я]*|красногорск[а-я]*|одинцов[а-я]*|бутов[а-я]*|митин[а-я]*|строгин[а-я]*|марьин[а-я]*|чертанов[а-я]*|люблин[а-я]*|район[а-я]*|центр[а-я]*|област[а-я]*)\b",
+                    re.IGNORECASE,
+                ),
+                r"щитов в \1",
+            ),
+            (
+                re.compile(
+                    r"\bсчета\s+на\s+(ленинградк[а-я]*|варшавк[а-я]*|дмитровк[а-я]*|ярославк[а-я]*|кутузовск[а-я]*|каширк[а-я]*|рублевк[а-я]*|энтузиаст[а-я]*|мкад[а-я]*|ттк[а-я]*|шоссе|проспект[а-я]*|трасс[а-я]*|улиц[а-я]*|сторон[а-я]*|фасад[а-я]*|digital|диджитал|октябр[а-я]*|ноябр[а-я]*|декабр[а-я]*|январ[а-я]*|феврал[а-я]*|март[а-я]*|апрел[а-я]*|ма[ея]|июн[а-я]*|июл[а-я]*|август[а-я]*|сентябр[а-я]*|месяц[а-я]*|квартал[а-я]*|полгода|год[а-я]*|весну|лето|осень|зиму)\b",
+                    re.IGNORECASE,
+                ),
+                r"щиты на \1",
+            ),
+            (
+                re.compile(
+                    r"\bсчет\s+на\s+(ленинградк[а-я]*|варшавк[а-я]*|дмитровк[а-я]*|ярославк[а-я]*|кутузовск[а-я]*|каширк[а-я]*|рублевк[а-я]*|энтузиаст[а-я]*|мкад[а-я]*|ттк[а-я]*|шоссе|проспект[а-я]*|трасс[а-я]*|улиц[а-я]*|сторон[а-я]*|фасад[а-я]*|digital|диджитал|октябр[а-я]*|ноябр[а-я]*|декабр[а-я]*|январ[а-я]*|феврал[а-я]*|март[а-я]*|апрел[а-я]*|ма[ея]|июн[а-я]*|июл[а-я]*|август[а-я]*|сентябр[а-я]*|месяц[а-я]*|квартал[а-я]*|полгода|год[а-я]*|весну|лето|осень|зиму)\b",
+                    re.IGNORECASE,
+                ),
+                r"щит на \1",
+            ),
+            # Phonetic acoustic contractions of preposition "на" with months
+            (re.compile(r"\bнактябр(ь|я|е)\b", re.IGNORECASE), r"на октябр\1"),
+            (re.compile(r"\bнаоктябр(ь|я|е)\b", re.IGNORECASE), r"на октябр\1"),
+            (re.compile(r"\bнавгуст(а|е)?\b", re.IGNORECASE), r"на август\1"),
+            (re.compile(r"\bнаавгуст(а|е)?\b", re.IGNORECASE), r"на август\1"),
+            (re.compile(r"\bнапрел(ь|я|е)\b", re.IGNORECASE), r"на апрел\1"),
+            (re.compile(r"\bнаапрел(ь|я|е)\b", re.IGNORECASE), r"на апрел\1"),
+            (re.compile(r"\bнаянвар(ь|я|е)\b", re.IGNORECASE), r"на январ\1"),
+            (re.compile(r"\bнаиюн(ь|я|е)\b", re.IGNORECASE), r"на июн\1"),
+            (re.compile(r"\bнаиюл(ь|я|е)\b", re.IGNORECASE), r"на июл\1"),
+            (re.compile(r"\bнаноябр(ь|я|е)\b", re.IGNORECASE), r"на ноябр\1"),
+            (re.compile(r"\bнадекабр(ь|я|е)\b", re.IGNORECASE), r"на декабр\1"),
+            (re.compile(r"\bнафеврал(ь|я|е)\b", re.IGNORECASE), r"на феврал\1"),
+            (re.compile(r"\bнамарт(а|е)?\b", re.IGNORECASE), r"на март\1"),
+            (re.compile(r"\bнамай\b", re.IGNORECASE), "на май"),
+            (re.compile(r"\bнама(е|я)\b", re.IGNORECASE), r"на ма\1"),
+            # Normalize "свободный на [месяц]" into "свободные на [месяц]"
+            (
+                re.compile(r"\bсвободн(?:ый|ая|ое)\s+на\s+([а-яё]+)\b", re.IGNORECASE),
+                lambda m: (
+                    f"{'Свободные' if m.group(0)[0].isupper() else 'свободные'} на {m.group(1)}"
+                ),
+            ),
         ]
 
         # Moscow Metro Stations
@@ -463,7 +661,12 @@ class RussianTextNormalizer:
             ("нижегородск(ая|ой|ую|ое|ом)", "Нижегородск"),
         ]
         self.metro_patterns = [
-            (re.compile(rf"\b{pat}\b", re.IGNORECASE), lambda m, r=repl: r + (m.group(1) or ""))
+            (
+                re.compile(rf"\b{pat}\b", re.IGNORECASE),
+                # Часть шаблонов без групп (румянцево, саларьево, ...): m.group(1)
+                # на них бросает IndexError. lastindex пуст — добавляем хвост "".
+                lambda m, r=repl: r + ((m.group(1) or "") if m.lastindex else ""),
+            )
             for pat, repl in metro_data
         ]
         # Compound metro stations
@@ -806,6 +1009,33 @@ class RussianTextNormalizer:
             (re.compile(r"\bлыткарин(о|е|а|у|ом)\b", re.IGNORECASE), r"Лыткарин\1"),
             (re.compile(r"\bдзержинск(ий|ом|ого|ому)\b", re.IGNORECASE), r"Дзержинск\1"),
             (re.compile(r"\bсолнечногорск(а|е|у|ом)?\b", re.IGNORECASE), r"Солнечногорск\1"),
+            # Moscow districts & acoustic corrections
+            (
+                re.compile(
+                    r"\bюжн(ое|ом|ого|ому|ым)\s+(?:путов|бутов)(о|е|а|у|ом)\b", re.IGNORECASE
+                ),
+                r"Южн\1 Бутов\2",
+            ),
+            (
+                re.compile(
+                    r"\bсеверн(ое|ом|ого|ому|ым)\s+(?:путов|бутов)(о|е|а|у|ом)\b", re.IGNORECASE
+                ),
+                r"Северн\1 Бутов\2",
+            ),
+            (
+                re.compile(r"\b(?:в\s+)?путов(о|е|а|у|ом)\b", re.IGNORECASE),
+                lambda m: m.group(0).replace("Путов", "Бутов").replace("путов", "бутов"),
+            ),
+            (re.compile(r"\bбутов(о|е|а|у|ом)\b", re.IGNORECASE), r"Бутов\1"),
+            (re.compile(r"\bчертанов(о|е|а|у|ом)\b", re.IGNORECASE), r"Чертанов\1"),
+            (re.compile(r"\bмарьин(о|е|а|у|ом)\b", re.IGNORECASE), r"Марьин\1"),
+            (re.compile(r"\bлюблин(о|е|а|у|ом)\b", re.IGNORECASE), r"Люблин\1"),
+            (re.compile(r"\bмитин(о|е|а|у|ом)\b", re.IGNORECASE), r"Митин\1"),
+            (re.compile(r"\bстрогин(о|е|а|у|ом)\b", re.IGNORECASE), r"Строгин\1"),
+            (re.compile(r"\bкунцев(о|е|а|у|ом)\b", re.IGNORECASE), r"Кунцев\1"),
+            (re.compile(r"\bтушин(о|е|а|у|ом)\b", re.IGNORECASE), r"Тушин\1"),
+            (re.compile(r"\bкрылатск(ое|ом|ого|ому)\b", re.IGNORECASE), r"Крылатск\1"),
+            (re.compile(r"\bзеленоград(а|е|у|ом)?\b", re.IGNORECASE), r"Зеленоград\1"),
         ]
 
     def normalize(self, text: str) -> str:
@@ -854,7 +1084,12 @@ class RussianTextNormalizer:
         for pattern, replacement in self.city_patterns:
             res = pattern.sub(replacement, res)
 
-        # Clean-up: remove double dots (e.g. руб..) and excessive spaces
+        # Clean-up: remove double dots (e.g. руб..) and excessive spaces.
+        # Разделяем склейки вида «200 000Менеджер» (групповые цифры + слово без
+        # пробела): иначе групповая цифра не срабатывает в extract_budget_rub.
+        # Страховка от шаблонов, съевших разделитель (см. thousands выше):
+        # затрагивает только стык цифра→буква, «3×6»/«1.2×1.8» не трогает.
+        res = re.sub(r"(\d)([А-Яа-яЁёA-Za-z])", r"\1 \2", res)
         res = re.sub(r"руб\.\.+", "руб.", res)
         res = re.sub(r"\s+", " ", res).strip()
 

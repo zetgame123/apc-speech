@@ -1,0 +1,29 @@
+{
+  "n": 200,
+  "engines": {
+    "podlodka": {
+      "clean": {
+        "wer": 0.0953,
+        "cer": 0.0198,
+        "seconds_total": 827.2
+      },
+      "telephony": {
+        "wer": 0.1016,
+        "cer": 0.0221,
+        "seconds_total": 824.2
+      }
+    },
+    "t-one": {
+      "clean": {
+        "wer": 0.0535,
+        "cer": 0.0108,
+        "seconds_total": 73.7
+      },
+      "telephony": {
+        "wer": 0.0725,
+        "cer": 0.015,
+        "seconds_total": 73.0
+      }
+    }
+  }
+}

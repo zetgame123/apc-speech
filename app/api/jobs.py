@@ -1,10 +1,13 @@
 import hashlib
+import os
+import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -15,15 +18,18 @@ from fastapi import (
     status,
 )
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.audio_ingest import ingest_url_job
 from app.api.rate_limit import rate_limit
+from app.asr.preprocessor import AudioPreprocessor
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.logging import get_logger
 from app.core.security import AuthContext, validate_ssrf_url, verify_auth
+from app.core.urls import validate_callback_url
 from app.db.models import AudioObject, Call, Job
 from app.db.session import get_db
 from app.queue.redis_streams import get_queue
@@ -31,6 +37,27 @@ from app.storage.s3 import get_storage
 
 router = APIRouter(prefix="/v1/jobs", tags=["jobs"])
 logger = get_logger("jobs_api")
+
+
+async def ensure_job_capacity(db: AsyncSession) -> None:
+    """B6: лимит числа одновременных заданий (queued + running).
+
+    Превышение — 429 с Retry-After, а не падение. Вызывать после auth,
+    до тяжёлой работы (стриминг файла, скачивание по URL).
+    """
+    settings = get_settings()
+    pending = (
+        await db.execute(
+            select(func.count()).select_from(Job).where(Job.status.in_(["queued", "running"]))
+        )
+    ).scalar_one()
+    if pending >= settings.max_pending_jobs:
+        raise AppError(
+            error="too_many_jobs",
+            message=f"Превышен лимит одновременных заданий ({settings.max_pending_jobs})",
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            headers={"Retry-After": "60"},
+        )
 
 
 class JobAcceptedResponse(BaseModel):
@@ -100,53 +127,56 @@ async def create_job_upload(
     auth.verify_namespace(namespace)
     settings = get_settings()
 
-    if callback_url:
-        validate_ssrf_url(callback_url)
+    await ensure_job_capacity(db)
 
-    # Read uploaded bytes with chunk streaming to prevent OOM
-    chunks = []
+    if callback_url:
+        validate_callback_url(callback_url, allow_private_net=settings.callback_allow_private_net)
+
+    # Stream uploaded audio directly to a temporary file to prevent RAM duplication and OOM
+    tmp_upload = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
+    tmp_upload_path = tmp_upload.name
+    tmp_upload.close()
     total_bytes = 0
     max_bytes = settings.max_upload_size_mb * 1024 * 1024
     hasher = hashlib.sha256()
 
-    while True:
-        chunk = await file.read(1024 * 1024)  # 1MB chunk
-        if not chunk:
-            break
-        total_bytes += len(chunk)
-        if total_bytes > max_bytes:
-            raise AppError(
-                "payload_too_large",
-                f"Размер файла превышает лимит {settings.max_upload_size_mb} МБ",
-                413,
-            )
-        hasher.update(chunk)
-        chunks.append(chunk)
+    try:
+        with open(tmp_upload_path, "wb") as f:
+            while True:
+                chunk = await file.read(1024 * 1024)  # 1MB chunk
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > max_bytes:
+                    raise AppError(
+                        "payload_too_large",
+                        f"Размер файла превышает лимит {settings.max_upload_size_mb} МБ",
+                        413,
+                    )
+                hasher.update(chunk)
+                f.write(chunk)
 
-    if total_bytes == 0:
-        raise AppError("empty_file", "Загруженный файл пуст", 400)
+        if total_bytes == 0:
+            raise AppError("empty_file", "Загруженный файл пуст", 400)
 
-    file_bytes = b"".join(chunks)
-    file_hash = hasher.hexdigest()
-    param_fingerprint = f"{language or 'ru'}:{channel_manager}:{vocabulary_hints}"
-    param_hash = hashlib.sha256(param_fingerprint.encode()).hexdigest()[:8]
-    effective_idempotency = idempotency_key or f"hash:{file_hash}:{param_hash}"
+        # B8: ранняя проверка враждебного/битого файла. ffprobe читает только
+        # заголовки (дёшево, timeout 10 c) — мусор отклоняем сразу 400,
+        # не тащим его в S3 и очередь.
+        AudioPreprocessor().probe_audio(tmp_upload_path)
 
-    # Check for existing job with same idempotency key
-    stmt = select(Job).where(
-        Job.namespace == namespace, Job.idempotency_key == effective_idempotency
-    )
-    existing_job = (await db.execute(stmt)).scalar_one_or_none()
-    if existing_job:
-        if existing_job.status == "failed":
-            logger.info(
-                "retrying_failed_job",
-                failed_job_id=existing_job.id,
-                idempotency_key=effective_idempotency,
-            )
-            existing_job.idempotency_key = f"{effective_idempotency[:100]}:f:{existing_job.id[:8]}"
-            await db.flush()
-        else:
+        file_hash = hasher.hexdigest()
+        param_fingerprint = f"{language or 'ru'}:{channel_manager}:{vocabulary_hints}"
+        param_hash = hashlib.sha256(param_fingerprint.encode()).hexdigest()[:8]
+        effective_idempotency = idempotency_key or f"hash:{file_hash}:{param_hash}"
+
+        # Check for existing job with same idempotency key (explicit or content-hash derived)
+        # Note on Idempotency semantics:
+        # Strict and immutable: retries always return the exact existing job (including failed) with HTTP 200.
+        stmt = select(Job).where(
+            Job.namespace == namespace, Job.idempotency_key == effective_idempotency
+        )
+        existing_job = (await db.execute(stmt)).scalar_one_or_none()
+        if existing_job:
             if (
                 idempotency_key
                 and existing_job.file_hash_sha256
@@ -167,20 +197,35 @@ async def create_job_upload(
                 else existing_job.created_at,
             )
 
-    # Generate IDs
-    job_id = str(uuid.uuid4())
-    call_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+        # Generate IDs
+        job_id = str(uuid.uuid4())
+        call_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    # Upload raw audio to MinIO
-    storage = get_storage()
-    s3_key = f"{namespace}/{now.strftime('%Y/%m/%d')}/{call_id}/original_{file.filename}"
-    storage.upload_bytes(
-        bucket=settings.s3_bucket_audio,
-        key=s3_key,
-        data=file_bytes,
-        content_type=file.content_type or "application/octet-stream",
-    )
+        # Upload raw audio to MinIO directly from disk
+        storage = get_storage()
+        s3_key = f"{namespace}/{now.strftime('%Y/%m/%d')}/{call_id}/original_{file.filename}"
+        if hasattr(storage, "upload_file"):
+            storage.upload_file(
+                local_path=tmp_upload_path,
+                bucket=settings.s3_bucket_audio,
+                key=s3_key,
+                content_type=file.content_type or "application/octet-stream",
+            )
+        else:
+            with open(tmp_upload_path, "rb") as f:
+                storage.upload_bytes(
+                    bucket=settings.s3_bucket_audio,
+                    key=s3_key,
+                    data=f.read(),
+                    content_type=file.content_type or "application/octet-stream",
+                )
+    finally:
+        if os.path.exists(tmp_upload_path):
+            try:
+                os.remove(tmp_upload_path)
+            except Exception:
+                pass
 
     # Create Call record
     call = Call(
@@ -203,7 +248,7 @@ async def create_job_upload(
         s3_bucket=settings.s3_bucket_audio,
         s3_key=s3_key,
         mime_type=file.content_type,
-        file_size_bytes=len(file_bytes),
+        file_size_bytes=total_bytes,
         created_at=now,
         expires_at=now + timedelta(days=settings.retention_audio_days),
     )
@@ -283,6 +328,7 @@ async def create_job_upload(
 async def create_job_by_url(
     req: CreateJobByUrlRequest,
     response: Response,
+    background: BackgroundTasks,
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     x_request_id: str | None = Header(None, alias="X-Request-Id"),
     auth: AuthContext = Depends(verify_auth),
@@ -293,10 +339,14 @@ async def create_job_by_url(
     auth.verify_namespace(req.namespace)
     settings = get_settings()
 
+    await ensure_job_capacity(db)
+
     # SSRF Protection
     safe_url = validate_ssrf_url(req.url)
     if req.callback_url:
-        validate_ssrf_url(req.callback_url)
+        validate_callback_url(
+            req.callback_url, allow_private_net=settings.callback_allow_private_net
+        )
 
     meta = req.metadata or {}
     options = req.options or {}
@@ -308,24 +358,15 @@ async def create_job_by_url(
     )
     existing_job = (await db.execute(stmt)).scalar_one_or_none()
     if existing_job:
-        if existing_job.status == "failed":
-            logger.info(
-                "retrying_failed_job",
-                failed_job_id=existing_job.id,
-                idempotency_key=effective_idempotency,
-            )
-            existing_job.idempotency_key = f"{effective_idempotency[:100]}:f:{existing_job.id[:8]}"
-            await db.flush()
-        else:
-            response.status_code = status.HTTP_200_OK
-            return JobAcceptedResponse(
-                job_id=existing_job.id,
-                status=existing_job.status,
-                status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
-                created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
-                if existing_job.created_at.tzinfo is None
-                else existing_job.created_at,
-            )
+        response.status_code = status.HTTP_200_OK
+        return JobAcceptedResponse(
+            job_id=existing_job.id,
+            status=existing_job.status,
+            status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
+            created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
+            if existing_job.created_at.tzinfo is None
+            else existing_job.created_at,
+        )
 
     job_id = str(uuid.uuid4())
     call_id = str(uuid.uuid4())
@@ -383,20 +424,23 @@ async def create_job_by_url(
             )
         raise
 
-    queue = get_queue()
-    payload = {
-        "job_id": job_id,
-        "call_id": call_id,
-        "namespace": req.namespace,
-        "source_url": safe_url,
-        "callback_url": req.callback_url,
-        "language": req.language or "ru",
-        "metadata": meta,
-        "options": options,
-        "channel_manager": options.get("channel_manager") or meta.get("channel_manager"),
-        "vocabulary_hints": options.get("vocabulary_hints") or meta.get("vocabulary_hints"),
-    }
-    await queue.enqueue_long_job(job_id, payload)
+    # B9: скачивание — в фоне после немедленного 202 (файл может быть большим,
+    # клиент не ждёт). Worker-long без egress получает готовый s3_key.
+    background.add_task(
+        ingest_url_job,
+        job_id=job_id,
+        call_id=call_id,
+        namespace=req.namespace,
+        url=safe_url,
+        callback_url=req.callback_url,
+        language=req.language or "ru",
+        metadata=meta,
+        options=options,
+        channel_manager=options.get("channel_manager") or meta.get("channel_manager"),
+        vocabulary_hints=options.get("vocabulary_hints") or meta.get("vocabulary_hints"),
+        max_bytes=settings.max_upload_size_mb * 1024 * 1024,
+        source="by-url",
+    )
 
     return JobAcceptedResponse(
         job_id=job_id,
@@ -425,8 +469,12 @@ async def create_job_by_s3(
     auth.verify_namespace(req.namespace)
     settings = get_settings()
 
+    await ensure_job_capacity(db)
+
     if req.callback_url:
-        validate_ssrf_url(req.callback_url)
+        validate_callback_url(
+            req.callback_url, allow_private_net=settings.callback_allow_private_net
+        )
 
     bucket = req.s3_bucket or settings.s3_bucket_audio
     storage = get_storage()
@@ -454,24 +502,15 @@ async def create_job_by_s3(
     )
     existing_job = (await db.execute(stmt)).scalar_one_or_none()
     if existing_job:
-        if existing_job.status == "failed":
-            logger.info(
-                "retrying_failed_job",
-                failed_job_id=existing_job.id,
-                idempotency_key=effective_idempotency,
-            )
-            existing_job.idempotency_key = f"{effective_idempotency[:100]}:f:{existing_job.id[:8]}"
-            await db.flush()
-        else:
-            response.status_code = status.HTTP_200_OK
-            return JobAcceptedResponse(
-                job_id=existing_job.id,
-                status=existing_job.status,
-                status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
-                created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
-                if existing_job.created_at.tzinfo is None
-                else existing_job.created_at,
-            )
+        response.status_code = status.HTTP_200_OK
+        return JobAcceptedResponse(
+            job_id=existing_job.id,
+            status=existing_job.status,
+            status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
+            created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
+            if existing_job.created_at.tzinfo is None
+            else existing_job.created_at,
+        )
 
     job_id = str(uuid.uuid4())
     call_id = str(uuid.uuid4())

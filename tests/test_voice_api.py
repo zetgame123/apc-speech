@@ -42,6 +42,10 @@ def make_wav_bytes(duration_sec=1, sample_rate=16000):
 @pytest.fixture
 def mock_voice_deps(monkeypatch):
     """Mock ASR engine, preprocessor, and rate limiter for voice search tests."""
+    # Ветка voice-tone-default: эти тесты — про whisper-путь.
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "voice_search_engine", "whisper")
     # Mock ASR engine
     mock_engine = MagicMock()
     mock_engine.transcribe.return_value = (
@@ -64,13 +68,39 @@ def mock_voice_deps(monkeypatch):
     mock_preprocessor.preprocess_memory.return_value = make_wav_bytes()
     monkeypatch.setattr("app.api.voice.AudioPreprocessor", lambda: mock_preprocessor)
 
-    # Mock rate limiter's Redis
+    # Mock rate limiter and voice history Redis
     fake_redis = MagicMock()
     fake_redis.incr = AsyncMock(return_value=1)
     fake_redis.expire = AsyncMock(return_value=None)
+    stored_items = []
+
+    async def fake_lpush(key, val):
+        stored_items.insert(0, val)
+        return len(stored_items)
+
+    async def fake_ltrim(key, start, end):
+        del stored_items[end + 1 :]
+        return True
+
+    async def fake_lrange(key, start, end):
+        return stored_items[start : end + 1]
+
+    async def fake_delete(key):
+        stored_items.clear()
+        return 1
+
+    fake_redis.lpush = AsyncMock(side_effect=fake_lpush)
+    fake_redis.ltrim = AsyncMock(side_effect=fake_ltrim)
+    fake_redis.lrange = AsyncMock(side_effect=fake_lrange)
+    fake_redis.delete = AsyncMock(side_effect=fake_delete)
+    fake_redis.sismember = AsyncMock(return_value=False)
+
     mock_queue = MagicMock()
     mock_queue.get_client = AsyncMock(return_value=fake_redis)
     monkeypatch.setattr("app.api.rate_limit.get_queue", lambda: mock_queue)
+    monkeypatch.setattr("app.api.voice.get_queue", lambda: mock_queue)
+    monkeypatch.setattr("app.core.security.get_queue", lambda: mock_queue)
+    monkeypatch.setattr("app.queue.redis_streams.get_queue", lambda: mock_queue)
 
     return mock_engine
 
@@ -90,6 +120,105 @@ async def test_voice_search_returns_text(mock_voice_deps):
         assert "text" in data
         assert data["language"] == "ru"
         assert data["confidence"] > 0
+        assert "3×6" in data["text"]
+
+
+@pytest.mark.asyncio
+async def test_voice_search_normalizes_cityboard(mock_voice_deps):
+    """Ensure acoustic recognition of cityboard variations gets normalized."""
+    mock_voice_deps.transcribe.return_value = (
+        [
+            {
+                "text": "свободные сити борта и сети борд в Химках",
+                "start": 0.0,
+                "end": 2.5,
+                "confidence": 0.96,
+                "words": [],
+            }
+        ],
+        {"language": "ru", "language_probability": 0.99, "duration": 2.5},
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        wav_data = make_wav_bytes()
+        headers = {"Authorization": "Bearer dev-token", "Content-Type": "audio/wav"}
+        response = await ac.post(
+            "/v1/voice/search?namespace=test_msk",
+            content=wav_data,
+            headers=headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "ситиборда" in data["text"]
+        assert "ситиборд" in data["text"]
+
+
+@pytest.mark.asyncio
+async def test_voice_history_endpoints(mock_voice_deps):
+    """Test GET and DELETE for voice search history."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        headers = {"Authorization": "Bearer dev-token"}
+
+        # 1. Initially empty
+        res = await ac.get("/v1/voice/history?namespace=test_ns", headers=headers)
+        assert res.status_code == 200
+        assert res.json()["count"] == 0
+
+        # 2. Perform a search
+        wav_data = make_wav_bytes()
+        post_headers = {"Authorization": "Bearer dev-token", "Content-Type": "audio/wav"}
+        await ac.post(
+            "/v1/voice/search?namespace=test_ns",
+            content=wav_data,
+            headers=post_headers,
+        )
+
+        # 3. History now has 1 entry
+        res = await ac.get("/v1/voice/history?namespace=test_ns", headers=headers)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["count"] == 1
+        assert len(data["items"]) == 1
+        assert "text" in data["items"][0]
+
+        # 4. Clear history
+        del_res = await ac.delete("/v1/voice/history?namespace=test_ns", headers=headers)
+        assert del_res.status_code == 200
+        assert del_res.json()["status"] == "cleared"
+
+        # 5. History is now empty
+        res = await ac.get("/v1/voice/history?namespace=test_ns", headers=headers)
+        assert res.status_code == 200
+        assert res.json()["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_voice_history_cursor_pagination(mock_voice_deps):
+    """cursor/next_cursor + кап limit на истории голосовых запросов."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        headers = {"Authorization": "Bearer dev-token"}
+        wav_data = make_wav_bytes()
+        post_headers = {"Authorization": "Bearer dev-token", "Content-Type": "audio/wav"}
+        for _ in range(3):
+            await ac.post(
+                "/v1/voice/search?namespace=test_pag",
+                content=wav_data,
+                headers=post_headers,
+            )
+        page1 = (
+            await ac.get("/v1/voice/history?namespace=test_pag&limit=2", headers=headers)
+        ).json()
+        assert page1["count"] == 2
+        assert page1["next_cursor"] == "2"
+        page2 = (
+            await ac.get(
+                f"/v1/voice/history?namespace=test_pag&limit=2&cursor={page1['next_cursor']}",
+                headers=headers,
+            )
+        ).json()
+        assert page2["count"] == 1
+        assert page2["next_cursor"] is None
+        bad = await ac.get("/v1/voice/history?namespace=test_pag&limit=101", headers=headers)
+        assert bad.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -103,3 +232,98 @@ async def test_voice_search_unauthorized():
             headers={"Content-Type": "audio/wav"},
         )
         assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_voice_history_requires_read_scope(monkeypatch):
+    """Token with write scope only must receive 403 Forbidden for GET /v1/voice/history."""
+    from app.core.config import get_settings
+    from app.core.security import hash_token
+
+    token_write = "token-write-only-12345"
+    h_write = hash_token(token_write)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "api_tokens_hashed", f"{h_write}:write:test_ns")
+    monkeypatch.setattr(settings, "dev_token", None)
+    monkeypatch.setattr(settings, "debug", False)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        headers = {"Authorization": f"Bearer {token_write}"}
+        res = await ac.get("/v1/voice/history?namespace=test_ns", headers=headers)
+        assert res.status_code == 403
+        assert res.json().get("error") == "forbidden_scope"
+
+
+@pytest.mark.asyncio
+async def test_voice_sample_audio_endpoint():
+    """GET /v1/voice/sample-audio returns 200 with audio/wav."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        res = await ac.get("/v1/voice/sample-audio")
+        assert res.status_code in (200, 404)
+        if res.status_code == 200:
+            assert res.headers.get("content-type") == "audio/wav"
+
+
+def test_asr_engine_transcribe_signature_accepts_vad_parameters():
+    """AsrEngine.transcribe must accept vad_parameters without raising TypeError."""
+    import inspect
+
+    from app.asr.engine import AsrEngine
+
+    sig = inspect.signature(AsrEngine.transcribe)
+    assert "vad_parameters" in sig.parameters
+
+
+def test_asr_model_missing_local_fallback(monkeypatch):
+    """Verify load_model falls back to 'small' if local model folder is missing."""
+    from unittest.mock import MagicMock, patch
+
+    from app.asr.engine import AsrEngine
+
+    engine = AsrEngine(model_name="./models/nonexistent-model-folder-xyz")
+    with patch("faster_whisper.WhisperModel") as mock_whisper:
+        mock_whisper.return_value = MagicMock()
+        engine.load_model()
+        mock_whisper.assert_called_once()
+        args, kwargs = mock_whisper.call_args
+        assert args[0] == "small"
+
+
+@pytest.mark.asyncio
+async def test_voice_search_missing_weights_returns_503_with_retry_after(monkeypatch, tmp_path):
+    """Без models/t-one/model.onnx — 503 с сообщением по-русски и Retry-After, а не 500.
+
+    Сквозной путь дефолтного tone-движка: каталог весов подменяется пустым,
+    синглтон движка сбрасывается, transcribe мокается только в лимитере/очереди.
+    """
+    import app.asr.tone_engine as tone_module
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "voice_search_engine", "tone")
+    monkeypatch.setattr(settings, "voice_search_use_worker", False)
+    monkeypatch.setattr(settings, "tone_model_dir", str(tmp_path))
+    monkeypatch.setattr(tone_module, "_tone_engine_instance", None)
+
+    fake_redis = MagicMock()
+    fake_redis.incr = AsyncMock(return_value=1)
+    fake_redis.expire = AsyncMock(return_value=None)
+    fake_redis.sismember = AsyncMock(return_value=False)
+    mock_queue = MagicMock()
+    mock_queue.get_client = AsyncMock(return_value=fake_redis)
+    monkeypatch.setattr("app.api.rate_limit.get_queue", lambda: mock_queue)
+    monkeypatch.setattr("app.api.voice.get_queue", lambda: mock_queue)
+    monkeypatch.setattr("app.core.security.get_queue", lambda: mock_queue)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(
+            "/v1/voice/search?namespace=test_msk",
+            content=make_wav_bytes(),
+            headers={"Authorization": "Bearer dev-token", "Content-Type": "audio/wav"},
+        )
+        assert resp.status_code == 503
+        data = resp.json()
+        assert set(data) == {"error", "message", "details"}
+        assert data["error"] == "voice_model_unavailable"
+        assert isinstance(data["message"], str) and data["message"]
+        assert "Retry-After" in resp.headers

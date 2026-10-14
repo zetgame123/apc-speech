@@ -1,16 +1,21 @@
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 import redis.asyncio as aioredis
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.urls import redact_url_for_log
 
 logger = get_logger("redis_queue")
 
 STREAM_LONG_JOBS = "jobs:audio:long"
+STREAM_FAST_JOBS = "jobs:audio:fast"
 STREAM_CALLBACKS = "jobs:callbacks"
+STREAM_DLQ = "jobs:audio:dlq"
 GROUP_WORKERS = "group:workers"
+GROUP_FAST_WORKERS = "group:fast-workers"
 GROUP_CALLBACKS = "group:callbacks"
 
 
@@ -22,10 +27,21 @@ class RedisQueue:
 
     async def get_client(self) -> aioredis.Redis:
         if self.client is None:
+            settings = get_settings()
+            # Блокирующие чтения (BLPOP результата voice-search, XREADGROUP воркеров)
+            # не должны рваться чтением сокета раньше серверного таймаута:
+            # redis-py 8.x без явного socket_timeout роняет BLPOP ~через 5 с
+            # (TimeoutError: Timeout reading from redis). Держим запас +5 с
+            # поверх самого длинного окна ожидания.
+            socket_timeout = max(
+                settings.redis_socket_timeout_sec,
+                settings.voice_search_result_timeout_sec + 5.0,
+            )
             self.client = aioredis.from_url(
                 self.redis_url,
                 encoding="utf-8",
                 decode_responses=True,
+                socket_timeout=socket_timeout,
             )
         return self.client
 
@@ -33,6 +49,7 @@ class RedisQueue:
         client = await self.get_client()
         for stream, group in [
             (STREAM_LONG_JOBS, GROUP_WORKERS),
+            (STREAM_FAST_JOBS, GROUP_FAST_WORKERS),
             (STREAM_CALLBACKS, GROUP_CALLBACKS),
         ]:
             try:
@@ -52,6 +69,31 @@ class RedisQueue:
         logger.info("job_enqueued", job_id=job_id, stream=STREAM_LONG_JOBS, msg_id=msg_id)
         return msg_id
 
+    async def enqueue_fast_job(self, request_id: str, data: dict[str, Any]) -> str:
+        client = await self.get_client()
+        return await client.xadd(
+            STREAM_FAST_JOBS,
+            {"job_id": request_id, "data": json.dumps(data, ensure_ascii=False)},
+        )
+
+    async def wait_fast_result(self, request_id: str, timeout_sec: float) -> dict[str, Any] | None:
+        client = await self.get_client()
+        key = f"voice:result:{request_id}"
+        result = await client.blpop(key, timeout=max(1, int(timeout_sec + 0.999)))
+        if not result:
+            return None
+        raw = result[1]
+        await client.delete(key)
+        return json.loads(raw)
+
+    async def publish_fast_result(
+        self, request_id: str, result: dict[str, Any], ttl_sec: int = 30
+    ) -> None:
+        client = await self.get_client()
+        key = f"voice:result:{request_id}"
+        await client.rpush(key, json.dumps(result, ensure_ascii=False))
+        await client.expire(key, ttl_sec)
+
     async def enqueue_callback(
         self, job_id: str, callback_url: str, payload: dict[str, Any]
     ) -> str:
@@ -66,7 +108,24 @@ class RedisQueue:
             "payload": json.dumps(payload_with_url, ensure_ascii=False),
         }
         msg_id = await client.xadd(STREAM_CALLBACKS, msg_payload)
-        logger.info("callback_enqueued", job_id=job_id, callback_url=callback_url, msg_id=msg_id)
+        logger.info(
+            "callback_enqueued",
+            job_id=job_id,
+            callback_url=redact_url_for_log(callback_url),
+            msg_id=msg_id,
+        )
+        return msg_id
+
+    async def enqueue_dlq(self, job_id: str, error: dict[str, Any], payload: dict[str, Any]) -> str:
+        client = await self.get_client()
+        dlq_data = {
+            "job_id": job_id,
+            "error": json.dumps(error, ensure_ascii=False),
+            "payload": json.dumps(payload, ensure_ascii=False),
+            "failed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        msg_id = await client.xadd(STREAM_DLQ, dlq_data)
+        logger.warning("job_moved_to_dlq", job_id=job_id, stream=STREAM_DLQ, msg_id=msg_id)
         return msg_id
 
     async def read_next_job(
@@ -149,6 +208,19 @@ class RedisQueue:
         try:
             client = await self.get_client()
             return await client.ping()
+        except Exception:
+            return False
+
+    async def set_worker_ready(self, name: str, ttl_sec: int = 20) -> None:
+        """Флаг готовности воркера после прогрева (см. app/workers/warmup.py)."""
+        client = await self.get_client()
+        await client.set(f"worker:ready:{name}", "1", ex=ttl_sec)
+
+    async def is_worker_ready(self, name: str) -> bool:
+        """Жив ли флаг готовности воркера (сбрасывается по TTL при смерти)."""
+        try:
+            client = await self.get_client()
+            return await client.get(f"worker:ready:{name}") is not None
         except Exception:
             return False
 

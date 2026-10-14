@@ -1,0 +1,4 @@
+# Shell-скрипты и Dockerfile всегда с LF: иначе падают под sh/bash
+# (см. B1: WSL-bash не переваривает CRLF в scripts/e2e_demo.sh).
+*.sh text eol=lf
+Dockerfile text eol=lf

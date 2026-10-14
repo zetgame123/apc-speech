@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
@@ -44,6 +45,10 @@ async def revoke_token_endpoint(
 
 @router.get("/v1/admin/tokens/revoked")
 async def list_revoked_tokens_endpoint(
+    cursor: str | None = Query(
+        None, description="Курсор (смещение) для пагинации, ответ содержит next_cursor"
+    ),
+    limit: int = Query(20, ge=1, le=100, description="Размер страницы, максимум 100"),
     auth: AuthContext = Depends(verify_auth),
 ):
     auth.require_scope("admin")
@@ -60,7 +65,16 @@ async def list_revoked_tokens_endpoint(
                 revoke_token(token_h)
     except Exception:
         pass
-    return {"revoked_hashes": list(revoked)}
+    try:
+        offset = int(cursor) if cursor else 0
+        if offset < 0:
+            offset = 0
+    except (TypeError, ValueError):
+        offset = 0
+    ordered = sorted(revoked)
+    page = ordered[offset : offset + limit]
+    next_cursor = str(offset + limit) if len(page) == limit else None
+    return {"revoked_hashes": page, "next_cursor": next_cursor}
 
 
 # --- Data deletion ---
@@ -70,8 +84,12 @@ async def list_revoked_tokens_endpoint(
 async def delete_data(
     namespace: str = Query(...),
     call_id: str | None = Query(None),
+    participant_id: str | None = Query(None),
     client_id: str | None = Query(None),
-    date_before: datetime | None = Query(None),
+    manager_id: str | None = Query(None),
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    date_before: datetime | None = Query(None, deprecated=True),
     auth: AuthContext = Depends(verify_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -82,19 +100,71 @@ async def delete_data(
     query = select(Call).where(Call.namespace == namespace)
     if call_id:
         query = query.where(Call.id == call_id)
+    if participant_id:
+        query = query.where(
+            (Call.client_id == participant_id) | (Call.manager_id == participant_id)
+        )
     if client_id:
         query = query.where(Call.client_id == client_id)
+    if manager_id:
+        query = query.where(Call.manager_id == manager_id)
+    # created_at в БД naive: aware-даты из запроса приводим, иначе Postgres
+    # падает (нельзя сравнивать offset-naive и offset-aware).
+    if date_from:
+        if date_from.tzinfo is not None:
+            date_from = date_from.replace(tzinfo=None)
+        query = query.where(Call.created_at >= date_from)
+    if date_to:
+        if date_to.tzinfo is not None:
+            date_to = date_to.replace(tzinfo=None)
+        query = query.where(Call.created_at <= date_to)
     if date_before:
+        if date_before.tzinfo is not None:
+            date_before = date_before.replace(tzinfo=None)
         query = query.where(Call.created_at <= date_before)
 
     calls = (await db.execute(query)).scalars().all()
     target_call_ids = [c.id for c in calls]
+
+    # Clean up voice query history from Redis for GDPR compliance
+    deleted_voice_queries = 0
+    if not call_id and not participant_id and not client_id and not manager_id:
+        try:
+            from app.queue.redis_streams import get_queue
+
+            client = await get_queue().get_client()
+            effective_date_to = date_to or date_before
+            if not date_from and not effective_date_to:
+                deleted_voice_queries = await client.delete(f"voice:history:{namespace}")
+            else:
+                raw_items = await client.lrange(f"voice:history:{namespace}", 0, -1)
+                to_keep = []
+                for raw in raw_items:
+                    try:
+                        decoded = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+                        item = json.loads(decoded)
+                        item_dt = datetime.fromisoformat(item.get("created_at"))
+                        in_range = (date_from is None or item_dt >= date_from) and (
+                            effective_date_to is None or item_dt <= effective_date_to
+                        )
+                        if in_range:
+                            deleted_voice_queries += 1
+                        else:
+                            to_keep.append(raw)
+                    except Exception:
+                        to_keep.append(raw)
+                await client.delete(f"voice:history:{namespace}")
+                if to_keep:
+                    await client.rpush(f"voice:history:{namespace}", *to_keep)
+        except Exception:
+            pass
 
     if not target_call_ids:
         return {
             "deleted_calls": 0,
             "deleted_audio_files": 0,
             "deleted_transcripts": 0,
+            "deleted_voice_queries": deleted_voice_queries,
         }
 
     # Cancel any active/queued jobs for these calls
@@ -109,7 +179,7 @@ async def delete_data(
             step="cancelled_by_deletion",
             error_details={
                 "error": "cancelled_by_deletion",
-                "message": "Call data deleted by admin",
+                "message": "Данные звонка удалены администратором",
             },
         )
     )
@@ -134,4 +204,5 @@ async def delete_data(
         "deleted_calls": len(target_call_ids),
         "deleted_audio_files": deleted_files_count,
         "deleted_transcripts": len(target_call_ids),
+        "deleted_voice_queries": deleted_voice_queries,
     }

@@ -1,0 +1,106 @@
+{
+  "label": "small-3ghz-beam1",
+  "audio_sec": 3600.0,
+  "job_id": "5be56193-2a7c-46c1-b6fb-726818545651",
+  "job_status": "succeeded",
+  "wall_sec": 4915.7,
+  "rtf": 1.365,
+  "timeline": [
+    {
+      "t": 0.0,
+      "status": "queued",
+      "step": "uploaded",
+      "progress": 0
+    },
+    {
+      "t": 68.3,
+      "status": "running",
+      "step": "asr_transcription",
+      "progress": 25
+    },
+    {
+      "t": 546.3,
+      "status": "running",
+      "step": "asr_transcription_chunk_1_of_9",
+      "progress": 28
+    },
+    {
+      "t": 956.0,
+      "status": "running",
+      "step": "asr_transcription_chunk_2_of_9",
+      "progress": 31
+    },
+    {
+      "t": 1502.2,
+      "status": "running",
+      "step": "asr_transcription_chunk_3_of_9",
+      "progress": 35
+    },
+    {
+      "t": 1843.6,
+      "status": "running",
+      "step": "asr_transcription_chunk_4_of_9",
+      "progress": 38
+    },
+    {
+      "t": 2321.5,
+      "status": "running",
+      "step": "asr_transcription_chunk_5_of_9",
+      "progress": 41
+    },
+    {
+      "t": 2662.9,
+      "status": "running",
+      "step": "asr_transcription_chunk_6_of_9",
+      "progress": 45
+    },
+    {
+      "t": 2936.1,
+      "status": "running",
+      "step": "asr_transcription_chunk_7_of_9",
+      "progress": 48
+    },
+    {
+      "t": 3413.9,
+      "status": "running",
+      "step": "asr_transcription_chunk_8_of_9",
+      "progress": 51
+    },
+    {
+      "t": 3823.5,
+      "status": "running",
+      "step": "mono_diarization",
+      "progress": 55
+    },
+    {
+      "t": 4574.4,
+      "status": "running",
+      "step": "semantic_analysis",
+      "progress": 80
+    },
+    {
+      "t": 4847.5,
+      "status": "succeeded",
+      "step": "completed",
+      "progress": 100
+    }
+  ],
+  "peak_ram_mib": {
+    "apc_small-llm-runtime-1": 3388.4,
+    "apc_small-worker-long-1": 1913.9,
+    "apc_small-api-1": 102.3
+  },
+  "env": {
+    "cpu": "Ryzen 7 8845HS",
+    "mhz": [
+      "2994.222",
+      "1093.439"
+    ],
+    "governor": "performance",
+    "cpuset": {
+      "apc_small-worker-long-1": "4,6/2214592512",
+      "apc_small-llm-runtime-1": "4,6/10737418240",
+      "apc_small-api-1": "4,6/402653184"
+    }
+  }
+}

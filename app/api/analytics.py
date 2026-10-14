@@ -19,6 +19,15 @@ router = APIRouter(prefix="/v1", tags=["analytics"])
 clustering_engine = TopicClusteringEngine()
 
 
+def _naive(dt: datetime | None) -> datetime | None:
+    # E6 (2026-10-14): Call.created_at в БД naive; aware-даты из запроса
+    # (с Z) роняли Postgres «can't subtract offset-naive and offset-aware»
+    # (500 на summary/export_csv). Та же чинка, что в DELETE /v1/data/delete.
+    if dt is not None and dt.tzinfo is not None:
+        return dt.replace(tzinfo=None)
+    return dt
+
+
 class TextAnalyzeRequest(BaseModel):
     namespace: str
     texts: list[str]
@@ -30,20 +39,26 @@ async def get_analytics_summary(
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     manager_id: str | None = Query(None),
+    inquiry_type: str | None = Query(None),
     auth: AuthContext = Depends(verify_auth),
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("read")
     auth.verify_namespace(namespace)
 
-    # Base query for calls in namespace
+    # Base query for calls in namespace. Filtering by inquiry type requires
+    # joining the structured analysis produced for each call.
     call_query = select(Call).where(Call.namespace == namespace)
+    if inquiry_type:
+        call_query = call_query.join(Analysis, Analysis.call_id == Call.id).where(
+            Analysis.inquiry_type == inquiry_type
+        )
     if manager_id:
         call_query = call_query.where(Call.manager_id == manager_id)
     if date_from:
-        call_query = call_query.where(Call.created_at >= date_from)
+        call_query = call_query.where(Call.created_at >= _naive(date_from))
     if date_to:
-        call_query = call_query.where(Call.created_at <= date_to)
+        call_query = call_query.where(Call.created_at <= _naive(date_to))
 
     calls = (await db.execute(call_query)).scalars().all()
     total_calls = len(calls)
@@ -166,9 +181,18 @@ async def analyze_texts(
 
     labels, cluster_names, _ = clustering_engine.fit_transform_texts(req.texts)
 
+    # C7: кластеризация и весь ответ — только по маскированным текстам.
+    # Иначе сырые ПД утекают в подписи кластеров (топ-термы вроде "1111")
+    # и в представителей, даже если представители маскировать отдельно.
+    from app.pii.masker import PiiMasker
+
+    masker = PiiMasker()
+    masked_texts = [masker.mask_text(t) for t in req.texts]
+    labels, cluster_names, _ = clustering_engine.fit_transform_texts(masked_texts)
+
     # Group texts by cluster
     grouped: dict[int, list[str]] = {}
-    for text, label in zip(req.texts, labels):
+    for text, label in zip(masked_texts, labels):
         grouped.setdefault(label, []).append(text)
 
     clusters_output = []
@@ -198,6 +222,7 @@ async def export_analytics_csv(
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     manager_id: str | None = Query(None),
+    inquiry_type: str | None = Query(None),
     auth: AuthContext = Depends(verify_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -211,10 +236,12 @@ async def export_analytics_csv(
     )
     if manager_id:
         call_query = call_query.where(Call.manager_id == manager_id)
+    if inquiry_type:
+        call_query = call_query.where(Analysis.inquiry_type == inquiry_type)
     if date_from:
-        call_query = call_query.where(Call.created_at >= date_from)
+        call_query = call_query.where(Call.created_at >= _naive(date_from))
     if date_to:
-        call_query = call_query.where(Call.created_at <= date_to)
+        call_query = call_query.where(Call.created_at <= _naive(date_to))
 
     results = (await db.execute(call_query)).all()
 

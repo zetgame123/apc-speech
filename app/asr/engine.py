@@ -95,6 +95,13 @@ class AsrEngine:
                 candidate = os.path.join(base_dir, model_target.lstrip("./"))
                 if os.path.exists(candidate):
                     model_target = candidate
+                elif model_target.startswith(("./", "/", "models/")):
+                    logger.warning(
+                        "local_asr_model_directory_missing_falling_back",
+                        configured=model_target,
+                        fallback="small",
+                    )
+                    model_target = "small"
 
             logger.info(
                 "loading_asr_model",
@@ -114,6 +121,34 @@ class AsrEngine:
             logger.error("asr_model_load_error", error=str(e))
             raise
 
+    def warmup(self) -> None:
+        """
+        Executes a minimal dummy forward pass to warm up CTranslate2 kernels,
+        thread pools, memory allocations, and Silero VAD ONNX session.
+        Eliminates cold-start latency for subsequent user queries.
+        """
+        self.load_model()
+        try:
+            import numpy as np
+
+            # 0.5s dummy audio at 16kHz with small sine tone
+            dummy_pcm = np.zeros(8000, dtype=np.float32)
+            dummy_pcm[1000:7000] = 0.02 * np.sin(
+                np.linspace(0, 400 * np.pi, 6000, dtype=np.float32)
+            )
+            list(
+                self.model.transcribe(
+                    dummy_pcm,
+                    language="ru",
+                    beam_size=1,
+                    vad_filter=True,
+                    word_timestamps=False,
+                )[0]
+            )
+            logger.info("asr_engine_warmup_completed", model=self.model_name)
+        except Exception as e:
+            logger.warning("asr_engine_warmup_warning", error=str(e))
+
     def transcribe(
         self,
         audio: Any,
@@ -123,6 +158,8 @@ class AsrEngine:
         vad_filter: bool = True,
         hotwords: str | None = None,
         word_timestamps: bool = True,
+        vad_parameters: dict[str, Any] | None = None,
+        **kwargs: Any,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """
         Transcribes audio with faster-whisper.
@@ -135,24 +172,31 @@ class AsrEngine:
             else (DEFAULT_CONVERSATION_PROMPT if resolved_lang == "ru" else None)
         )
         applied_hotwords = hotwords.strip() if (hotwords and hotwords.strip()) else None
+        temperature = kwargs.pop("temperature", 0.0)
+
+        default_vad = dict(
+            threshold=0.35,
+            min_silence_duration_ms=450,
+            speech_pad_ms=300,
+        )
+        if vad_parameters:
+            default_vad.update(vad_parameters)
 
         segments_iter, info = self.model.transcribe(
             audio,
             language=resolved_lang,
             beam_size=beam_size,
+            temperature=temperature,
             initial_prompt=prompt,
             hotwords=applied_hotwords,
             vad_filter=vad_filter,
-            vad_parameters=dict(
-                threshold=0.35,
-                min_silence_duration_ms=450,
-                speech_pad_ms=300,
-            ),
+            vad_parameters=default_vad,
             word_timestamps=word_timestamps,
             condition_on_previous_text=False,  # CRITICAL: prevents repeating loops
             no_speech_threshold=0.6,
             compression_ratio_threshold=2.4,
             log_prob_threshold=-1.0,
+            **kwargs,
         )
 
         segments = []

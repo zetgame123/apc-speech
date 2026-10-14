@@ -110,13 +110,18 @@ def test_s3_presigned_url_generation():
 
 @pytest.mark.asyncio
 async def test_bitrix24_webhook_endpoint():
-    with (
-        patch("app.api.integrations.get_queue") as mock_get_queue,
-        patch("app.api.integrations.get_db") as mock_get_db,
-    ):
-        mock_queue = AsyncMock()
-        mock_get_queue.return_value = mock_queue
+    """Пункт 3: быстрый 202, скачивание записи запланировано в фоне."""
+    from fastapi import BackgroundTasks
 
+    with (
+        patch("app.api.integrations.get_db") as mock_get_db,
+        patch(
+            "app.api.integrations.validate_ssrf_url",
+            return_value="https://pub.telephony.bitrix24.ru/records/001.mp3",
+        ),
+        patch.object(BackgroundTasks, "add_task") as mock_add_task,
+        patch("app.api.audio_ingest.fetch_url_to_s3") as mock_fetch,
+    ):
         mock_db = AsyncMock()
         mock_get_db.return_value = mock_db
         # Mock scalar_one_or_none to return None (no duplicate job)
@@ -148,6 +153,10 @@ async def test_bitrix24_webhook_endpoint():
             assert "job_id" in data
             assert "call_id" in data
             assert data["status_url"].startswith("/v1/jobs/")
+            # Скачивание НЕ выполнялось в запросе — только запланировано в фоне.
+            mock_fetch.assert_not_called()
+            mock_add_task.assert_called_once()
+            assert mock_add_task.call_args[0][0].__name__ == "ingest_url_job"
 
 
 @pytest.mark.asyncio

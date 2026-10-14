@@ -1,0 +1,202 @@
+{
+  "summary": {
+    "mono": {
+      "n": 15,
+      "mean_der": 0.1626,
+      "mean_role_acc": 0.9392,
+      "median_seconds": 28.7
+    },
+    "stereo": {
+      "n": 15,
+      "mean_der": 0.2856,
+      "mean_role_acc": 0.9823,
+      "median_seconds": 0.0
+    }
+  },
+  "per_file": {
+    "mono": [
+      {
+        "id": "d00",
+        "der": 0.1576,
+        "role_acc": 0.9459,
+        "seconds": 32.0
+      },
+      {
+        "id": "d02",
+        "der": 0.181,
+        "role_acc": 0.9218,
+        "seconds": 34.2
+      },
+      {
+        "id": "d04",
+        "der": 0.1528,
+        "role_acc": 0.9563,
+        "seconds": 30.8
+      },
+      {
+        "id": "d06",
+        "der": 0.1605,
+        "role_acc": 0.9398,
+        "seconds": 27.1
+      },
+      {
+        "id": "d08",
+        "der": 0.1518,
+        "role_acc": 0.9483,
+        "seconds": 33.9
+      },
+      {
+        "id": "d10",
+        "der": 0.1748,
+        "role_acc": 0.9342,
+        "seconds": 24.5
+      },
+      {
+        "id": "d12",
+        "der": 0.1849,
+        "role_acc": 0.9217,
+        "seconds": 28.7
+      },
+      {
+        "id": "d14",
+        "der": 0.1941,
+        "role_acc": 0.9113,
+        "seconds": 34.8
+      },
+      {
+        "id": "d16",
+        "der": 0.1416,
+        "role_acc": 0.9512,
+        "seconds": 28.6
+      },
+      {
+        "id": "d18",
+        "der": 0.1867,
+        "role_acc": 0.9071,
+        "seconds": 29.6
+      },
+      {
+        "id": "d20",
+        "der": 0.1249,
+        "role_acc": 0.9676,
+        "seconds": 20.4
+      },
+      {
+        "id": "d22",
+        "der": 0.1518,
+        "role_acc": 0.9418,
+        "seconds": 20.6
+      },
+      {
+        "id": "d24",
+        "der": 0.1638,
+        "role_acc": 0.9349,
+        "seconds": 14.9
+      },
+      {
+        "id": "d26",
+        "der": 0.154,
+        "role_acc": 0.9539,
+        "seconds": 15.8
+      },
+      {
+        "id": "d28",
+        "der": 0.1593,
+        "role_acc": 0.9522,
+        "seconds": 32.4
+      }
+    ],
+    "stereo": [
+      {
+        "id": "d01",
+        "der": 0.2806,
+        "role_acc": 0.9867,
+        "seconds": 0.0
+      },
+      {
+        "id": "d03",
+        "der": 0.2831,
+        "role_acc": 0.9843,
+        "seconds": 0.0
+      },
+      {
+        "id": "d05",
+        "der": 0.2844,
+        "role_acc": 0.9853,
+        "seconds": 0.0
+      },
+      {
+        "id": "d07",
+        "der": 0.2953,
+        "role_acc": 0.9813,
+        "seconds": 0.0
+      },
+      {
+        "id": "d09",
+        "der": 0.2851,
+        "role_acc": 0.9791,
+        "seconds": 0.0
+      },
+      {
+        "id": "d11",
+        "der": 0.286,
+        "role_acc": 0.9823,
+        "seconds": 0.0
+      },
+      {
+        "id": "d13",
+        "der": 0.2947,
+        "role_acc": 0.9881,
+        "seconds": 0.0
+      },
+      {
+        "id": "d15",
+        "der": 0.2811,
+        "role_acc": 0.983,
+        "seconds": 0.0
+      },
+      {
+        "id": "d17",
+        "der": 0.2889,
+        "role_acc": 0.9816,
+        "seconds": 0.0
+      },
+      {
+        "id": "d19",
+        "der": 0.2782,
+        "role_acc": 0.9808,
+        "seconds": 0.0
+      },
+      {
+        "id": "d21",
+        "der": 0.278,
+        "role_acc": 0.9812,
+        "seconds": 0.0
+      },
+      {
+        "id": "d23",
+        "der": 0.2829,
+        "role_acc": 0.9828,
+        "seconds": 0.0
+      },
+      {
+        "id": "d25",
+        "der": 0.2874,
+        "role_acc": 0.9818,
+        "seconds": 0.0
+      },
+      {
+        "id": "d27",
+        "der": 0.2902,
+        "role_acc": 0.9802,
+        "seconds": 0.0
+      },
+      {
+        "id": "d29",
+        "der": 0.2888,
+        "role_acc": 0.9767,
+        "seconds": 0.0
+      }
+    ]
+  }
+}

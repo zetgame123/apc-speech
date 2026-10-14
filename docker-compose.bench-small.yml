@@ -1,0 +1,36 @@
+# Бенч-профиль small: эмуляция 2 vCPU на многоядерном хосте.
+#
+# Использование:
+#   docker compose -p apc_small -f docker-compose.yml -f docker-compose.bench-small.yml up -d --build
+#
+# Выбор ядер: логические CPU 4 и 6 (lscpu -e: физические ядра 2 и 3,
+# РАЗНЫЕ физические ядра, SMT-соседи 5 и 7 свободны). Младшие CPU 0-3
+# оставлены хосту/OS, чтобы системные процессы не шумели в замере.
+# Железо замера: AMD Ryzen 7 8845HS, governor powersave.
+# Лимиты памяти уже заданы в основном compose (deploy.resources.limits),
+# здесь только привязка CPU. Проверка: docker compose ... config | grep cpuset.
+services:
+  postgres:
+    cpuset: "4,6"
+  redis:
+    cpuset: "4,6"
+  minio:
+    cpuset: "4,6"
+  alembic-migrate:
+    cpuset: "4,6"
+  model-downloader:
+    cpuset: "4,6"
+  model-downloader-llm:
+    cpuset: "4,6"
+  api:
+    cpuset: "4,6"
+  worker-long:
+    cpuset: "4,6"
+  worker-callback:
+    cpuset: "4,6"
+  worker-fast:
+    cpuset: "4,6"
+  cleanup-retention:
+    cpuset: "4,6"
+  llm-runtime:
+    cpuset: "4,6"

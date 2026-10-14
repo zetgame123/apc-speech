@@ -1,0 +1,14 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow documentation mock tokens and curl auth header examples"
+regexes = [
+    '''(?i)bearer\s+(my-secure-token|dev-token|<token>|\$api_token)''',
+    '''my-secure-token''',
+    '''dev-token''',
+]
+paths = [
+    '''README\.md''',
+    '''docs/.*''',
+]

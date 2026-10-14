@@ -66,6 +66,12 @@ paths:
           description: Успешное распознавание
           content:
             application/json:
+              example:
+                              text: щиты 3×6 в Балашихе на октябрь только свободные
+                              language: ru
+                              confidence: 0.94
+                              duration_sec: 4.2
+                              processing_time_ms: 1250
               schema:
                 $ref: '#/components/schemas/VoiceSearchResponse'
         '400':
@@ -76,8 +82,119 @@ paths:
           $ref: '#/components/responses/PayloadTooLarge'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
         '500':
           $ref: '#/components/responses/InternalError'
+
+  /v1/voice/history:
+    get:
+      summary: Получение истории голосовых поисковых запросов
+      description: |
+        Возвращает журнал расшифровок голосовых запросов по namespace со всех устройств.
+        Требуется security scope: read.
+      operationId: getVoiceHistory
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: namespace
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: cursor
+          schema:
+            type: string
+          required: false
+          description: Курсор (смещение) для пагинации, ответ содержит next_cursor
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          required: false
+      responses:
+        '200':
+          description: Список запросов
+          content:
+            application/json:
+              example:
+                              items:
+                                - id: 7d3c2a11-9e0b-4c2d-a1f2-9b3c4d5e6f70
+                                  text: щиты 3×6 в Балашихе
+                                  language: ru
+                                  confidence: 0.91
+                                  duration: 3.1
+                                  latency: 1890
+                                  method: голосовой
+                                  created_at: '2026-10-11T10:00:00+00:00'
+                                  timestamp: '13:00:00'
+                              count: 1
+                              next_cursor: '20'
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                  count:
+                    type: integer
+                  next_cursor:
+                    type: string
+                    nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      summary: Очистка истории голосовых запросов
+      description: Удаляет накопленную историю голосовых запросов для указанного namespace.
+      operationId: clearVoiceHistory
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: namespace
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: История очищена
+          content:
+            application/json:
+              example:
+                              status: cleared
+                              namespace: demo_outdoor_msk
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  namespace:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/voice/sample-audio:
+    get:
+      summary: Получение демонстрационного аудиофайла для голосового поиска
+      description: Отдает WAV-аудиозапись эталонного голосового запроса поиска наружной рекламы.
+      operationId: getSampleVoiceAudio
+      responses:
+        '200':
+          description: Аудиозапись в формате audio/wav
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /v1/jobs/upload:
     post:
@@ -95,6 +212,9 @@ paths:
           name: Idempotency-Key
           schema:
             type: string
+          description: |
+            Уникальный ключ идемпотентности запроса.
+            Повтор запроса с тем же Idempotency-Key или с тем же содержимым (SHA-256 хэш файла + параметры) строго возвращает исходный Job (включая failed) с кодом 200, не создавая второй результат.
       requestBody:
         required: true
         content:
@@ -120,6 +240,10 @@ paths:
                   type: string
                 client_id:
                   type: string
+                call_created_at:
+                  type: string
+                  format: date-time
+                  description: Время звонка в ISO 8601 с указанием часового пояса
                 channel_manager:
                   type: integer
                   description: Номер канала менеджера в стерео (0 или 1)
@@ -136,6 +260,11 @@ paths:
           description: Задание принято в обработку
           content:
             application/json:
+              example:
+                              job_id: 5d3c7749-abaf-4413-b5b2-a66403b43b6b
+                              status: queued
+                              status_url: /v1/jobs/5d3c7749-abaf-4413-b5b2-a66403b43b6b?namespace=demo_outdoor_msk
+                              created_at: '2026-10-11T10:00:00+00:00'
               schema:
                 $ref: '#/components/schemas/JobAcceptedResponse'
         '400':
@@ -167,6 +296,9 @@ paths:
         required: true
         content:
           application/json:
+            example:
+                            namespace: demo_outdoor_msk
+                            url: https://example.com/calls/call_999.mp3
             schema:
               $ref: '#/components/schemas/CreateJobByUrlRequest'
       responses:
@@ -174,6 +306,11 @@ paths:
           description: Задание принято в обработку
           content:
             application/json:
+              example:
+                              job_id: 5d3c7749-abaf-4413-b5b2-a66403b43b6b
+                              status: queued
+                              status_url: /v1/jobs/5d3c7749-abaf-4413-b5b2-a66403b43b6b?namespace=demo_outdoor_msk
+                              created_at: '2026-10-11T10:00:00+00:00'
               schema:
                 $ref: '#/components/schemas/JobAcceptedResponse'
         '400':
@@ -203,6 +340,9 @@ paths:
         required: true
         content:
           application/json:
+            example:
+                            namespace: demo_outdoor_msk
+                            s3_key: demo_outdoor_msk/2026/10/11/call_999/original.mp3
             schema:
               $ref: '#/components/schemas/CreateJobByS3Request'
       responses:
@@ -210,6 +350,11 @@ paths:
           description: Задание принято в обработку
           content:
             application/json:
+              example:
+                              job_id: 5d3c7749-abaf-4413-b5b2-a66403b43b6b
+                              status: queued
+                              status_url: /v1/jobs/5d3c7749-abaf-4413-b5b2-a66403b43b6b?namespace=demo_outdoor_msk
+                              created_at: '2026-10-11T10:00:00+00:00'
               schema:
                 $ref: '#/components/schemas/JobAcceptedResponse'
         '400':
@@ -243,6 +388,14 @@ paths:
           description: Текущий статус задания
           content:
             application/json:
+              example:
+                              job_id: 5d3c7749-abaf-4413-b5b2-a66403b43b6b
+                              call_id: 5de775de-a026-4e6b-87d1-eb6f98948c4f
+                              status: succeeded
+                              progress: 100
+                              step: completed
+                              result_url: /v1/calls/5de775de-a026-4e6b-87d1-eb6f98948c4f/analysis?namespace=demo_outdoor_msk
+                              error: null
               schema:
                 $ref: '#/components/schemas/JobStatusResponse'
         '404':
@@ -273,6 +426,7 @@ paths:
             default: json
         - in: query
           name: masked
+          description: Немаскированный текст доступен только токену со scope admin.
           schema:
             type: boolean
             default: true
@@ -281,6 +435,21 @@ paths:
           description: Транскрипт в запрошенном формате
           content:
             application/json:
+              example:
+                              call_id: 5de775de-a026-4e6b-87d1-eb6f98948c4f
+                              full_text: Здравствуйте! Подскажите стоимость суперсайта на Ленинградке.
+                              segments:
+                                - start: 0.0
+                                  end: 4.5
+                                  speaker_label: SPEAKER_0
+                                  speaker_role: client
+                                  text: Здравствуйте! Подскажите стоимость суперсайта на Ленинградке.
+                                  confidence: 0.93
+                                  words:
+                                    - word: Здравствуйте!
+                                      start: 0.0
+                                      end: 0.8
+                                      confidence: 0.95
               schema:
                 $ref: '#/components/schemas/TranscriptResponse'
             text/plain:
@@ -311,6 +480,28 @@ paths:
           description: Структурированный анализ
           content:
             application/json:
+              example:
+                              call_id: 5de775de-a026-4e6b-87d1-eb6f98948c4f
+                              schema_version: 1.0.0
+                              prompt_version: v1.5-ru-types
+                              summary: Клиент интересуется стоимостью суперсайта на Ленинградке.
+                              call_result: info_provided
+                              inquiry_type: pricing
+                              entities:
+                                cities: []
+                                formats: [суперсайт]
+                              agreements: []
+                              sentiment:
+                                client_overall: neutral
+                                manager_tone: polite_constructive
+                              manager_checklist:
+                                greeting: true
+                                need_identification: true
+                                options_offered: false
+                                next_step_named: false
+                                contacts_taken: false
+                                forbidden_words_found: []
+                                score: 2
               schema:
                 $ref: '#/components/schemas/CallAnalysisResponse'
         '404':
@@ -362,6 +553,11 @@ paths:
                 type: string
                 format: binary
             application/json:
+              example:
+                call_id: 5de775de-a026-4e6b-87d1-eb6f98948c4f
+                url: http://minio:9000/raw-audio/presigned?exp=3600
+                expires_in_sec: 3600
+                mime_type: audio/wav
               schema:
                 type: object
                 properties:
@@ -427,6 +623,15 @@ paths:
           description: Список звонков с пагинацией курсором
           content:
             application/json:
+              example:
+                              items:
+                                - call_id: 5de775de-a026-4e6b-87d1-eb6f98948c4f
+                                  external_id: demo_call_999
+                                  created_at: '2026-10-11T10:00:00+00:00'
+                                  manager_id: null
+                                  duration_sec: 11.2
+                                  is_answering_machine: false
+                              next_cursor: '2026-10-11T10:00:00|5de775de-a026-4e6b-87d1-eb6f98948c4f'
               schema:
                 $ref: '#/components/schemas/CallListResponse'
 
@@ -444,13 +649,11 @@ paths:
             type: string
         - in: query
           name: date_from
-          required: true
           schema:
             type: string
             format: date-time
         - in: query
           name: date_to
-          required: true
           schema:
             type: string
             format: date-time
@@ -458,11 +661,32 @@ paths:
           name: manager_id
           schema:
             type: string
+        - in: query
+          name: inquiry_type
+          schema:
+            type: string
+          description: Известные значения определены в config/taxonomy.yaml; новые значения допустимы.
       responses:
         '200':
           description: Агрегированные метрики, тренды и распределение тем
           content:
             application/json:
+              example:
+                              total_calls: 18
+                              inquiry_distribution:
+                                pricing: 15
+                                other: 3
+                              top_entities:
+                                cities: []
+                                formats:
+                                  - name: суперсайт
+                                    count: 15
+                              checklist_averages:
+                                average_score: 1.76
+                                greeting_pct: 82.4
+                              weekly_trends:
+                                - week: 2026-W41
+                                  calls_count: 18
               schema:
                 $ref: '#/components/schemas/AnalyticsSummaryResponse'
 
@@ -482,6 +706,13 @@ paths:
         required: true
         content:
           application/json:
+            example:
+                            namespace: demo_outdoor_msk
+                            texts:
+                              - щиты 3х6 в Балашихе
+                              - билборд 3х6 шоссе Энтузиастов
+                              - сколько стоит суперсайт в Москве
+                              - прайс на суперсайты и скидки
             schema:
               type: object
               required: [namespace, texts]
@@ -493,12 +724,27 @@ paths:
                   items:
                     type: string
                   minItems: 1
-                  maxItems: 5000
+                  maxItems: 500
       responses:
         '200':
           description: Результаты кластеризации и распределение тем
           content:
             application/json:
+              example:
+                              total_texts: 4
+                              clusters:
+                                - cluster_id: 1
+                                  label: щиты 3х6 / Балашиха
+                                  size: 3
+                                  representative_queries:
+                                    - щиты 3х6 в Балашихе
+                                    - билборд 3х6 шоссе Энтузиастов
+                                    - сколько стоит суперсайт в Москве
+                                - cluster_id: 2
+                                  label: прайс / скидки
+                                  size: 1
+                                  representative_queries:
+                                    - прайс на суперсайты и скидки
               schema:
                 $ref: '#/components/schemas/TextAnalysisResponse'
 
@@ -550,6 +796,16 @@ paths:
         required: true
         content:
           application/json:
+            example:
+                            event: ONVOXIMPLANTCALLFINISHED
+                            data:
+                              CALL_ID: '12345'
+                              RECORD_URL: https://portal.bitrix24.ru/records/call_12345.mp3
+                              PORTAL_USER_ID: '7'
+                              PHONE_NUMBER: '+79001234567'
+                              CALL_DURATION: '312'
+                              CRM_ENTITY_TYPE: LEAD
+                              CRM_ENTITY_ID: '99'
             schema:
               type: object
               properties:
@@ -582,6 +838,11 @@ paths:
           description: Звонок принят в очередь обработки
           content:
             application/json:
+              example:
+                              job_id: 5d3c7749-abaf-4413-b5b2-a66403b43b6b
+                              status: queued
+                              status_url: /v1/jobs/5d3c7749-abaf-4413-b5b2-a66403b43b6b?namespace=demo_outdoor_msk
+                              created_at: '2026-10-11T10:00:00+00:00'
               schema:
                 $ref: '#/components/schemas/JobAcceptedResponse'
         '400':
@@ -607,19 +868,45 @@ paths:
           schema:
             type: string
         - in: query
+          name: participant_id
+          schema:
+            type: string
+          description: Непрозрачный ID участника; совпадает с manager_id или client_id.
+        - in: query
           name: client_id
           schema:
             type: string
         - in: query
-          name: date_before
+          name: manager_id
+          schema:
+            type: string
+        - in: query
+          name: date_from
           schema:
             type: string
             format: date-time
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: date_before
+          deprecated: true
+          schema:
+            type: string
+            format: date-time
+          description: Устаревший алиас date_to.
       responses:
         '200':
           description: Отчет об удаленных сущностях
           content:
             application/json:
+              example:
+                              deleted_calls: 1
+                              deleted_audio_files: 1
+                              deleted_transcripts: 1
+                              deleted_voice_queries: 0
               schema:
                 type: object
                 properties:
@@ -639,6 +926,10 @@ paths:
           description: Сервис жив
           content:
             application/json:
+              example:
+                              status: ok
+                              version: 0.1.0
+                              profile: small
               schema:
                 type: object
                 properties:
@@ -648,6 +939,12 @@ paths:
                   version:
                     type: string
                     example: "1.0.0"
+                  details:
+                    type: object
+                    properties:
+                      avx2:
+                        type: boolean
+                        description: CPU сообщает флаг AVX2 (без него ASR на порядок медленнее)
 
   /ready:
     get:
@@ -658,6 +955,14 @@ paths:
           description: Все зависимости доступны (БД, очередь, хранилище, модели)
           content:
             application/json:
+              example:
+                status: ready
+                dependencies:
+                  database: true
+                  redis: true
+                  s3: true
+                  worker_long: true
+                  worker_fast: true
               schema:
                 type: object
                 properties:
@@ -675,6 +980,12 @@ paths:
                         type: boolean
                       asr_model:
                         type: boolean
+                      worker_long:
+                        type: boolean
+                        description: Прогрет и жив (Redis-флаг после warmup)
+                      worker_fast:
+                        type: boolean
+                        description: Прогрет и жив (Redis-флаг после warmup)
         '503':
           description: Сервис не готов к приему трафика
           content:
@@ -788,6 +1099,8 @@ paths:
         required: true
         content:
           application/json:
+            example:
+                            token_hash: abc123deadbeef
             schema:
               type: object
               required: [token_hash]
@@ -800,6 +1113,10 @@ paths:
           description: Токен успешно отозван
           content:
             application/json:
+              example:
+                              token_hash: abc123deadbeef
+                              revoked: true
+                              was_new: true
               schema:
                 type: object
                 properties:
@@ -821,11 +1138,30 @@ paths:
       operationId: listRevokedTokens
       security:
         - BearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+          required: false
+          description: Курсор (смещение) для пагинации, ответ содержит next_cursor
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          required: false
       responses:
         '200':
           description: Список хэшей отозванных токенов
           content:
             application/json:
+              example:
+                              revoked_hashes:
+                                - abc123deadbeef
+                              next_cursor: null
               schema:
                 type: object
                 properties:
@@ -833,6 +1169,9 @@ paths:
                     type: array
                     items:
                       type: string
+                  next_cursor:
+                    type: string
+                    nullable: true
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1123,8 +1462,9 @@ components:
               summary:
                 type: string
         next_cursor:
-          type: string
-          nullable: true
+          type:
+            - string
+            - "null"
 
     AnalyticsSummaryResponse:
       type: object
@@ -1246,6 +1586,16 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     TooManyRequests:
       description: Превышен лимит запросов (Rate Limit)
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ServiceUnavailable:
+      description: Сервис или очередь временно недоступны
       headers:
         Retry-After:
           schema:

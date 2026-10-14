@@ -1,3 +1,6 @@
+import pytest
+import yaml
+
 from app.asr.normalizer import RussianTextNormalizer
 
 
@@ -34,6 +37,20 @@ def test_currency_normalization():
     assert normalizer.normalize("от 30 до 80 тысяч рублей") == "от 30 000 до 80 000 руб."
     assert normalizer.normalize("до 50 тыс") == "до 50 000 руб."
     assert normalizer.normalize("до 100к") == "до 100 000 руб."
+
+
+def test_no_glue_between_grouped_digits_and_next_line():
+    """Склейка «200 000Менеджер:» (b014): разделитель после тысяч без валюты
+    не должен съедаться — иначе групповая цифра не срабатывает в бюджете."""
+    normalizer = RussianTextNormalizer()
+    assert (
+        normalizer.normalize("В Подольске, на двести тысяч\nМенеджер: Отменяю")
+        == "В Подольске, на 200 000 Менеджер: Отменяю"
+    )
+    assert (
+        normalizer.normalize("джой две тысячи четвертый год это часть чего")
+        == "джой 2 000 четвертый год это часть чего"
+    )
 
 
 def test_metro_stations_capitalization():
@@ -74,3 +91,63 @@ def test_terms_and_formats():
     assert normalizer.normalize("сити формат сторона а") == "сити-формат сторона А"
     assert normalizer.normalize("супер сайт сторона б") == "суперсайт сторона Б"
     assert normalizer.normalize("диджитал экраны с высоким grp") == "digital-экраны с высоким GRP"
+    assert normalizer.normalize("сити борд в Химках") == "ситиборд в Химках"
+    assert (
+        normalizer.normalize("свободные сити борта на октябрь") == "свободные ситиборда на октябрь"
+    )
+    assert normalizer.normalize("аренда сити бордов") == "аренда ситибордов"
+    assert normalizer.normalize("сети борд и бигборд") == "ситиборд и билборд"
+    assert normalizer.normalize("размещение на city board") == "размещение на ситиборд"
+
+
+def test_voice_search_misrecognitions_and_districts():
+    normalizer = RussianTextNormalizer()
+
+    # User reported query: "Ситиборды в Южном Путово. Свободный Нактябрь."
+    assert (
+        normalizer.normalize("Ситиборды в Южном Путово. Свободный Нактябрь.")
+        == "Ситиборды в Южном Бутово. Свободные на октябрь."
+    )
+    assert normalizer.normalize("щиты в путово") == "щиты в Бутово"
+    assert normalizer.normalize("ситиборды в северном путово") == "ситиборды в Северном Бутово"
+    assert normalizer.normalize("свободные нактябрь") == "свободные на октябрь"
+    assert normalizer.normalize("размещение навгуст") == "размещение на август"
+    assert normalizer.normalize("Рас-рас.") == "Раз-раз."
+    assert normalizer.normalize("рас-рас") == "раз-раз"
+    assert normalizer.normalize("Расслаз.") == "Раз-раз."
+    assert normalizer.normalize("расслаз") == "раз-раз"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "щит",  # одно слово
+        "",  # пустая строка
+        "123",  # только числа
+        "!!!",  # только знаки
+        "три на шесть",
+        "щиты 3×6",
+        "а",
+        "  ",
+        "Румянцево",  # метро-шаблоны без групп (IndexError до чинки)
+        "Саларьево",
+        "Новогиреево",
+        "Перово",
+        "Беляево",
+    ],
+)
+def test_normalizer_never_raises_on_edge_inputs(text):
+    """Нормалайзер на любой вход возвращает строку и никогда не падает."""
+    result = RussianTextNormalizer().normalize(text)
+    assert isinstance(result, str)
+
+
+def test_normalizer_handles_all_vocabulary_hints():
+    """Все 409 терминов подсказок нормализуются без исключений."""
+    with open("config/vocabulary_hints.yaml", encoding="utf-8") as f:
+        hints = yaml.safe_load(f)
+    terms = [str(t) for v in hints.values() if isinstance(v, list) for t in v]
+    assert len(terms) > 0
+    normalizer = RussianTextNormalizer()
+    for term in terms:
+        assert isinstance(normalizer.normalize(term), str)

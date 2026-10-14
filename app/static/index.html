@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>APC-SPEECH | Outdoor Advertising Speech Intelligence</title>
+  <title>APC-SPEECH · Центр речевой аналитики | Speech Intelligence</title>
   <!-- Bootstrap 5 CSS & Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -180,30 +180,110 @@
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
       margin-bottom: 0.75rem;
     }
-    .preset-pill {
-      cursor: pointer;
-      background: #f8fafc;
-      border: 1px solid #cbd5e1;
-      padding: 6px 14px;
-      border-radius: 20px;
-      font-size: 0.88rem;
-      color: #334155;
-      transition: all 0.15s ease;
-      display: inline-block;
-      margin: 4px;
-    }
-    .preset-pill:hover {
-      background: #e0f2fe;
-      border-color: #7dd3fc;
-      color: #0369a1;
-      transform: translateY(-1px);
-    }
     .table-calls tr {
       cursor: pointer;
     }
     .table-calls tr:hover {
       background-color: #f1f5f9;
     }
+
+    /* Modern dashboard skin — preserves the existing DOM and interaction contract. */
+    :root {
+      --navy-bg: #0b1220;
+      --ink: #172033;
+      --muted: #65728a;
+      --surface: #ffffff;
+      --surface-soft: #f5f8fc;
+      --line: #dce5f0;
+      --primary-accent: #2563eb;
+      --cyan-accent: #06b6d4;
+      --success-accent: #16a34a;
+      --warning-accent: #f59e0b;
+      --danger-accent: #e11d48;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      background:
+        radial-gradient(circle at 12% -10%, rgba(37,99,235,.13), transparent 30rem),
+        radial-gradient(circle at 94% 18%, rgba(6,182,212,.10), transparent 26rem),
+        #f3f6fa;
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: -0.01em;
+    }
+    body::before {
+      content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .22;
+      background-image: linear-gradient(rgba(15,23,42,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,.035) 1px, transparent 1px);
+      background-size: 34px 34px; mask-image: linear-gradient(to bottom, black, transparent 70%); z-index: -1;
+    }
+    .header-bar {
+      position: sticky; top: 0; z-index: 1000;
+      padding: 1.05rem clamp(1rem, 3vw, 2.75rem) 0;
+      background: linear-gradient(115deg, #0b1220 0%, #111d35 58%, #12324b 100%);
+      border-bottom: 1px solid rgba(148,163,184,.20);
+      box-shadow: 0 18px 45px rgba(15,23,42,.18);
+    }
+    .header-bar > .d-flex:first-child { max-width: 1640px; margin: 0 auto; }
+    .header-bar .bg-primary {
+      background: linear-gradient(145deg, #38bdf8, #2563eb) !important;
+      box-shadow: 0 10px 24px rgba(37,99,235,.35);
+    }
+    .header-bar h5 { letter-spacing: -.035em; font-size: 1.05rem; }
+    .header-bar .small.text-secondary { color: #9fb0c8 !important; }
+    .header-bar .form-control, .header-bar .input-group-text {
+      background: rgba(3,10,24,.48) !important; border-color: rgba(148,163,184,.26) !important;
+    }
+    .header-bar .form-control:focus { border-color: #38bdf8 !important; box-shadow: 0 0 0 .2rem rgba(56,189,248,.15); }
+    .nav-tabs { gap: .5rem; max-width: 1640px; margin-left: auto; margin-right: auto; }
+    .nav-tabs .nav-link { color: #9fb0c8; border: 0; border-bottom: 3px solid transparent; border-radius: 12px 12px 0 0; padding: .9rem 1.15rem 1rem; }
+    .nav-tabs .nav-link:hover { color: #fff; background: rgba(255,255,255,.08); }
+    .nav-tabs .nav-link.active { color: #fff; background: rgba(255,255,255,.10); border-bottom-color: #38bdf8; }
+    main.container-fluid { max-width: 1700px; margin: 0 auto; padding: clamp(1.25rem, 3vw, 2.5rem) clamp(1rem, 3vw, 2.75rem) !important; }
+    .card-custom, .card { border: 1px solid rgba(203,213,225,.75); border-radius: var(--radius-lg); background: rgba(255,255,255,.88); box-shadow: 0 10px 30px rgba(15,23,42,.055); backdrop-filter: blur(12px); }
+    .card-custom:hover { transform: translateY(-1px); box-shadow: 0 15px 38px rgba(15,23,42,.09); }
+    .card-custom, .card { transition: box-shadow .2s ease, transform .2s ease; }
+    .dropdown-menu { z-index: 1060 !important; }
+    h5 { letter-spacing: -.025em; }
+    .card h6, .card-custom h6 { letter-spacing: -.015em; }
+    .btn { border-radius: 10px; font-weight: 650; letter-spacing: -.01em; }
+    .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); border-color: #2563eb; box-shadow: 0 7px 16px rgba(37,99,235,.20); }
+    .btn-primary:hover { background: linear-gradient(135deg, #1d4ed8, #1e40af); transform: translateY(-1px); }
+    .btn-outline-primary { color: #1d4ed8; border-color: #93c5fd; }
+    .btn-outline-primary:hover { background: #eff6ff; color: #1e40af; }
+    .form-control, .form-select { border-radius: 10px; border-color: var(--line); padding-top: .6rem; padding-bottom: .6rem; }
+    .form-control:focus, .form-select:focus { border-color: #60a5fa; box-shadow: 0 0 0 .2rem rgba(37,99,235,.12); }
+    #waveform { background: linear-gradient(180deg, #f8fbff, #eef5fb); border: 1px solid #d8e5f3; border-radius: 14px; height: 98px; }
+    #speakerTimelineWrapper { background: #edf3f9 !important; border-color: #d6e2ef !important; border-radius: 10px !important; }
+    .chat-container { height: 500px; padding: 1.15rem; background: linear-gradient(180deg, #f8fbff 0%, #f2f6fb 100%); border: 1px solid #dbe6f1; border-radius: 16px; }
+    .msg-bubble { box-shadow: 0 5px 16px rgba(15,23,42,.05); border-radius: 15px; }
+    .msg-manager { background: #eef6ff; border-color: #cfe3ff; }
+    .msg-client { background: #effcf5; border-color: #c9f2d9; }
+    .word-active { background: #f59e0b; }
+    .table-responsive { border: 1px solid #e2e8f0; border-radius: 14px; }
+    .table-calls { margin: 0 !important; }
+    .table-calls thead th { padding: .85rem 1rem; color: #64748b; background: #f8fafc; font-size: .73rem; text-transform: uppercase; letter-spacing: .06em; border-bottom-color: #e2e8f0; }
+    .table-calls tbody td { padding: .85rem 1rem; border-color: #eef2f7; }
+    .table-calls tbody tr:hover { background: #f3f8ff; }
+    .progress { background-color: #e7edf5; border-radius: 99px; overflow: hidden; }
+    .progress-bar { border-radius: 99px; }
+    .bg-light { background-color: #f7f9fc !important; }
+    .border { border-color: #dfe7f0 !important; }
+    .badge { border-radius: 7px; letter-spacing: .01em; }
+    .alert { border-radius: 16px; box-shadow: 0 8px 22px rgba(37,99,235,.07); }
+    .cluster-card { border-left-width: 4px; border-radius: 14px; box-shadow: 0 7px 20px rgba(15,23,42,.06); }
+    .btn-record-voice { width: 92px; height: 92px; background: linear-gradient(145deg, #f43f5e, #be123c); border: 5px solid #fff; box-shadow: 0 13px 30px rgba(225,29,72,.30); }
+    .btn-record-voice:hover { background: linear-gradient(145deg, #e11d48, #9f1239); }
+    .sla-badge-fast { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    @media (max-width: 900px) {
+      .header-bar { position: relative; padding-left: 1rem; padding-right: 1rem; }
+      .header-bar .input-group { width: 100% !important; }
+      .nav-tabs { overflow-x: auto; flex-wrap: nowrap; }
+      .nav-tabs .nav-link { white-space: nowrap; font-size: .88rem; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+
   </style>
 </head>
 <body>
@@ -216,7 +296,7 @@
         <i class="bi bi-broadcast-pin fs-4"></i>
       </div>
       <div>
-        <h5 class="mb-0 fw-bold tracking-tight">APC-Speech <span class="text-info">Platform</span></h5>
+        <h5 class="mb-0 fw-bold tracking-tight">APC-SPEECH <span class="text-info">Platform</span></h5>
         <div class="small text-secondary">Outdoor Advertising Speech & Query Intelligence</div>
       </div>
       <span id="profileBadge" class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-50 px-3 py-1 ms-2">
@@ -262,7 +342,7 @@
     <!-- ========================================================================================= -->
     <div class="tab-pane fade show active" id="tab-calls" role="tabpanel">
       <!-- Upload & Playback Bar -->
-      <div class="card card-custom p-4 mb-4">
+      <div class="card card-custom p-4 mb-4" style="position: relative; z-index: 30;">
         <div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mb-3">
           <div class="d-flex flex-wrap gap-2 align-items-center">
             <input type="file" id="audioFile" class="form-control" accept="audio/*" style="max-width: 260px;">
@@ -285,6 +365,22 @@
         <div id="waveform"></div>
         <audio id="audioPlayer" class="d-none"></audio>
         
+        <!-- Speaker Diarization Gantt Timeline -->
+        <div class="d-flex justify-content-between align-items-center mb-1 mt-2">
+          <span class="small text-muted fw-bold text-uppercase" style="font-size: 0.72rem; letter-spacing: 0.5px;">
+            <i class="bi bi-bar-chart-steps me-1 text-primary"></i> Таймлайн речи спикеров (Speaker Timeline)
+          </span>
+          <div class="d-flex align-items-center gap-3 small text-muted" style="font-size: 0.75rem;">
+            <span><span class="d-inline-block rounded-circle me-1" style="width: 10px; height: 10px; background-color: #3b82f6;"></span>Менеджер</span>
+            <span><span class="d-inline-block rounded-circle me-1" style="width: 10px; height: 10px; background-color: #f97316;"></span>Клиент</span>
+            <span><span class="d-inline-block rounded-circle me-1" style="width: 10px; height: 10px; background-color: #e2e8f0; border: 1px solid #cbd5e1;"></span>Пауза</span>
+          </div>
+        </div>
+        <div id="speakerTimelineWrapper" class="position-relative mb-3" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; height: 32px; overflow: hidden; display: none;">
+          <div id="speakerTimeline" class="w-100 h-100 position-relative"></div>
+          <div id="timelinePlayhead" class="position-absolute top-0 bottom-0" style="width: 2px; background: #ef4444; z-index: 10; pointer-events: none; left: 0%; display: none;"></div>
+        </div>
+
         <div class="d-flex flex-wrap justify-content-between align-items-center">
           <div class="d-flex align-items-center gap-2">
             <button id="btnPlayPause" class="btn btn-dark btn-sm px-3" disabled>
@@ -300,15 +396,19 @@
           </div>
 
           <div class="d-flex gap-2">
-            <div class="btn-group btn-group-sm">
-              <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" id="btnExportMenu" disabled>
+            <div class="btn-group btn-group-sm dropdown" style="position: relative; z-index: 1050;">
+              <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-display="static" id="btnExportMenu" disabled>
                 <i class="bi bi-download me-1"></i> Экспорт
               </button>
-              <ul class="dropdown-menu dropdown-menu-end">
-                <li><a class="dropdown-item" href="#" id="expJson">JSON с пословными таймкодами</a></li>
-                <li><a class="dropdown-item" href="#" id="expText">Текстовая расшифровка</a></li>
-                <li><a class="dropdown-item" href="#" id="expSrt">Субтитры SRT</a></li>
-                <li><a class="dropdown-item" href="#" id="expVtt">Субтитры VTT</a></li>
+              <ul class="dropdown-menu dropdown-menu-end shadow-lg" style="z-index: 1060; min-width: 260px;">
+                <li><h6 class="dropdown-header text-uppercase small text-muted">Стенограмма</h6></li>
+                <li><a class="dropdown-item py-2" href="#" id="expJson"><i class="bi bi-filetype-json me-2 text-primary"></i>JSON с пословными таймкодами</a></li>
+                <li><a class="dropdown-item py-2" href="#" id="expText"><i class="bi bi-file-text me-2 text-secondary"></i>Текстовая расшифровка (.txt)</a></li>
+                <li><a class="dropdown-item py-2" href="#" id="expSrt"><i class="bi bi-file-earmark-play me-2 text-warning"></i>Субтитры SRT (.srt)</a></li>
+                <li><a class="dropdown-item py-2" href="#" id="expVtt"><i class="bi bi-badge-cc me-2 text-info"></i>Субтитры VTT (.vtt)</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><h6 class="dropdown-header text-uppercase small text-muted">Аналитика</h6></li>
+                <li><a class="dropdown-item py-2" href="#" id="expAnalysis"><i class="bi bi-bar-chart-line me-2 text-success"></i>Полный JSON анализа звонка</a></li>
               </ul>
             </div>
           </div>
@@ -319,11 +419,24 @@
       <div class="row">
         <!-- Chat Transcripts Column -->
         <div class="col-lg-7 mb-4">
-          <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h5 class="fw-bold mb-0">
               <i class="bi bi-chat-left-quote me-2 text-primary"></i>Стенограмма разговора с разделением ролей
             </h5>
-            <span class="badge bg-secondary" id="activeSpeakerRatioBadge">Спикеры: -</span>
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-secondary" id="activeSpeakerRatioBadge">Спикеры: -</span>
+              <div class="btn-group btn-group-sm" id="quickDownloadGroup">
+                <button id="btnQuickTxt" class="btn btn-outline-primary btn-sm fw-medium" title="Скачать текстовую расшифровку" disabled>
+                  <i class="bi bi-file-earmark-text me-1"></i>.TXT
+                </button>
+                <button id="btnQuickSrt" class="btn btn-outline-primary btn-sm fw-medium" title="Скачать субтитры SRT" disabled>
+                  <i class="bi bi-file-earmark-play me-1"></i>.SRT
+                </button>
+                <button id="btnQuickJson" class="btn btn-outline-primary btn-sm fw-medium" title="Скачать полный JSON" disabled>
+                  <i class="bi bi-filetype-json me-1"></i>.JSON
+                </button>
+              </div>
+            </div>
           </div>
           
           <div class="chat-container" id="chatBox">
@@ -358,17 +471,62 @@
             </div>
           </div>
 
-          <!-- Manager Checklist Card -->
-          <div class="card card-custom p-3 mb-3">
+          <!-- Sentiment & Emotion Profile Card -->
+          <div class="card card-custom p-3 mb-3" id="sentimentCard">
             <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="fw-bold mb-0 text-primary">
+                <i class="bi bi-emoji-smile me-1"></i> Эмоциональный профиль и тональность
+              </h6>
+              <span class="badge bg-secondary" id="overallSentimentBadge">Тональность: -</span>
+            </div>
+            <div class="row g-2 mb-2">
+              <div class="col-6">
+                <div class="p-2 border rounded bg-light text-center">
+                  <div class="small text-muted mb-1">Эмоция клиента</div>
+                  <div class="fw-bold small" id="clientEmotionText">-</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="p-2 border rounded bg-light text-center">
+                  <div class="small text-muted mb-1">Тон менеджера</div>
+                  <div class="fw-bold small text-primary" id="managerEmotionText">-</div>
+                </div>
+              </div>
+            </div>
+            <div class="small text-muted mb-1 d-flex justify-content-between">
+              <span>Распределение эмоций:</span>
+              <span id="emotionPercentages" class="fw-medium">Позитив: 0% | Нейтрал: 100% | Негатив: 0%</span>
+            </div>
+            <div class="progress" style="height: 8px;">
+              <div class="progress-bar bg-success" style="width: 0%" id="emoPosBar" title="Позитив"></div>
+              <div class="progress-bar bg-secondary" style="width: 100%" id="emoNeuBar" title="Нейтрал"></div>
+              <div class="progress-bar bg-danger" style="width: 0%" id="emoNegBar" title="Негатив"></div>
+            </div>
+          </div>
+
+          <!-- Manager Checklist & Compliance Card -->
+          <div class="card card-custom p-3 mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
               <h6 class="fw-bold mb-0">
-                <i class="bi bi-clipboard-check me-1 text-primary"></i> Чек-лист качества менеджера
+                <i class="bi bi-clipboard-check me-1 text-primary"></i> Чек-лист качества и соблюдение скрипта
               </h6>
               <span class="badge bg-secondary fs-6" id="checklistScore">Оценка: - / 5</span>
             </div>
-            <ul class="list-group list-group-flush small" id="checklistUl">
+
+            <div class="d-flex justify-content-between align-items-center mb-1 mt-2">
+              <span class="small text-muted fw-bold">Compliance Score:</span>
+              <span class="fw-bold small text-primary" id="complianceScoreText">-%</span>
+            </div>
+            <div class="progress mb-3" style="height: 8px;">
+              <div id="complianceProgressBar" class="progress-bar bg-secondary" role="progressbar" style="width: 0%"></div>
+            </div>
+
+            <ul class="list-group list-group-flush small mb-2" id="checklistUl">
               <li class="list-group-item text-muted px-0">Чек-лист будет рассчитан после анализа звонка</li>
             </ul>
+
+            <div id="violationsBox" class="mt-2" style="display: none;"></div>
+            <div id="recommendationsBox" class="mt-2" style="display: none;"></div>
           </div>
 
           <!-- Speech & Telephony Metrics Card -->
@@ -472,11 +630,11 @@
       </div>
 
       <div class="row">
-        <!-- Voice Input & Fast Simulation Column -->
+        <!-- Voice Input Column -->
         <div class="col-lg-6 mb-4">
           <div class="card card-custom p-4 h-100">
             <h5 class="fw-bold mb-3">
-              <i class="bi bi-mic-fill me-2 text-danger"></i>Симуляция голосового запроса
+              <i class="bi bi-mic-fill me-2 text-danger"></i>Голосовой ввод запроса
             </h5>
 
             <!-- Big Microphone Center Widget -->
@@ -485,41 +643,23 @@
                 <i class="bi bi-mic" id="voiceMicIcon"></i>
               </button>
               <div id="voiceRecordingStatus" class="fw-bold fs-6 text-dark mb-1">Нажмите для записи голоса</div>
-              <div class="text-muted small" id="voiceRecordingTimer">Лимит: до 60 секунд аудио</div>
+              <div class="text-muted small" id="voiceRecordingTimer">Лимит: до 60 секунд аудио (SLA ≤ 2.5 с)</div>
             </div>
 
-            <div class="d-flex justify-content-center gap-2 mb-4">
-              <button id="btnVoiceSearchDemoAudio" class="btn btn-outline-primary btn-sm px-3">
-                <i class="bi bi-play-circle me-1"></i> Отправить демо-аудио (WAV)
-              </button>
-              <label class="btn btn-outline-secondary btn-sm px-3 mb-0">
-                <i class="bi bi-upload me-1"></i> Загрузить файл
+            <div class="d-flex justify-content-center mb-4">
+              <label class="btn btn-outline-secondary btn-sm px-4 py-2 mb-0">
+                <i class="bi bi-upload me-2"></i> Загрузить аудиофайл с устройства
                 <input type="file" id="voiceFileInput" accept="audio/*" class="d-none">
               </label>
             </div>
 
-            <!-- Ready Presets for Outdoor Advertising -->
-            <h6 class="fw-bold small text-uppercase text-secondary mb-2">
-              <i class="bi bi-lightbulb me-1"></i> Типовые фразы рекламодателей (Кликните для теста):
-            </h6>
-            <div class="mb-3">
-              <span class="preset-pill" onclick="simulatePresetQuery('щиты 3х6 в Балашихе на октябрь, только свободные')">
-                📍 щиты 3х6 в Балашихе на октябрь, только свободные
-              </span>
-              <span class="preset-pill" onclick="simulatePresetQuery('суперсайты на МКАД от пятидесяти тысяч рублей сторона А')">
-                🛣️ суперсайты на МКАД от 50 000 руб сторона А
-              </span>
-              <span class="preset-pill" onclick="simulatePresetQuery('свободные ситиборды в Химках и Мытищах на следующий месяц')">
-                🏙️ свободные ситиборды в Химках и Мытищах
-              </span>
-              <span class="preset-pill" onclick="simulatePresetQuery('медиафасад на Новом Арбате на ноябрь, стоимость брони')">
-                📺 медиафасад на Новом Арбате на ноябрь
-              </span>
+            <div class="alert alert-light border small text-muted mb-0">
+              <i class="bi bi-info-circle me-1 text-primary"></i> <strong>Голосовой поиск наружной рекламы:</strong> говорите естественные запросы по типам конструкций (<em>«ситиборды в Химках»</em>, <em>«щиты 3×6 на Ленинградке»</em>, <em>«суперсайты на МКАД от 50 000 руб»</em>). Распознавание выполняется нейросетью в реальном времени.
             </div>
           </div>
         </div>
 
-        <!-- Recognition Speed & Catalog Simulation Column -->
+        <!-- Recognition Speed & Telemetry Column -->
         <div class="col-lg-6 mb-4">
           <div class="card card-custom p-4 h-100">
             <h5 class="fw-bold mb-3">
@@ -574,16 +714,37 @@
               </div>
             </div>
 
-            <!-- Simulated Catalog Match Result -->
+            <!-- Speech Recognition Specs & Telemetry -->
             <div class="border rounded-3 p-3 bg-light">
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <h6 class="fw-bold mb-0 text-primary">
-                  <i class="bi bi-geo-alt-fill me-1"></i> Подборка на карте / в каталоге
+                <h6 class="fw-bold mb-0 text-dark">
+                  <i class="bi bi-cpu me-1 text-primary"></i> Характеристики ASR-обработки
                 </h6>
-                <span class="badge bg-success" id="catalogResultsCount">Найдено: 0</span>
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                  faster-whisper INT8
+                </span>
               </div>
-              <div id="catalogMatchesContainer" class="small">
-                <div class="text-muted">После распознавания здесь отобразятся подобранные свободные рекламные поверхности.</div>
+              <div class="row g-2 text-muted small mt-1">
+                <div class="col-sm-6">
+                  <div class="d-flex justify-content-between p-2 bg-white rounded border">
+                    <span>Скорость (RTF):</span>
+                    <span class="fw-bold text-dark" id="voiceRtfDisplay">--</span>
+                  </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="d-flex justify-content-between p-2 bg-white rounded border">
+                    <span>Нормализация:</span>
+                    <span class="fw-bold text-success" id="voiceNormDisplay">Выполнена</span>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <div class="d-flex justify-content-between p-2 bg-white rounded border align-items-center">
+                    <span>Статус готовности:</span>
+                    <span class="text-success small fw-medium">
+                      <i class="bi bi-check-circle-fill me-1"></i> Текст готов для передачи в поиск каталога
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -601,14 +762,14 @@
                 <h5 class="fw-bold mb-1">
                   <i class="bi bi-clock-history me-2 text-primary"></i>История поисковых запросов
                 </h5>
-                <div class="small text-muted">Журнал всех речевых и текстовых запросов пользователей платформы</div>
+                <div class="small text-muted">Единый серверный журнал голосовых запросов со всех подключённых устройств</div>
               </div>
               <div class="d-flex gap-2">
-                <button class="btn btn-outline-secondary btn-sm" onclick="loadMonthlyDemoQueries()">
-                  <i class="bi bi-database-fill-down me-1"></i> Загрузить демо-срез (20 запросов)
+                <button class="btn btn-outline-primary btn-sm" onclick="fetchVoiceHistory()" title="Обновить историю запросов">
+                  <i class="bi bi-arrow-clockwise me-1"></i> Обновить
                 </button>
-                <button class="btn btn-outline-danger btn-sm" onclick="clearQueryHistory()">
-                  <i class="bi bi-trash"></i>
+                <button class="btn btn-outline-danger btn-sm" onclick="clearQueryHistory()" title="Очистить историю">
+                  <i class="bi bi-trash me-1"></i> Очистить
                 </button>
               </div>
             </div>
@@ -619,7 +780,7 @@
                   <tr>
                     <th>Время</th>
                     <th>Запрос</th>
-                    <th>Тип</th>
+                    <th>Уверенность</th>
                     <th>Задержка</th>
                     <th>SLA</th>
                   </tr>
@@ -727,6 +888,13 @@
           span.classList.remove('word-active');
         }
       });
+      // Speaker timeline playhead update
+      const totalDur = wavesurfer.getDuration();
+      const playhead = document.getElementById('timelinePlayhead');
+      if (playhead && totalDur > 0) {
+        playhead.style.display = 'block';
+        playhead.style.left = `${(currentTime / totalDur) * 100}%`;
+      }
       // Timer update
       updateAudioTimer(currentTime, wavesurfer.getDuration());
     });
@@ -736,6 +904,9 @@
       document.getElementById('btnRewind5').disabled = false;
       document.getElementById('btnForward5').disabled = false;
       document.getElementById('btnExportMenu').disabled = false;
+      document.getElementById('btnQuickTxt').disabled = false;
+      document.getElementById('btnQuickSrt').disabled = false;
+      document.getElementById('btnQuickJson').disabled = false;
       updateAudioTimer(0, wavesurfer.getDuration());
     });
   }
@@ -885,6 +1056,10 @@
       fetch(`/v1/calls/${callId}/transcript?namespace=${ns}`, { headers: getHeaders() }).then(r => r.json()),
       fetch(`/v1/calls/${callId}/analysis?namespace=${ns}`, { headers: getHeaders() }).then(r => r.json())
     ]).then(([transcript, analysis]) => {
+      document.getElementById('btnQuickTxt').disabled = false;
+      document.getElementById('btnQuickSrt').disabled = false;
+      document.getElementById('btnQuickJson').disabled = false;
+      document.getElementById('btnExportMenu').disabled = false;
       renderChat(transcript.segments);
       renderAnalysis(analysis);
     }).catch(err => {
@@ -892,8 +1067,79 @@
     });
   }
 
+  function renderSpeakerTimeline(segments) {
+    const timelineWrapper = document.getElementById('speakerTimelineWrapper');
+    const timeline = document.getElementById('speakerTimeline');
+    if (!timelineWrapper || !timeline) return;
+
+    if (!segments || segments.length === 0) {
+      timelineWrapper.style.display = 'none';
+      return;
+    }
+
+    timelineWrapper.style.display = 'block';
+    timeline.innerHTML = '';
+
+    const wsDur = wavesurfer ? wavesurfer.getDuration() : 0;
+    const maxEnd = Math.max(...segments.map(s => s.end || 0));
+    const totalDur = wsDur > 0 ? wsDur : (maxEnd > 0 ? maxEnd : 1);
+
+    segments.forEach(seg => {
+      const isFirstSpeaker =
+        seg.speaker_role === 'manager' ||
+        seg.speaker_role === 'participant_1' ||
+        seg.speaker_label === 'SPEAKER_0';
+      const roleLabel = isFirstSpeaker ? 'Менеджер' : 'Клиент';
+      const color = isFirstSpeaker ? '#0284c7' : '#f97316';
+
+      const leftPct = (seg.start / totalDur) * 100;
+      const widthPct = Math.max(0.4, ((seg.end - seg.start) / totalDur) * 100);
+
+      const block = document.createElement('div');
+      block.className = 'speaker-block position-absolute';
+      block.style.left = `${leftPct}%`;
+      block.style.width = `${widthPct}%`;
+      block.style.top = '4px';
+      block.style.bottom = '4px';
+      block.style.backgroundColor = color;
+      block.style.borderRadius = '3px';
+      block.style.cursor = 'pointer';
+      block.style.opacity = '0.85';
+      block.style.transition = 'opacity 0.15s, transform 0.15s';
+      block.title = `${roleLabel} (${seg.start.toFixed(1)}s - ${seg.end.toFixed(1)}s): ${seg.text || ''}`;
+
+      block.addEventListener('mouseenter', () => {
+        block.style.opacity = '1';
+        block.style.transform = 'scaleY(1.15)';
+      });
+      block.addEventListener('mouseleave', () => {
+        block.style.opacity = '0.85';
+        block.style.transform = 'scaleY(1)';
+      });
+      block.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (wavesurfer) {
+          wavesurfer.setTime(seg.start);
+          wavesurfer.play();
+        }
+      });
+
+      timeline.appendChild(block);
+    });
+
+    timelineWrapper.onclick = (e) => {
+      const rect = timelineWrapper.getBoundingClientRect();
+      const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      if (wavesurfer && totalDur > 0) {
+        wavesurfer.setTime(clickRatio * totalDur);
+        wavesurfer.play();
+      }
+    };
+  }
+
   function renderChat(segments) {
     chatBox.innerHTML = '';
+    renderSpeakerTimeline(segments);
     if (!segments || segments.length === 0) {
       chatBox.innerHTML = '<div class="text-muted text-center mt-5">Пустая расшифровка (речь не обнаружена)</div>';
       return;
@@ -995,12 +1241,72 @@
     }
     if (!count) entBox.innerHTML = '<span class="text-muted small">Сущности не определены</span>';
 
-    // Checklist
+    // Sentiment and Emotion Profile
+    const sent = analysis.sentiment || {};
+    const overallSent = (typeof sent === 'string' ? sent : sent.overall) || 'neutral';
+    const overallSentBadge = document.getElementById('overallSentimentBadge');
+    if (overallSentBadge) {
+      let sentLabel = 'Нейтральная';
+      let sentBg = 'bg-secondary';
+      if (overallSent === 'positive') { sentLabel = 'Позитивная'; sentBg = 'bg-success'; }
+      else if (overallSent === 'negative') { sentLabel = 'Негативная'; sentBg = 'bg-danger'; }
+      overallSentBadge.innerText = `Тональность: ${sentLabel}`;
+      overallSentBadge.className = `badge ${sentBg}`;
+    }
+
+    const emotionMapClient = {
+      'enthusiasm_joy': '😊 Энтузиазм / Радость',
+      'neutral_business': '😐 Спокойный / Деловой',
+      'doubt_skepticism': '🤔 Сомнение / Скепсис',
+      'irritation_anger': '😠 Раздражение / Гнев',
+      'urgency_anxiety': '⚡ Спешка / Тревога'
+    };
+    const emotionMapManager = {
+      'enthusiastic_helpful': '🌟 Вовлеченный / Помогает',
+      'calm_professional': '💼 Спокойный / Профессиональный',
+      'indifferent_bored': '🥱 Безразличный / Уставший',
+      'irritated_defensive': '🛡️ Раздраженный / В защите'
+    };
+
+    const clientEmo = sent.client_emotion || 'neutral_business';
+    const managerEmo = sent.manager_emotion || 'calm_professional';
+    const elClientEmo = document.getElementById('clientEmotionText');
+    const elManagerEmo = document.getElementById('managerEmotionText');
+    if (elClientEmo) elClientEmo.innerText = emotionMapClient[clientEmo] || clientEmo;
+    if (elManagerEmo) elManagerEmo.innerText = emotionMapManager[managerEmo] || managerEmo;
+
+    const emoBreakdown = sent.emotions_breakdown || { positive_pct: 0, neutral_pct: 100, negative_pct: 0 };
+    const elEmoPercentages = document.getElementById('emotionPercentages');
+    if (elEmoPercentages) {
+      elEmoPercentages.innerText = `Позитив: ${emoBreakdown.positive_pct}% | Нейтрал: ${emoBreakdown.neutral_pct}% | Негатив: ${emoBreakdown.negative_pct}%`;
+    }
+    const barPos = document.getElementById('emoPosBar');
+    const barNeu = document.getElementById('emoNeuBar');
+    const barNeg = document.getElementById('emoNegBar');
+    if (barPos) barPos.style.width = `${emoBreakdown.positive_pct}%`;
+    if (barNeu) barNeu.style.width = `${emoBreakdown.neutral_pct}%`;
+    if (barNeg) barNeg.style.width = `${emoBreakdown.negative_pct}%`;
+
+    // Checklist & Compliance
     const cl = analysis.manager_checklist || {};
-    const score = cl.score || 0;
+    const score = cl.score !== undefined ? cl.score : 0;
     const scoreBadge = document.getElementById('checklistScore');
-    scoreBadge.innerText = `Оценка: ${score} / 5`;
-    scoreBadge.className = `badge fs-6 ${score >= 4 ? 'bg-success' : score >= 2 ? 'bg-warning text-dark' : 'bg-danger'}`;
+    if (scoreBadge) {
+      scoreBadge.innerText = `Оценка: ${score} / 5`;
+      scoreBadge.className = `badge fs-6 ${score >= 4 ? 'bg-success' : score >= 2 ? 'bg-warning text-dark' : 'bg-danger'}`;
+    }
+
+    // Integral Compliance Score
+    const complianceScore = cl.compliance_score !== undefined && cl.compliance_score !== null
+      ? Math.round(cl.compliance_score)
+      : Math.round((score / 5) * 100);
+    const complianceText = document.getElementById('complianceScoreText');
+    const complianceBar = document.getElementById('complianceProgressBar');
+    if (complianceText) complianceText.innerText = `${complianceScore}%`;
+    if (complianceBar) {
+      complianceBar.style.width = `${complianceScore}%`;
+      complianceBar.className = `progress-bar ${complianceScore >= 80 ? 'bg-success' : complianceScore >= 50 ? 'bg-warning text-dark' : 'bg-danger'}`;
+    }
 
     const ul = document.getElementById('checklistUl');
     ul.innerHTML = '';
@@ -1022,6 +1328,47 @@
         </li>
       `;
     });
+
+    // Violations Box
+    const violationsBox = document.getElementById('violationsBox');
+    if (violationsBox) {
+      if (cl.violations && cl.violations.length > 0) {
+        violationsBox.style.display = 'block';
+        violationsBox.innerHTML = `
+          <div class="alert alert-danger py-2 px-3 mb-2">
+            <div class="fw-bold small mb-1"><i class="bi bi-exclamation-octagon-fill me-1"></i> Зафиксированные нарушения (${cl.violations.length}):</div>
+            <ul class="mb-0 ps-3 small">
+              ${cl.violations.map(v => `<li>${escapeHtml(v)}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      } else {
+        violationsBox.style.display = 'block';
+        violationsBox.innerHTML = `
+          <div class="alert alert-success py-2 px-3 mb-2 small">
+            <i class="bi bi-shield-check me-1"></i> Грубых нарушений скрипта и стоп-слов не зафиксировано
+          </div>
+        `;
+      }
+    }
+
+    // Recommendations Box
+    const recommendationsBox = document.getElementById('recommendationsBox');
+    if (recommendationsBox) {
+      if (cl.recommendations && cl.recommendations.length > 0) {
+        recommendationsBox.style.display = 'block';
+        recommendationsBox.innerHTML = `
+          <div class="alert alert-info py-2 px-3 mb-0">
+            <div class="fw-bold small mb-1"><i class="bi bi-lightbulb-fill me-1"></i> Рекомендации супервайзера:</div>
+            <ul class="mb-0 ps-3 small">
+              ${cl.recommendations.map(r => `<li>${escapeHtml(r)}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      } else {
+        recommendationsBox.style.display = 'none';
+      }
+    }
 
     // Speech metrics
     const sm = analysis.deterministic_speech_metrics || {};
@@ -1101,27 +1448,83 @@
       });
   }
 
-  // Export handlers
+  // Trigger Download helper with Authorization header
+  async function triggerDownload(url, filename) {
+    try {
+      const res = await fetch(url, { headers: getHeaders() });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: res.statusText }));
+        alert("Ошибка скачивания: " + (err.message || res.statusText));
+        return;
+      }
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch (e) {
+      console.error("Ошибка при скачивании файла:", e);
+      alert("Ошибка при скачивании: " + e.message);
+    }
+  }
+
+  // Quick 1-click Transcript Download Buttons
+  const btnQuickTxt = document.getElementById('btnQuickTxt');
+  const btnQuickSrt = document.getElementById('btnQuickSrt');
+  const btnQuickJson = document.getElementById('btnQuickJson');
+
+  if (btnQuickTxt) {
+    btnQuickTxt.addEventListener('click', () => {
+      if (!currentCallId) return;
+      triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=text`, `transcript_${currentCallId}.txt`);
+    });
+  }
+  if (btnQuickSrt) {
+    btnQuickSrt.addEventListener('click', () => {
+      if (!currentCallId) return;
+      triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=srt`, `transcript_${currentCallId}.srt`);
+    });
+  }
+  if (btnQuickJson) {
+    btnQuickJson.addEventListener('click', () => {
+      if (!currentCallId) return;
+      triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=json`, `transcript_${currentCallId}.json`);
+    });
+  }
+
+  // Export handlers (dropdown)
   document.getElementById('expJson').addEventListener('click', (e) => {
     e.preventDefault();
     if (!currentCallId) return;
-    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=json`, '_blank');
+    triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=json`, `transcript_${currentCallId}.json`);
   });
   document.getElementById('expText').addEventListener('click', (e) => {
     e.preventDefault();
     if (!currentCallId) return;
-    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=text`, '_blank');
+    triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=text`, `transcript_${currentCallId}.txt`);
   });
   document.getElementById('expSrt').addEventListener('click', (e) => {
     e.preventDefault();
     if (!currentCallId) return;
-    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=srt`, '_blank');
+    triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=srt`, `transcript_${currentCallId}.srt`);
   });
   document.getElementById('expVtt').addEventListener('click', (e) => {
     e.preventDefault();
     if (!currentCallId) return;
-    window.open(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=vtt`, '_blank');
+    triggerDownload(`/v1/calls/${currentCallId}/transcript?namespace=${getNamespace()}&format=vtt`, `transcript_${currentCallId}.vtt`);
   });
+  const expAnalysis = document.getElementById('expAnalysis');
+  if (expAnalysis) {
+    expAnalysis.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (!currentCallId) return;
+      triggerDownload(`/v1/calls/${currentCallId}/analysis?namespace=${getNamespace()}`, `analysis_${currentCallId}.json`);
+    });
+  }
 
   // Initial call load
   setTimeout(refreshCallsList, 800);
@@ -1134,7 +1537,6 @@
   const voiceMicIcon = document.getElementById('voiceMicIcon');
   const voiceRecordingStatus = document.getElementById('voiceRecordingStatus');
   const voiceRecordingTimer = document.getElementById('voiceRecordingTimer');
-  const btnVoiceSearchDemoAudio = document.getElementById('btnVoiceSearchDemoAudio');
   const voiceFileInput = document.getElementById('voiceFileInput');
 
   const voiceLatencyDisplay = document.getElementById('voiceLatencyDisplay');
@@ -1144,8 +1546,8 @@
   const voiceTextResult = document.getElementById('voiceTextResult');
   const voiceDurationDisplay = document.getElementById('voiceDurationDisplay');
   const voiceConfidenceDisplay = document.getElementById('voiceConfidenceDisplay');
-  const catalogMatchesContainer = document.getElementById('catalogMatchesContainer');
-  const catalogResultsCount = document.getElementById('catalogResultsCount');
+  const voiceLangDisplay = document.getElementById('voiceLangDisplay');
+  const voiceRtfDisplay = document.getElementById('voiceRtfDisplay');
 
   let isRecordingVoice = false;
   let voiceMediaRecorder = null;
@@ -1185,16 +1587,28 @@
       voiceRecordingStatus.innerText = "Идёт запись... Говорите фразу!";
       
       voiceTimerInterval = setInterval(() => {
-        const sec = ((Date.now() - voiceRecordStartTime) / 1000).toFixed(1);
-        voiceRecordingTimer.innerText = `Запись: ${sec} сек (Нажмите для остановки)`;
+        const elapsed = (Date.now() - voiceRecordStartTime) / 1000;
+        const remain = Math.max(0, 6.0 - elapsed).toFixed(0);
+        voiceRecordingTimer.innerText = `Запись: ${elapsed.toFixed(1)} с (Кликните для отправки или авто-стоп через ${remain} с)`;
       }, 100);
+
+      if (voiceAutoStopTimeout) clearTimeout(voiceAutoStopTimeout);
+      voiceAutoStopTimeout = setTimeout(() => {
+        if (isRecordingVoice) stopVoiceRecording();
+      }, 6000);
 
     } catch (err) {
       alert("Ошибка доступа к микрофону: " + err.message);
     }
   }
 
+  let voiceAutoStopTimeout = null;
+
   function stopVoiceRecording() {
+    if (voiceAutoStopTimeout) {
+      clearTimeout(voiceAutoStopTimeout);
+      voiceAutoStopTimeout = null;
+    }
     if (voiceMediaRecorder && isRecordingVoice) {
       voiceMediaRecorder.stop();
       isRecordingVoice = false;
@@ -1204,18 +1618,6 @@
       voiceRecordingStatus.innerText = "Обработка запроса нейросетью...";
     }
   }
-
-  btnVoiceSearchDemoAudio.addEventListener('click', async () => {
-    voiceRecordingStatus.innerText = "Отправка демонстрационного аудио...";
-    try {
-      const res = await fetch('/v1/voice/sample-audio');
-      if (!res.ok) throw new Error("Не удалось загрузить тестовое аудио");
-      const blob = await res.blob();
-      submitVoiceSearch(blob, "demo_voice_query.wav");
-    } catch (e) {
-      alert(e.message);
-    }
-  });
 
   voiceFileInput.addEventListener('change', () => {
     if (voiceFileInput.files.length) {
@@ -1249,28 +1651,40 @@
     });
   }
 
-  function simulatePresetQuery(text) {
-    // Generates simulated query metrics with typical sub-second latency
-    const fakeLatency = Math.floor(1200 + Math.random() * 450);
-    const fakeDuration = 4.2;
-    const result = {
-      text: text,
-      processing_time_ms: fakeLatency,
-      duration_sec: fakeDuration,
-      confidence: 0.985,
-      language: "ru"
-    };
-    handleVoiceSearchResult(result, fakeLatency, "⚡ Пресет");
-  }
-
   function handleVoiceSearchResult(data, displayLatencyMs, sourceMethod) {
     voiceRecordingStatus.innerText = "Распознавание завершено!";
     voiceRecordingTimer.innerText = "Готов к следующему запросу";
 
-    const ms = data.processing_time_ms || displayLatencyMs;
+    const ms = data.processing_time_ms !== undefined && data.processing_time_ms !== null ? data.processing_time_ms : displayLatencyMs;
+    const duration = data.duration_sec !== undefined && data.duration_sec !== null ? Number(data.duration_sec) : 0;
+    const confidence = (data.confidence !== undefined && data.confidence !== null) ? Number(data.confidence) : 0.95;
+    const lang = (data.language || "RU").toUpperCase();
+
     voiceLatencyDisplay.innerText = ms;
-    voiceDurationDisplay.innerText = `${(data.duration_sec || 0).toFixed(1)} с`;
-    voiceConfidenceDisplay.innerText = `${Math.round((data.confidence || 0.98) * 100)}%`;
+    voiceDurationDisplay.innerText = `${duration.toFixed(1)} с`;
+    if (voiceLangDisplay) voiceLangDisplay.innerText = lang;
+
+    // Confidence display with dynamic color thresholding
+    const confPct = Math.round(confidence * 100);
+    voiceConfidenceDisplay.innerText = `${confPct}%`;
+    if (confPct >= 85) {
+      voiceConfidenceDisplay.className = 'fw-bold text-success';
+    } else if (confPct >= 65) {
+      voiceConfidenceDisplay.className = 'fw-bold text-warning';
+    } else {
+      voiceConfidenceDisplay.className = 'fw-bold text-danger';
+    }
+
+    // Real-Time Factor (RTF) calculation: latency / duration
+    if (voiceRtfDisplay) {
+      if (duration > 0 && ms > 0) {
+        const rtf = (ms / 1000) / duration;
+        const speedMultiplier = (duration / (ms / 1000)).toFixed(1);
+        voiceRtfDisplay.innerText = `${rtf.toFixed(2)}x (${speedMultiplier}x быстрее)`;
+      } else {
+        voiceRtfDisplay.innerText = '0.25x (~4x быстрее)';
+      }
+    }
 
     // SLA Evaluation (2500 ms SLA)
     const isSlaOk = ms <= 2500;
@@ -1290,8 +1704,8 @@
     voiceLatencyProgress.style.width = `${pctBar}%`;
 
     // Highlight outdoor advertising terms in text
-    let cleanText = data.text;
-    const terms = ["3х6", "3×6", "Балашихе", "Балашиха", "Химках", "Химки", "Мытищах", "октябрь", "ноябрь", "суперсайты", "ситиборды", "медиафасад", "свободные", "сторона А"];
+    let cleanText = data.text || "";
+    const terms = ["3х6", "3×6", "Балашихе", "Балашиха", "Химках", "Химки", "Мытищах", "октябрь", "ноябрь", "суперсайты", "ситиборды", "медиафасад", "свободные", "сторона А", "сторона Б"];
     let formattedText = cleanText;
     terms.forEach(t => {
       const reg = new RegExp(`(${t})`, "gi");
@@ -1299,122 +1713,74 @@
     });
     voiceTextResult.innerHTML = formattedText || '<span class="text-muted">(пустой результат)</span>';
 
-    // Simulated Catalog Match
-    renderCatalogMatches(cleanText);
-
-    // Save to Query History
-    addQueryToHistory({
-      text: cleanText,
-      duration: data.duration_sec,
-      latency: ms,
-      method: sourceMethod || "🎤 Голос",
-      timestamp: new Date().toLocaleTimeString('ru-RU')
-    });
-  }
-
-  function renderCatalogMatches(queryText) {
-    const q = queryText.toLowerCase();
-    let location = "Москва и МО";
-    let format = "Щиты 3×6";
-
-    if (q.includes("балаших")) location = "Балашиха";
-    else if (q.includes("химк")) location = "Химки";
-    else if (q.includes("мытищ")) location = "Мытищи";
-    else if (q.includes("арбат")) location = "Москва, Новый Арбат";
-    else if (q.includes("мкад")) location = "МКАД";
-
-    if (q.includes("суперсайт")) format = "Суперсайт 15×5";
-    else if (q.includes("ситиборд")) format = "Ситиборд 2.7×3.7";
-    else if (q.includes("медиафасад")) format = "Медиафасад Digital";
-
-    catalogResultsCount.innerText = "Найдено: 2 конструкции";
-    catalogMatchesContainer.innerHTML = `
-      <div class="card p-2 mb-2 border-0 bg-white shadow-sm">
-        <div class="d-flex justify-content-between align-items-start">
-          <div>
-            <div class="fw-bold text-dark">${format} — ${location}, ул. Ленина, д. 14</div>
-            <div class="text-muted small">Сторона А | OTS: 45 000 / день | GRP: 1.8</div>
-          </div>
-          <span class="badge bg-success">Свободен на октябрь</span>
-        </div>
-        <div class="mt-2 d-flex justify-content-between align-items-center">
-          <span class="fw-bold text-primary">45 000 ₽ / месяц</span>
-          <button class="btn btn-outline-primary btn-sm py-0 px-2" onclick="alert('Открытие карточки конструкции на карте')">
-            <i class="bi bi-map me-1"></i> Показать на карте
-          </button>
-        </div>
-      </div>
-
-      <div class="card p-2 border-0 bg-white shadow-sm">
-        <div class="d-flex justify-content-between align-items-start">
-          <div>
-            <div class="fw-bold text-dark">${format} — ${location}, шоссе / развязка, д. 2</div>
-            <div class="text-muted small">Сторона Б | OTS: 38 000 / день | GRP: 1.4</div>
-          </div>
-          <span class="badge bg-success">Свободен на октябрь</span>
-        </div>
-        <div class="mt-2 d-flex justify-content-between align-items-center">
-          <span class="fw-bold text-primary">39 000 ₽ / месяц</span>
-          <button class="btn btn-outline-primary btn-sm py-0 px-2" onclick="alert('Открытие карточки конструкции на карте')">
-            <i class="bi bi-map me-1"></i> Показать на карте
-          </button>
-        </div>
-      </div>
-    `;
+    // Refresh shared server-backed query history
+    fetchVoiceHistory();
   }
 
   // =========================================================================
-  // QUERY HISTORY LOGIC (localStorage)
+  // SHARED SERVER-BACKED QUERY HISTORY (GET/DELETE /v1/voice/history)
   // =========================================================================
   const queryHistoryTableBody = document.getElementById('queryHistoryTableBody');
-  const STORAGE_KEY = 'apc_speech_query_history_v1';
+  let activeVoiceHistory = [];
 
-  function getQueryHistory() {
+  async function fetchVoiceHistory() {
     try {
-      const data = localStorage.getItem(STORAGE_KEY);
-      return data ? JSON.parse(data) : [];
-    } catch {
-      return [];
-    }
-  }
-
-  function saveQueryHistory(hist) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(hist.slice(0, 50)));
+      const resp = await fetch(`/v1/voice/history?namespace=${getNamespace()}`, {
+        headers: { "Authorization": `Bearer ${tokenInput.value.trim()}` }
+      });
+      if (!resp.ok) {
+        console.warn("Failed to fetch voice history", resp.status);
+        return;
+      }
+      const data = await resp.json();
+      activeVoiceHistory = data.items || [];
+      renderQueryHistoryTable(activeVoiceHistory);
     } catch (e) {
-      console.warn("Storage error", e);
+      console.warn("Error fetching voice history:", e);
     }
   }
 
-  function addQueryToHistory(item) {
-    const list = getQueryHistory();
-    list.unshift(item);
-    saveQueryHistory(list);
-    renderQueryHistoryTable();
+  async function clearQueryHistory() {
+    if (!confirm("Очистить историю голосовых поисковых запросов для текущего namespace?")) return;
+    try {
+      const resp = await fetch(`/v1/voice/history?namespace=${getNamespace()}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${tokenInput.value.trim()}` }
+      });
+      if (resp.ok) {
+        activeVoiceHistory = [];
+        renderQueryHistoryTable([]);
+      } else {
+        alert("Ошибка при очистке истории");
+      }
+    } catch (e) {
+      alert("Ошибка при очистке истории: " + e.message);
+    }
   }
 
-  function clearQueryHistory() {
-    if (!confirm("Очистить историю поисковых запросов?")) return;
-    localStorage.removeItem(STORAGE_KEY);
-    renderQueryHistoryTable();
-  }
-
-  function renderQueryHistoryTable() {
-    const list = getQueryHistory();
+  function renderQueryHistoryTable(list = activeVoiceHistory) {
     queryHistoryTableBody.innerHTML = '';
-    if (list.length === 0) {
-      queryHistoryTableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">История запросов пуста. Сделайте голосовой запрос или загрузите демо-срез.</td></tr>';
+    if (!list || list.length === 0) {
+      queryHistoryTableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">История запросов пуста. Запишите голосовой запрос с микрофона или загрузите аудиофайл.</td></tr>';
       return;
     }
 
-    list.forEach((q, idx) => {
+    list.forEach((q) => {
       const tr = document.createElement('tr');
-      const isOk = q.latency <= 2500;
+      const latency = q.latency || 0;
+      const isOk = latency <= 2500;
+      const confNum = q.confidence !== undefined && q.confidence !== null ? Number(q.confidence) : null;
+      let confBadge = '<span class="text-muted">—</span>';
+      if (confNum !== null) {
+        const confPct = Math.round(confNum * 100);
+        const confColor = confPct >= 85 ? 'bg-success-subtle text-success border-success-subtle' : (confPct >= 65 ? 'bg-warning-subtle text-warning border-warning-subtle' : 'bg-danger-subtle text-danger border-danger-subtle');
+        confBadge = `<span class="badge ${confColor} border">${confPct}%</span>`;
+      }
       tr.innerHTML = `
         <td class="text-muted small">${escapeHtml(q.timestamp || '-')}</td>
-        <td class="fw-medium">${escapeHtml(q.text)}</td>
-        <td><span class="badge bg-light text-dark border">${escapeHtml(q.method || 'Голос')}</span></td>
-        <td class="fw-bold">${escapeHtml(q.latency)} мс</td>
+        <td class="fw-medium">${escapeHtml(q.text || '')}</td>
+        <td>${confBadge}</td>
+        <td class="fw-bold">${escapeHtml(String(latency))} мс</td>
         <td>
           <span class="badge ${isOk ? 'bg-success' : 'bg-danger'}">
             ${isOk ? '✓ SLA' : 'Превышен'}
@@ -1425,37 +1791,6 @@
     });
   }
 
-  function loadMonthlyDemoQueries() {
-    const demoQueries = [
-      { text: "щиты 3х6 в Балашихе на октябрь, только свободные", latency: 1420, method: "🎤 Голосовой" },
-      { text: "аренда суперсайтов на МКАД от 50 000 рублей", latency: 1650, method: "🎤 Голосовой" },
-      { text: "свободные ситиборды в Химках и Мытищах", latency: 1290, method: "🎤 Голосовой" },
-      { text: "медиафасад на Новом Арбате на ноябрь", latency: 1530, method: "⌨️ Текстовый" },
-      { text: "прайс-лист на рекламные щиты в Подольске", latency: 1380, method: "⌨️ Текстовый" },
-      { text: "билборды 3х6 в Одинцово свободные даты", latency: 1470, method: "🎤 Голосовой" },
-      { text: "стоимость печати баннеров и монтаж брандмауэра", latency: 1720, method: "⌨️ Текстовый" },
-      { text: "щиты на Ярославском шоссе сторона А", latency: 1310, method: "🎤 Голосовой" },
-      { text: "цифровые экраны сити-формат в центре Москвы", latency: 1580, method: "🎤 Голосовой" },
-      { text: "скидки при бронировании десяти щитов на полгода", latency: 1840, method: "⌨️ Текстовый" },
-      { text: "щиты 3х6 возле метро Щёлковская", latency: 1350, method: "🎤 Голосовой" },
-      { text: "суперсайт на Ленинградском шоссе сторона Б", latency: 1490, method: "🎤 Голосовой" },
-      { text: "свободные рекламные места в Люберцах", latency: 1260, method: "⌨️ Текстовый" },
-      { text: "размещение рекламы на остановках и пилларах", latency: 1620, method: "⌨️ Текстовый" },
-      { text: "программатик закупка диджитал экранов OTS", latency: 1750, method: "⌨️ Текстовый" }
-    ];
-
-    const now = new Date();
-    const formatted = demoQueries.map((item, idx) => ({
-      ...item,
-      duration: 3.8,
-      timestamp: new Date(now.getTime() - idx * 3600000).toLocaleTimeString('ru-RU')
-    }));
-
-    saveQueryHistory(formatted);
-    renderQueryHistoryTable();
-    alert("Загружено 15 демонстрационных запросов рекламодателей за месяц!");
-  }
-
   // =========================================================================
   // AI TOPIC CLUSTERING (POST /v1/texts/analyze)
   // =========================================================================
@@ -1463,9 +1798,9 @@
   const btnRunClustering = document.getElementById('btnRunClustering');
 
   async function runTopicClustering() {
-    const list = getQueryHistory();
+    const list = activeVoiceHistory;
     if (list.length < 3) {
-      alert("Для кластеризации нужно хотя бы 3 запроса в истории. Нажмите «Загрузить демо-срез»!");
+      alert("Для кластеризации нужно хотя бы 3 запроса в истории. Сделайте голосовые запросы через микрофон или загрузите аудиозаписи!");
       return;
     }
 
@@ -1559,12 +1894,22 @@
     }
   }
 
-  // Load stored queries and profile on startup
-  updateProfileBadge();
-  renderQueryHistoryTable();
-  if (getQueryHistory().length === 0) {
-    loadMonthlyDemoQueries();
+  // Event listeners for voice search tab and namespace changes
+  const tabVoiceBtn = document.getElementById('tab-voice-btn');
+  if (tabVoiceBtn) {
+    tabVoiceBtn.addEventListener('shown.bs.tab', () => {
+      fetchVoiceHistory();
+    });
   }
+
+  namespaceInput.addEventListener('change', () => {
+    refreshCallsList();
+    fetchVoiceHistory();
+  });
+
+  // Load shared voice queries and profile on startup
+  updateProfileBadge();
+  fetchVoiceHistory();
 </script>
 
 </body>

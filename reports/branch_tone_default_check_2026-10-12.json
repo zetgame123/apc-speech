@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-12",
+  "branch": "voice-tone-default",
+  "env": {
+    "cpu": "3.0ГГц cap",
+    "config": "дефолт ветки (tone, TONE_THREADS unset=0 в этом прогоне)"
+  },
+  "make_check": "234 passed (после чинки 3 тестов под дефолт tone)",
+  "e2e_strict": "exit 0 целиком (voice 200 за 2640мс; два ранних прогона упирались в занятость worker-long)",
+  "matrix_20x": {
+    "s3_16k": {
+      "median_ms": 802.1,
+      "p95_ms": 806.5,
+      "ok": 10
+    },
+    "s3_8k": {
+      "median_ms": 796.4,
+      "p95_ms": 799.2,
+      "ok": 10
+    },
+    "s10_16k": {
+      "median_ms": 2381.4,
+      "p95_ms": 2426.7,
+      "ok": 10
+    },
+    "s10_8k": {
+      "median_ms": 2323.0,
+      "p95_ms": 2449.8,
+      "ok": 10
+    }
+  }
+}

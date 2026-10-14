@@ -1,0 +1,170 @@
+{
+  "date": "2026-10-12",
+  "target": "п.4: итоговая таблица раунда 2",
+  "env": {
+    "cpu": "Ryzen 7 8845HS, performance, max 3.0ГГц (факт ~2994)",
+    "cpuset": "4,6"
+  },
+  "matrix_3ghz": {
+    "tone_v8_greedy": {
+      "s3_16k": {
+        "median_ms": 792.9,
+        "p95_ms": 810.2
+      },
+      "s3_8k": {
+        "median_ms": 789.2,
+        "p95_ms": 800.2
+      },
+      "s10_16k": {
+        "median_ms": 2313.9,
+        "p95_ms": 2410.7
+      },
+      "s10_8k": {
+        "median_ms": 2314.0,
+        "p95_ms": 2406.8
+      }
+    },
+    "whisper_small_combo": {
+      "s3_16k": {
+        "median_ms": 6615.8,
+        "p95_ms": 6698.1
+      },
+      "s3_8k": {
+        "median_ms": 7011.8,
+        "p95_ms": 7099.6
+      },
+      "s10_16k": {
+        "median_ms": 6893.0,
+        "p95_ms": 6907.2
+      },
+      "s10_8k": {
+        "median_ms": 7303.8,
+        "p95_ms": 7314.2
+      }
+    }
+  },
+  "suite_50_r2": {
+    "date": "2026-10-12",
+    "target": "п.2: скорость при 3.0ГГц, 50 файлов; фоновая нагрузка",
+    "env": {
+      "cpu": "Ryzen 7 8845HS, performance, max 3.0ГГц",
+      "cpuset": "4,6"
+    },
+    "tone_v8_idle": {
+      "engine": "t-one-v8-3ghz",
+      "n_ok": 50,
+      "median_ms": 1790.2,
+      "p95_ms": 2079.5,
+      "mean_wer": 0.085,
+      "terms": "83/108=0.769",
+      "ram_peak_mb": 930.9,
+      "mhz": "cpu MHz\t\t: 2994.200\ncpu MHz\t\t: 1093.439"
+    },
+    "whisper_small_combo": {
+      "engine": "whisper-small-combo-3ghz",
+      "n_ok": 50,
+      "median_ms": 7711.7,
+      "p95_ms": 8359.6,
+      "mean_wer": 0.081,
+      "terms": "91/108=0.843",
+      "ram_peak_mb": 597.2,
+      "mhz": "cpu MHz\t\t: 2994.270\ncpu MHz\t\t: 2993.618"
+    },
+    "tone_v8_loaded": {
+      "engine": "t-one-v8-loaded",
+      "n_ok": 50,
+      "median_ms": 1887.6,
+      "p95_ms": 2150.8,
+      "mean_wer": 0.085,
+      "terms": "83/108=0.769",
+      "ram_peak_mb": 932.6,
+      "mhz": "cpu MHz\t\t: 2986.140\ncpu MHz\t\t: 2983.529",
+      "bg": "long20 20.5мин на worker-long, asr_transcription 25% во время матрицы"
+    },
+    "neighbor_effect": "медиана +5.5% (1.79->1.89с), p95 +3.4%; качество идентично"
+  },
+  "variants": {
+    "date": "2026-10-12",
+    "target": "п.3: fuzzy-OOV и beam+hotwords (только T-one, дефолты выкл)",
+    "base_v8": {
+      "engine": "t-one-v8-3ghz",
+      "n_ok": 50,
+      "median_ms": 1790.2,
+      "p95_ms": 2079.5,
+      "mean_wer": 0.085,
+      "terms": "83/108=0.769",
+      "ram_peak_mb": 930.9
+    },
+    "fuzzy_oov_thr08": {
+      "engine": "t-one-fuzzy-oov",
+      "n_ok": 50,
+      "median_ms": 1883.6,
+      "p95_ms": 2186.2,
+      "mean_wer": 0.082,
+      "terms": "83/108=0.769",
+      "ram_peak_mb": 958.4
+    },
+    "beam_w10_hw3": {
+      "engine": "t-one-beam-hw",
+      "n_ok": 50,
+      "median_ms": 2198.4,
+      "p95_ms": 2530.1,
+      "mean_wer": 0.092,
+      "terms": "80/108=0.741",
+      "ram_peak_mb": 933.0
+    },
+    "per_file_diff": "fuzzy: WER изм. в 2 файлах (q17 fix, q19 mixed), terms 1 fix + 1 break; beam: WER изм. в 9 (7 хуже), terms -3 (q11 3/3->1/3)",
+    "false_examples": {
+      "fuzzy_oov_fix": "q17 диджетал->digital-экранах; q19 бщита->щита",
+      "fuzzy_oov_break": "q19 terms 5/5->4/5",
+      "beam_break": "q11 Шоссе Энтузиастов->шосе энтузиастов (пробелы beam ломают regex капитализации); q15 баннер->банер; q17 программатик->програматик"
+    },
+    "licenses": "pyctcdecode Apache-2.0 (не подключён: жёсткий import kenlm); kenlm LGPL-2.1 -> вопрос 4, не подключён; реализован собственный beam (numpy only)",
+    "verdict": "оба варианта хуже или равны базе: fuzzy нейтрален (термины те же 83), beam вредит (WER +0.007, термины -3, +23% времени)"
+  },
+  "memory": {
+    "date": "2026-10-12",
+    "target": "п.1: расхождение 590МБ (свип) vs 930МБ (выборка), кривая 300 запросов",
+    "env": {
+      "cpu": "Ryzen 7 8845HS, governor performance, max 3.0ГГц",
+      "mhz_cpuset": "cpu MHz\t\t: 2994.387 cpu MHz\t\t: 1093.439",
+      "cpuset": "4,6",
+      "engine": "T-one V8 (intra=1, fuzzy off)",
+      "wav": "s10_16k, 300x последовательно"
+    },
+    "method": "RSS процесса воркера (host /proc/PID/status) + cgroup memory.current/peak контейнера, каждая итерация",
+    "curve_300": {
+      "n_ok": 300,
+      "lat_median_ms": 2282.0,
+      "rss_first_mb": 997,
+      "rss_last_mb": 997,
+      "cg_peak_first_mb": 960,
+      "cg_peak_mb_last": 960,
+      "verdict": "плоская: 997/950/960 от 0 до 299 — роста нет"
+    },
+    "idle_vs_loaded": {
+      "fresh_worker_idle_mb": 412,
+      "after_first_inference_mb": 997,
+      "verdict": "скачок на первых запросах, дальше плато (high-water mark, удержание glibc)"
+    },
+    "arena_test": {
+      "n": 30,
+      "first_kb": 1018236,
+      "last_kb": 1018276,
+      "verdict": "без арены тот же уровень ~994МБ с 1-го запроса — арена не причина"
+    },
+    "fresh_probe_vs_worker": {
+      "probe_ru_maxrss_mb": 589.4,
+      "worker_rss_mb": 997,
+      "verdict": "разница базовых уровней (каркас воркера + рабочее множество ORT), не накопление"
+    },
+    "conclusion": "утечки нет, исправлений не требуется; расхождение объяснено"
+  },
+  "final_rows": {
+    "tone_v8": "s3 0.79/0.81, s10 2.31/2.41, RAM 931, WER 0.085, терм 76.9%",
+    "tone_fuzzy_oov": "сюита(7-9с) 1.88/2.19, RAM 958, WER 0.082, терм 76.9%",
+    "tone_beam_hw": "сюита(7-9с) 2.20/2.53, RAM 933, WER 0.092, терм 74.1%",
+    "whisper_small_combo": "s3 6.6-7.0, s10 6.9-7.3, RAM 597, WER 0.081, терм 84.3%",
+    "tone_v8_loaded": "сюита 1.89/2.15 (сосед +5%), качество как V8"
+  }
+}

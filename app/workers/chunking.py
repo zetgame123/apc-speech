@@ -92,6 +92,7 @@ def chunk_audio_adaptive(
     min_chunk_sec: int = 180,
     max_chunk_sec: int = 420,
     min_silence_sec: float = 0.3,
+    overlap_sec: int = 0,
 ) -> List[Dict[str, Any]]:
     """
     Adaptive VAD-guided audio chunking.
@@ -121,6 +122,7 @@ def chunk_audio_adaptive(
         audio = np.mean(audio, axis=1)
 
     chunks = []
+    overlap_frames = max(0, int(overlap_sec * sr))
     current_start = 0
 
     while (total_frames - current_start) > max_chunk_sec * sr:
@@ -131,13 +133,14 @@ def chunk_audio_adaptive(
             audio, sr, min_split, max_split, min_silence_sec=min_silence_sec
         )
 
-        chunk_data = audio[current_start:split_sample]
+        chunk_start = max(0, current_start - overlap_frames) if chunks else current_start
+        chunk_data = audio[chunk_start:split_sample]
         chunks.append(
             {
                 "data": chunk_data,
-                "start_sec": current_start / sr,
+                "start_sec": chunk_start / sr,
                 "end_sec": split_sample / sr,
-                "overlap_sec": 0.0,
+                "overlap_sec": (current_start - chunk_start) / sr,
                 "is_silence_split": True,
             }
         )
@@ -145,13 +148,14 @@ def chunk_audio_adaptive(
 
     # Trailing chunk
     if current_start < total_frames:
-        chunk_data = audio[current_start:total_frames]
+        chunk_start = max(0, current_start - overlap_frames) if chunks else current_start
+        chunk_data = audio[chunk_start:total_frames]
         chunks.append(
             {
                 "data": chunk_data,
-                "start_sec": current_start / sr,
+                "start_sec": chunk_start / sr,
                 "end_sec": total_frames / sr,
-                "overlap_sec": 0.0,
+                "overlap_sec": (current_start - chunk_start) / sr,
                 "is_silence_split": True,
             }
         )
@@ -183,6 +187,7 @@ def chunk_audio(
             target_chunk_sec=target_sec,
             min_chunk_sec=min_sec,
             max_chunk_sec=max_sec,
+            overlap_sec=overlap_sec,
         )
 
     info = sf.info(audio_path)

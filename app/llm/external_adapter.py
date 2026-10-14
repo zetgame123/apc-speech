@@ -17,6 +17,7 @@ class ExternalProviderAdapter(AnalysisModelPort):
         self.enabled = settings.llm_external_provider_enabled
         self.api_url = settings.llm_external_provider_url
         self.api_key = settings.llm_external_provider_api_key
+        self.model = settings.llm_external_provider_model
         self.masker = PiiMasker()
 
     async def analyze(
@@ -57,7 +58,7 @@ class ExternalProviderAdapter(AnalysisModelPort):
                 self.api_url,
                 headers=headers,
                 json={
-                    "model": "gpt-4o-mini",
+                    "model": self.model,
                     "messages": [{"role": "user", "content": prompt}],
                     "response_format": {"type": "json_object"},
                     "temperature": 0.1,

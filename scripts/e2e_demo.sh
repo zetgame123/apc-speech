@@ -4,6 +4,10 @@ set -e
 API_URL="${API_BASE_URL:-http://localhost:8000}"
 TOKEN="${DEV_TOKEN:-dev-token}"
 NAMESPACE="demo_outdoor_msk"
+# Сколько ждать завершения задания (холодный старт ASR на слабом CPU —
+# минуты, а не секунды). Переопределение: E2E_TIMEOUT_SEC=120 bash scripts/e2e_demo.sh
+E2E_TIMEOUT_SEC="${E2E_TIMEOUT_SEC:-600}"
+E2E_POLL_INTERVAL_SEC=5
 
 echo "================================================================="
 echo "  APC-SPEECH END-TO-END DEMO WALKTHROUGH"
@@ -24,6 +28,9 @@ fi
 
 # 2. Fast-Track Voice Search
 echo -e "\n[Шаг 2] Синхронный голосовой поиск (SLA <= 2.5 с)..."
+# E2E_STRICT_VOICE=1: 503 на голосовом шаге роняет сценарий (приёмка C4),
+# по умолчанию — только фиксируем факт и идём дальше (B1 smoke).
+E2E_STRICT_VOICE="${E2E_STRICT_VOICE:-0}"
 START_TIME=$(date +%s%N)
 SEARCH_RESP=$(curl -s -X POST "${API_URL}/v1/voice/search?namespace=${NAMESPACE}" \
   -H "Authorization: Bearer ${TOKEN}" \
@@ -34,6 +41,13 @@ ELAPSED_MS=$(( (END_TIME - START_TIME) / 1000000 ))
 
 echo "  ✓ Ответ Voice Search получен за ${ELAPSED_MS} мс:"
 echo "    ${SEARCH_RESP}"
+if echo "${SEARCH_RESP}" | grep -q '"error"'; then
+  echo "  ! Голосовой поиск вернул ошибку (см. тело выше)"
+  if [ "${E2E_STRICT_VOICE}" == "1" ]; then
+    echo "  ✗ E2E_STRICT_VOICE=1: прерываю сценарий"
+    exit 1
+  fi
+fi
 
 # 3. Create Asynchronous Analysis Job
 echo -e "\n[Шаг 3] Загрузка телефонного звонка на полный анализ..."
@@ -49,9 +63,10 @@ JOB_ID=$(echo "${JOB_RESP}" | grep -o '"job_id":"[^"]*' | cut -d'"' -f4)
 echo "  ✓ Задание создано: Job ID = ${JOB_ID}"
 
 # 4. Poll Job Status
-echo -e "\n[Шаг 4] Опрос статуса задания до завершения..."
+echo -e "\n[Шаг 4] Опрос статуса задания до завершения (лимит ${E2E_TIMEOUT_SEC} с)..."
 STATUS="queued"
-for i in {1..20}; do
+DEADLINE=$(( $(date +%s) + E2E_TIMEOUT_SEC ))
+while true; do
   STATUS_RESP=$(curl -s -X GET "${API_URL}/v1/jobs/${JOB_ID}?namespace=${NAMESPACE}" \
     -H "Authorization: Bearer ${TOKEN}")
   STATUS=$(echo "${STATUS_RESP}" | grep -o '"status":"[^"]*' | cut -d'"' -f4)
@@ -63,7 +78,11 @@ for i in {1..20}; do
   if [ "${STATUS}" == "succeeded" ] || [ "${STATUS}" == "failed" ]; then
     break
   fi
-  sleep 2
+  if [ "$(date +%s)" -ge "${DEADLINE}" ]; then
+    echo "  ✗ Превышен лимит ожидания (${E2E_TIMEOUT_SEC} с): ${STATUS_RESP}"
+    exit 1
+  fi
+  sleep "${E2E_POLL_INTERVAL_SEC}"
 done
 
 if [ "${STATUS}" != "succeeded" ]; then
@@ -89,18 +108,27 @@ echo "  ✓ Тип обращения: $(echo "${ANALYSIS_RESP}" | grep -o '"inq
 
 # 7. Test Text Clustering
 echo -e "\n[Шаг 7] Проверка кластеризации пачки текстов (POST /v1/texts/analyze)..."
+# Пейлоад — через временный файл: инлайн-кириллица в аргументах curl ломается
+# перекодировкой argv в Git Bash на Windows (сервер получает битый UTF-8 и
+# отвечает 400), содержимое файла проходит как есть. На Linux разницы нет.
+E2E_TEXTS_JSON=$(mktemp)
+cat > "${E2E_TEXTS_JSON}" <<EOF
+{
+  "namespace": "${NAMESPACE}",
+  "texts": [
+    "щиты 3х6 в Балашихе",
+    "билборд 3х6 шоссе Энтузиастов",
+    "сколько стоит суперсайт в Москве",
+    "прайс на суперсайты и скидки"
+  ]
+}
+EOF
+# shellcheck disable=SC2086
 CLUSTERS_RESP=$(curl -s -X POST "${API_URL}/v1/texts/analyze" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{
-    "namespace": "'"${NAMESPACE}"'",
-    "texts": [
-      "щиты 3х6 в Балашихе",
-      "билборд 3х6 шоссе Энтузиастов",
-      "сколько стоит суперсайт в Москве",
-      "прайс на суперсайты и скидки"
-    ]
-  }')
+  --data-binary "@${E2E_TEXTS_JSON}")
+rm -f "${E2E_TEXTS_JSON}"
 echo "  ✓ Сформированные кластеры:"
 echo "    ${CLUSTERS_RESP}"
 

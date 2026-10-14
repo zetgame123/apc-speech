@@ -44,6 +44,7 @@ class FakeRedis:
 
     def __init__(self):
         self._store: dict[str, int] = {}
+        self._lists: dict[str, list[str]] = {}
 
     async def incr(self, key: str) -> int:
         self._store[key] = self._store.get(key, 0) + 1
@@ -52,17 +53,55 @@ class FakeRedis:
     async def expire(self, key: str, ttl: int) -> None:
         pass
 
+    async def lpush(self, key: str, value: str) -> None:
+        self._lists.setdefault(key, []).insert(0, value)
+
+    async def ltrim(self, key: str, start: int, end: int) -> None:
+        pass
+
+    async def sismember(self, key: str, value: str) -> bool:
+        return False
+
 
 @pytest.fixture
 def mock_rate_limit_deps(monkeypatch):
-    """Mock ASR, preprocessor, and rate limiter with shared FakeRedis."""
+    """Mock ASR, preprocessor, and rate limiter with shared FakeRedis.
+
+    Детерминированность: состояние лимитера сбрасывается между тестами
+    (свежий FakeRedis на каждый тест), а часы заморожены (фиксированный
+    time.time на границе окна). Иначе переход 10-секундного окна посреди
+    теста менял ключ `rate_limit:...:<window>` и 6-й запрос возвращал 200
+    вместо 429 — флак `test_rate_limit_blocks_excess`
+    (см. docs/known-issues.md п.22).
+    """
     fake_redis = FakeRedis()
+
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("RATE_LIMIT_REQUESTS_PER_WINDOW", "5")
+    monkeypatch.setenv("RATE_LIMIT_WINDOW_SEC", "10")
+    get_settings.cache_clear()
+    get_settings().voice_search_use_worker = False
+
+    # Управляемые часы: начало 10-секундного окна, внутри теста время не идёт.
+    import app.api.rate_limit as rate_limit_module
+
+    monkeypatch.setattr(rate_limit_module.time, "time", lambda: 1_700_000_000.0)
 
     mock_queue = MagicMock()
     mock_queue.get_client = AsyncMock(return_value=fake_redis)
     monkeypatch.setattr("app.api.rate_limit.get_queue", lambda: mock_queue)
+    # The voice-search endpoint also persists history to Redis via a background task;
+    # mock it with the same in-memory fake so tests don't hit a real/unreachable Redis.
+    monkeypatch.setattr("app.api.voice.get_queue", lambda: mock_queue)
+    # verify_auth() checks token revocation in Redis on every request; mock it too,
+    # otherwise each request pays a real connection-timeout penalty against an
+    # unreachable Redis, which was silently inflating per-request latency in tests.
+    monkeypatch.setattr("app.core.security.get_queue", lambda: mock_queue)
 
-    # Mock ASR engine
+    # Mock ASR engine (whisper-путь; дефолт voice_search_engine=tone
+    # мокается ниже отдельно — иначе без models/t-one/model.onnx
+    # эти тесты лимитера падают с 500 вместо 200/429).
     mock_engine = MagicMock()
     mock_engine.transcribe.return_value = (
         [{"text": "test", "start": 0.0, "end": 1.0, "confidence": 0.99, "words": []}],
@@ -70,6 +109,15 @@ def mock_rate_limit_deps(monkeypatch):
     )
     mock_engine.load_model.return_value = None
     monkeypatch.setattr("app.api.voice.get_voice_search_engine", lambda: mock_engine)
+
+    # Mock T-one engine: тесты проверяют лимитер, а не ASR, поэтому
+    # transcribe мокается и на дефолтном tone-пути (весов в CI нет).
+    mock_tone_engine = MagicMock()
+    mock_tone_engine.transcribe.return_value = (
+        [{"text": "test", "start": 0.0, "end": 1.0, "confidence": 0.99, "words": []}],
+        {"language": "ru", "language_probability": 0.99, "duration": 1.0},
+    )
+    monkeypatch.setattr("app.asr.tone_engine.get_tone_engine", lambda: mock_tone_engine)
 
     # Mock preprocessor
     mock_preprocessor = MagicMock()

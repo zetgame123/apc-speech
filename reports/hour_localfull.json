@@ -1,0 +1,109 @@
+{
+  "label": "localfull-8vcpu",
+  "audio_sec": 3600.0,
+  "job_id": "8b88c3e2-285d-4787-add2-49f4366acedd",
+  "job_status": "succeeded",
+  "wall_sec": 3546.0,
+  "rtf": 0.985,
+  "timeline": [
+    {
+      "t": 0.0,
+      "status": "queued",
+      "step": "uploaded",
+      "progress": 0
+    },
+    {
+      "t": 68.2,
+      "status": "running",
+      "step": "asr_transcription",
+      "progress": 25
+    },
+    {
+      "t": 409.2,
+      "status": "running",
+      "step": "asr_transcription_chunk_1_of_9",
+      "progress": 28
+    },
+    {
+      "t": 681.9,
+      "status": "running",
+      "step": "asr_transcription_chunk_2_of_9",
+      "progress": 31
+    },
+    {
+      "t": 1091.0,
+      "status": "running",
+      "step": "asr_transcription_chunk_3_of_9",
+      "progress": 35
+    },
+    {
+      "t": 1363.8,
+      "status": "running",
+      "step": "asr_transcription_chunk_4_of_9",
+      "progress": 38
+    },
+    {
+      "t": 1772.9,
+      "status": "running",
+      "step": "asr_transcription_chunk_5_of_9",
+      "progress": 41
+    },
+    {
+      "t": 1977.5,
+      "status": "running",
+      "step": "asr_transcription_chunk_6_of_9",
+      "progress": 45
+    },
+    {
+      "t": 2182.0,
+      "status": "running",
+      "step": "asr_transcription_chunk_7_of_9",
+      "progress": 48
+    },
+    {
+      "t": 2591.2,
+      "status": "running",
+      "step": "asr_transcription_chunk_8_of_9",
+      "progress": 51
+    },
+    {
+      "t": 2864.0,
+      "status": "running",
+      "step": "mono_diarization",
+      "progress": 55
+    },
+    {
+      "t": 3341.3,
+      "status": "running",
+      "step": "semantic_analysis",
+      "progress": 80
+    },
+    {
+      "t": 3477.8,
+      "status": "succeeded",
+      "step": "completed",
+      "progress": 100
+    }
+  ],
+  "peak_ram_mib": {
+    "apc_small-worker-long-1": 1871.9,
+    "apc_small-llm-runtime-1": 3450.9,
+    "apc_small-api-1": 226.1
+  },
+  "env": {
+    "cpu": "Ryzen 7 8845HS",
+    "mhz": [
+      "3733.657",
+      "1093.439"
+    ],
+    "governor": "performance",
+    "cpuset": {
+      "apc_small-worker-long-1": "0-7/2214592512",
+      "apc_small-llm-runtime-1": "0-7/10737418240",
+      "apc_small-api-1": "4,6/402653184"
+    }
+  },
+  "server_wall_sec": 3455.8,
+  "server_rtf": 0.96,
+  "note_timing": "server_wall/rtf — первичны (created->updated джобы, без загрузки и лага опроса); wall_sec/rtf скрипта завышены лагом поллинга 60с (~+115с); метки стадий квантованы опросом ±60с"
+}

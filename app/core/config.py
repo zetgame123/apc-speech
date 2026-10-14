@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,9 +9,10 @@ class Settings(BaseSettings):
 
     # Application Profile
     app_profile: str = Field(default="small", alias="APP_PROFILE")
-    app_env: str = Field(default="production", alias="APP_ENV")
+    app_env: str = Field(default="development", alias="APP_ENV")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     debug: bool = Field(default=False, alias="DEBUG")
+    build_version: str = Field(default="0.1.0", alias="BUILD_VERSION")
 
     # HTTP Server
     host: str = Field(default="0.0.0.0", alias="HOST")
@@ -21,8 +22,10 @@ class Settings(BaseSettings):
     # Auth & Security
     # Format: token:scope:namespace (comma-separated), or plain tokens in dev mode
     api_tokens_hashed: str = Field(default="", alias="API_TOKENS_HASHED")
-    dev_token: str | None = Field(default=None, alias="DEV_TOKEN")
-    callback_signing_secret: str = Field(default="", alias="CALLBACK_SIGNING_SECRET")
+    dev_token: str | None = Field(default="dev-token", alias="DEV_TOKEN")
+    callback_signing_secret: str = Field(
+        default="dev-secret-change-me-in-production-32chars!!", alias="CALLBACK_SIGNING_SECRET"
+    )
 
     # CORS — comma-separated list of allowed origins, "*" allows all (dev only)
     cors_allowed_origins: str = Field(
@@ -40,6 +43,11 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     redis_max_connections: int = Field(default=20, alias="REDIS_MAX_CONNECTIONS")
+    # Таймаут чтения сокета: обязан превышать самое длинное блокирующее ожидание
+    # (BLPOP результата voice-search до voice_search_result_timeout_sec + запас),
+    # иначе redis-py 8.x рвёт чтение ~через 5 с (TimeoutError) и быстрый путь
+    # отвечает 503 voice_search_unavailable при любом окне >5 с.
+    redis_socket_timeout_sec: float = Field(default=30.0, alias="REDIS_SOCKET_TIMEOUT_SEC")
 
     # MinIO / S3
     s3_endpoint_url: str = Field(default="http://localhost:9000", alias="S3_ENDPOINT_URL")
@@ -57,15 +65,72 @@ class Settings(BaseSettings):
     vad_threshold: float = Field(default=0.5, alias="VAD_THRESHOLD")
     max_audio_duration_hours: int = Field(default=3, alias="MAX_AUDIO_DURATION_HOURS")
     max_upload_size_mb: int = Field(default=500, alias="MAX_UPLOAD_SIZE_MB")
+    # Максимум заданий в статусах queued/running; сверх — 429 с Retry-After (B6).
+    max_pending_jobs: int = Field(default=100, alias="MAX_PENDING_JOBS")
+    # Возраст задания в шаге pending_download, после которого уборщик считает
+    # скачивание зависшим (api перезапустили во время фоновой задачи) и
+    # переводит задание в failed с callback (п.1 B1-догонки).
+    pending_download_timeout_sec: int = Field(default=600, alias="PENDING_DOWNLOAD_TIMEOUT_SEC")
 
     # Voice Search
     voice_search_max_duration_sec: int = Field(default=60, alias="VOICE_SEARCH_MAX_DURATION_SEC")
     voice_search_model_name: str = Field(default="base", alias="VOICE_SEARCH_MODEL_NAME")
     voice_search_beam_size: int = Field(default=2, alias="VOICE_SEARCH_BEAM_SIZE")
+    voice_search_max_concurrency: int = Field(default=1, alias="VOICE_SEARCH_MAX_CONCURRENCY")
+    voice_search_queue_wait_sec: float = Field(default=0.1, alias="VOICE_SEARCH_QUEUE_WAIT_SEC")
+    voice_search_use_worker: bool = Field(default=True, alias="VOICE_SEARCH_USE_WORKER")
+    voice_search_result_timeout_sec: float = Field(
+        default=2.5, alias="VOICE_SEARCH_RESULT_TIMEOUT_SEC"
+    )
+    # Нижняя граница beam search (по умолчанию 2 — историческое поведение).
+    # Только для диагностических замеров через env; дефолт не менять.
+    voice_search_beam_min: int = Field(
+        default=2, alias="VOICE_SEARCH_BEAM_MIN"
+    )  # Переопределение подсказок декодера. None — встроенные константы
+    # (VOICE_SEARCH_INITIAL_PROMPT / VOICE_SEARCH_HOTWORDS из app.api.voice),
+    # пустая строка — отключить подсказку. Только для замеров через env.
+    voice_search_initial_prompt: str | None = Field(
+        default=None, alias="VOICE_SEARCH_INITIAL_PROMPT"
+    )
+    voice_search_hotwords: str | None = Field(default=None, alias="VOICE_SEARCH_HOTWORDS")
+    # Движок быстрого пути: "tone" (дефолт) или "whisper" (через переменную).
+    voice_search_engine: str = Field(default="tone", alias="VOICE_SEARCH_ENGINE")
+    # Каталог весов T-one (model.onnx тянет model-downloader) и потоки ORT
+    # (1 — оптимум под 2 ядра cpuset; больше — только с ростом ядер, см. README).
+    tone_model_dir: str = Field(default="./models/t-one", alias="TONE_MODEL_DIR")
+    tone_threads: int = Field(default=1, alias="TONE_THREADS")
+    # inter-потоки ORT (0 — не трогать; при intra>0 код ставит 1 как раньше).
+    tone_inter_threads: int = Field(default=0, alias="TONE_INTER_THREADS")
+    # Оптимизации графа ORT: all (дефолт ORT и текущий факт), basic, extended, disabled.
+    tone_graph_opt: str = Field(default="all", alias="TONE_GRAPH_OPT")
+    # Отключение арены/паттерна памяти ORT (0 — штат; 1 — эксперимент).
+    tone_disable_arena: bool = Field(default=False, alias="TONE_DISABLE_ARENA")
+    tone_disable_mem_pattern: bool = Field(default=False, alias="TONE_DISABLE_MEM_PATTERN")
+    # Имя файла весов в TONE_MODEL_DIR (дефолт model.onnx).
+    tone_model_file: str = Field(default="model.onnx", alias="TONE_MODEL_FILE")
+    # Порог нечёткого сопоставления слов гипотезы со словарём терминов (0 — выкл).
+    # Только для T-one: чинит «счеты»→«щиты» без LM. Обычные слова не трогаем:
+    # замена только при similarity >= порога и несовпадении с точной формой.
+    tone_fuzzy_threshold: float = Field(default=0.0, alias="TONE_FUZZY_THRESHOLD")
+    # п.3а: нечёткая замена только для слов вне словаря navec (дефолт выкл).
+    tone_fuzzy_oov_only: bool = Field(default=False, alias="TONE_FUZZY_OOV_ONLY")
+    # п.3б: декодер T-one (greedy дефолт) и ширина/вес beam с хотвордами.
+    tone_decode: str = Field(default="greedy", alias="TONE_DECODE")
+    tone_beam_width: int = Field(default=10, alias="TONE_BEAM_WIDTH")
+    tone_hotword_weight: float = Field(default=3.0, alias="TONE_HOTWORD_WEIGHT")
+
+    # Diarization
+    diarization_min_speaker_distance: float = Field(
+        default=0.18, alias="DIARIZATION_MIN_SPEAKER_DISTANCE"
+    )
 
     # LLM
     local_llm_url: str = Field(default="http://localhost:8080/v1", alias="LOCAL_LLM_URL")
     local_llm_model: str = Field(default="qwen2.5-7b-instruct", alias="LOCAL_LLM_MODEL")
+    # Режим constrained decoding llama.cpp: json_schema (дефолт, текущий факт)
+    # или json_object (слабее, только для замеров). Сырой grammar-GBNF не
+    # выведен: json_schema и так компилируется сервером в грамматику.
+    local_llm_json_mode: str = Field(default="json_schema", alias="LOCAL_LLM_JSON_MODE")
 
     # External LLM (Disabled by default)
     llm_external_provider_enabled: bool = Field(
@@ -73,10 +138,32 @@ class Settings(BaseSettings):
     )
     llm_external_provider_url: str = Field(default="", alias="LLM_EXTERNAL_PROVIDER_URL")
     llm_external_provider_api_key: str = Field(default="", alias="LLM_EXTERNAL_PROVIDER_API_KEY")
+    llm_external_provider_model: str = Field(
+        default="gpt-4o-mini", alias="LLM_EXTERNAL_PROVIDER_MODEL"
+    )
+    # Тестовый флаг E2E-проверки callback (п.9): разрешать приватные адреса
+    # ТОЛЬКО для исходящих callback. Дефолт выключен; в production включённый
+    # флаг блокирует старт сервиса (см. enforce_production_callback_policy).
+    callback_allow_private_net: bool = Field(default=False, alias="CALLBACK_ALLOW_PRIVATE_NET")
 
     # Retention
     retention_audio_days: int = Field(default=14, alias="RETENTION_AUDIO_DAYS")
     retention_text_days: int = Field(default=365, alias="RETENTION_TEXT_DAYS")
+
+    # Rate Limiting
+    rate_limit_requests_per_window: int = Field(default=5, alias="RATE_LIMIT_REQUESTS_PER_WINDOW")
+    rate_limit_window_sec: int = Field(default=10, alias="RATE_LIMIT_WINDOW_SEC")
+
+    @field_validator("s3_endpoint_url", "s3_access_key", "s3_secret_key", mode="before")
+    @classmethod
+    def _empty_s3_uses_default(cls, v: object, info: ValidationInfo) -> object:
+        # E6 (2026-10-13): свежий `cp .env.example .env` даёт пустые S3_*=""
+        # (env_file перекрывает дефолт пустой строкой) — api не мог создать
+        # бакеты (InvalidAccessKeyId) и /ready отвечал 503 s3:false.
+        # Пустое значение считаем незаданным, как compose-форма `:-`.
+        if isinstance(v, str) and not v.strip():
+            return cls.model_fields[info.field_name].default
+        return v
 
 
 @lru_cache

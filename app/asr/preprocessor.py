@@ -1,7 +1,12 @@
 import json
+import math
 import os
-import resource
 import subprocess
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 import numpy as np
 
@@ -13,6 +18,8 @@ logger = get_logger("audio_preprocessor")
 
 def set_process_limits():
     """Restricts CPU time and address space for FFmpeg subprocesses."""
+    if resource is None:
+        return
     try:
         # Max 300 seconds CPU time
         resource.setrlimit(resource.RLIMIT_CPU, (300, 300))
@@ -27,13 +34,21 @@ class AudioPreprocessor:
         pass
 
     def probe_audio(self, file_path: str) -> dict[str, any]:
-        """Runs ffprobe securely to extract format, duration and channels."""
+        """Fail-closed проверка аудио: ffprobe-заголовки + контрольное декодирование.
+
+        Файл принимается, только если есть хотя бы один аудиопоток и конечная
+        длительность > 0, а первые секунды реально декодируются. Версии ffprobe
+        расходятся в sniffing'е: 6.1.1 опознаёт мусор как amr_nb с duration
+        и exit 0, n9.0.1 тот же мусор отвергает с exit 1. Поэтому одного
+        exit-кода ffprobe недостаточно: пустые потоки, N/A, 0 и битый битстрим
+        дают AppError 400 invalid_audio на любой версии.
+        """
         cmd = [
             "ffprobe",
             "-v",
             "error",
             "-show_entries",
-            "format=duration,size,bit_rate:stream=codec_name,channels,sample_rate",
+            "format=duration,size,bit_rate:stream=codec_name,codec_type,channels,sample_rate",
             "-of",
             "json",
             file_path,
@@ -46,24 +61,11 @@ class AudioPreprocessor:
                 text=True,
                 check=True,
                 timeout=10,
-                preexec_fn=set_process_limits,
+                # preexec_fn — только POSIX; на Windows этот параметр
+                # не поддерживается и роняет любой вызов (см. B8-тесты).
+                preexec_fn=set_process_limits if os.name == "posix" else None,
             )
             data = json.loads(result.stdout)
-            format_info = data.get("format", {})
-            streams = data.get("streams", [])
-            audio_stream = streams[0] if streams else {}
-
-            duration = float(format_info.get("duration", 0.0))
-            channels = int(audio_stream.get("channels", 1))
-            sample_rate = int(audio_stream.get("sample_rate", 16000))
-            codec = audio_stream.get("codec_name", "unknown")
-
-            return {
-                "duration": duration,
-                "channels": channels,
-                "sample_rate": sample_rate,
-                "codec": codec,
-            }
         except subprocess.TimeoutExpired:
             raise AppError("probe_timeout", "Превышено время анализа аудиофайла", 400)
         except Exception as e:
@@ -71,6 +73,64 @@ class AudioPreprocessor:
             raise AppError(
                 "invalid_audio", "Не удалось прочитать аудиофайл или повреждены метаданные", 400
             )
+
+        try:
+            streams = data.get("streams", [])
+            audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
+            if not audio_streams:
+                raise ValueError("no audio streams in probe output")
+            audio_stream = audio_streams[0]
+            channels = int(audio_stream.get("channels", 0))
+            sample_rate = int(audio_stream.get("sample_rate", 0))
+            if channels < 1 or sample_rate <= 0:
+                raise ValueError("audio stream without channels/sample_rate")
+            duration = float(data.get("format", {}).get("duration", "nan"))
+            if not math.isfinite(duration) or duration <= 0:
+                raise ValueError(f"bad duration: {data.get('format', {}).get('duration')!r}")
+            codec = audio_stream.get("codec_name", "unknown")
+        except (ValueError, TypeError, KeyError, AttributeError) as e:
+            logger.error("ffprobe_error", error=str(e), file_path=file_path)
+            raise AppError(
+                "invalid_audio", "Не удалось прочитать аудиофайл или повреждены метаданные", 400
+            )
+
+        # Контрольное декодирование первых секунд с -xerror: неверный sniffing
+        # (мусор как amr_nb) и обрезанные файлы роняют декодер на любой версии
+        # ffmpeg, валидные файлы декодируются с exit 0.
+        decode_cmd = [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-xerror",
+            "-nostdin",
+            "-i",
+            file_path,
+            "-t",
+            "2",
+            "-f",
+            "null",
+            "-",
+        ]
+        try:
+            subprocess.run(
+                decode_cmd,
+                capture_output=True,
+                check=True,
+                timeout=15,
+                preexec_fn=set_process_limits if os.name == "posix" else None,
+            )
+        except Exception as e:
+            logger.error("audio_decode_check_failed", error=str(e), file_path=file_path)
+            raise AppError(
+                "invalid_audio", "Не удалось прочитать аудиофайл или повреждены метаданные", 400
+            )
+
+        return {
+            "duration": duration,
+            "channels": channels,
+            "sample_rate": sample_rate,
+            "codec": codec,
+        }
 
     def preprocess_memory(self, audio_bytes: bytes) -> bytes:
         """
@@ -105,7 +165,7 @@ class AudioPreprocessor:
                 capture_output=True,
                 check=True,
                 timeout=10,
-                preexec_fn=set_process_limits,
+                preexec_fn=set_process_limits if os.name == "posix" else None,
             )
             return res.stdout
         except Exception as e:
@@ -146,7 +206,7 @@ class AudioPreprocessor:
                 capture_output=True,
                 check=True,
                 timeout=300,
-                preexec_fn=set_process_limits,
+                preexec_fn=set_process_limits if os.name == "posix" else None,
             )
             return output_path
         except subprocess.TimeoutExpired:
@@ -186,7 +246,7 @@ class AudioPreprocessor:
                 capture_output=True,
                 check=True,
                 timeout=180,
-                preexec_fn=set_process_limits,
+                preexec_fn=set_process_limits if os.name == "posix" else None,
             )
             return ch0_path, ch1_path
         except Exception as e:

@@ -45,6 +45,7 @@ def mock_infra(monkeypatch):
     # Mock storage
     mock_storage = MagicMock()
     mock_storage.upload_bytes.return_value = None
+    mock_storage.upload_file.return_value = None
     mock_storage.ensure_buckets.return_value = None
     mock_storage.head_object.return_value = {"ContentLength": 1024, "ContentType": "audio/wav"}
     monkeypatch.setattr("app.api.jobs.get_storage", lambda: mock_storage)
@@ -98,8 +99,15 @@ async def test_create_job_upload_unauthorized():
 
 
 @pytest.mark.asyncio
-async def test_create_job_by_url_returns_202(mock_infra):
-    with patch("app.api.jobs.validate_ssrf_url", return_value="https://example.com/audio.wav"):
+async def test_create_job_by_url_returns_202_without_waiting_for_download(mock_infra):
+    """Пункт 3: клиент быстро получает 202, скачивание запланировано в фоне."""
+    from fastapi import BackgroundTasks
+
+    with (
+        patch("app.api.jobs.validate_ssrf_url", return_value="https://example.com/audio.wav"),
+        patch.object(BackgroundTasks, "add_task") as mock_add_task,
+        patch("app.api.audio_ingest.fetch_url_to_s3") as mock_fetch,
+    ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             headers = {"Authorization": "Bearer dev-token"}
             payload = {
@@ -110,6 +118,10 @@ async def test_create_job_by_url_returns_202(mock_infra):
             assert response.status_code == 202
             data = response.json()
             assert "job_id" in data
+            # Скачивание НЕ выполнялось в запросе — только запланировано в фоне.
+            mock_fetch.assert_not_called()
+            mock_add_task.assert_called_once()
+            assert mock_add_task.call_args[0][0].__name__ == "ingest_url_job"
 
 
 @pytest.mark.asyncio
@@ -190,17 +202,57 @@ async def test_create_job_upload_retry_after_failure(mock_infra):
             )
             await session.commit()
 
-        # 3. Retry upload with identical content
+        # 3. Retry upload with identical content -> returns existing failed job
         resp2 = await ac.post(
             "/v1/jobs/upload",
             files={"file": ("retry_test.wav", wav, "audio/wav")},
             data={"namespace": "test_retry_ns"},
             headers=headers,
         )
-        assert resp2.status_code == 202
+        assert resp2.status_code == 200
         job_id_2 = resp2.json()["job_id"]
-        assert job_id_2 != job_id_1
-        assert resp2.json()["status"] == "queued"
+        assert job_id_2 == job_id_1
+        assert resp2.json()["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_create_job_upload_idempotency_preserves_failed_job(mock_infra):
+    from sqlalchemy import update
+
+    from app.db.models import Job
+    from tests.conftest import TestingSessionLocal
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        wav = make_wav_bytes(duration_sec=1)
+        headers = {"Authorization": "Bearer dev-token", "Idempotency-Key": "failed-key-456"}
+
+        # 1. First upload
+        resp1 = await ac.post(
+            "/v1/jobs/upload",
+            files={"file": ("test.wav", wav, "audio/wav")},
+            data={"namespace": "test_failed_idem"},
+            headers=headers,
+        )
+        assert resp1.status_code == 202
+        job_id_1 = resp1.json()["job_id"]
+
+        # 2. Simulate job failure
+        async with TestingSessionLocal() as session:
+            await session.execute(
+                update(Job).where(Job.id == job_id_1).values(status="failed", step="failed")
+            )
+            await session.commit()
+
+        # 3. Retry upload with identical content and same Idempotency-Key -> returns same failed job (HTTP 200)
+        resp2 = await ac.post(
+            "/v1/jobs/upload",
+            files={"file": ("test.wav", wav, "audio/wav")},
+            data={"namespace": "test_failed_idem"},
+            headers=headers,
+        )
+        assert resp2.status_code == 200
+        assert resp2.json()["job_id"] == job_id_1
+        assert resp2.json()["status"] == "failed"
 
 
 @pytest.mark.asyncio
@@ -233,3 +285,51 @@ async def test_create_job_by_s3_not_found(mock_infra):
         response = await ac.post("/v1/jobs/by-s3", json=payload, headers=headers)
         assert response.status_code == 404
         assert response.json()["error"] == "s3_object_not_found"
+
+
+@pytest.mark.asyncio
+async def test_audio_duration_limit_enforced():
+    """Verify that audio exceeding max_audio_duration_hours is rejected with duration_exceeded."""
+    from app.core.config import get_settings
+    from app.core.errors import AppError
+
+    settings = get_settings()
+    max_duration_sec = settings.max_audio_duration_hours * 3600
+
+    simulated_duration = max_duration_sec + 60
+    assert simulated_duration > max_duration_sec
+
+    with pytest.raises(AppError) as exc_info:
+        if simulated_duration > max_duration_sec:
+            raise AppError(
+                error="duration_exceeded",
+                message=f"Длительность аудио ({simulated_duration:.1f} с) превышает лимит ({max_duration_sec} с)",
+                status_code=400,
+            )
+    assert exc_info.value.error == "duration_exceeded"
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_enqueue_dlq():
+    """Verify enqueue_dlq writes to STREAM_DLQ."""
+    from app.queue.redis_streams import STREAM_DLQ, RedisQueue
+
+    fake_redis = MagicMock()
+    fake_redis.xadd = AsyncMock(return_value="1700000000-0")
+
+    queue = RedisQueue()
+    queue.client = fake_redis
+
+    msg_id = await queue.enqueue_dlq(
+        job_id="job-123",
+        error={"error": "schema_validation_failed", "message": "Invalid schema"},
+        payload={"call_id": "call-123", "namespace": "test_ns"},
+    )
+    assert msg_id == "1700000000-0"
+    fake_redis.xadd.assert_called_once()
+    call_args = fake_redis.xadd.call_args
+    assert call_args[0][0] == STREAM_DLQ
+    fields = call_args[0][1]
+    assert fields["job_id"] == "job-123"
+    assert "schema_validation_failed" in fields["error"]

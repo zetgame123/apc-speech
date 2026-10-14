@@ -1,22 +1,21 @@
 import asyncio
-import hashlib
+import io
 import os
 import signal
 import tempfile
 import traceback
-import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
-import httpx
 from sqlalchemy import select, update
 
 from app.asr.engine import get_asr_engine
 from app.asr.preprocessor import AudioPreprocessor
 from app.asr.vad import VadDetector
 from app.core.config import get_settings
+from app.core.cpu import has_avx2
+from app.core.errors import AppError
 from app.core.logging import get_logger, setup_logging
-from app.core.security import validate_ssrf_url
-from app.db.models import Analysis, AudioObject, Call, Job, TranscriptSegment
+from app.db.models import Analysis, Call, Job, TranscriptSegment
 from app.db.session import AsyncSessionLocal
 from app.diarization.roles import RoleClassifier
 from app.integrations.bitrix24 import format_timeline_comment, post_to_crm_timeline
@@ -30,6 +29,7 @@ from app.queue.redis_streams import (
     get_queue,
 )
 from app.storage.s3 import get_storage
+from app.workers.warmup import mark_worker_ready, start_heartbeat_thread, synthetic_warmup_wav
 
 settings = get_settings()
 setup_logging(settings.log_level)
@@ -75,46 +75,27 @@ async def process_job(job_id: str, data: dict):
     with tempfile.TemporaryDirectory() as tmp_dir:
         input_audio_path = os.path.join(tmp_dir, "input_raw_audio")
 
-        # 1. Acquire audio: from S3 or by downloading URL
-        if "s3_key" in data:
-            storage.download_to_file(data["s3_bucket"], data["s3_key"], input_audio_path)
-        elif "source_url" in data:
-            source_url = validate_ssrf_url(data["source_url"])
-            hasher = hashlib.sha256()
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                async with client.stream("GET", source_url) as resp:
-                    resp.raise_for_status()
-                    with open(input_audio_path, "wb") as f:
-                        async for chunk in resp.aiter_bytes(chunk_size=1024 * 1024):
-                            hasher.update(chunk)
-                            f.write(chunk)
-            downloaded_hash = hasher.hexdigest()
-
-            # Persist downloaded audio to S3 for replay and compliance
-            s3_key = f"calls/{call_id}/audio.wav"
-            s3_bucket = settings.s3_bucket_audio
-            storage.upload_file(input_audio_path, s3_bucket, s3_key)
-            now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
-            async with AsyncSessionLocal() as db:
-                audio_obj = AudioObject(
-                    id=str(uuid.uuid4()),
-                    namespace=data.get("namespace", "default"),
-                    call_id=call_id,
-                    s3_bucket=s3_bucket,
-                    s3_key=s3_key,
-                    file_size_bytes=os.path.getsize(input_audio_path),
-                    created_at=now_dt,
-                    expires_at=now_dt + timedelta(days=settings.retention_audio_days),
-                )
-                db.add(audio_obj)
-                await db.execute(
-                    update(Job).where(Job.id == job_id).values(file_hash_sha256=downloaded_hash)
-                )
-                await db.commit()
+        # 1. Acquire audio from S3. Скачивание по внешним URL выполняет api
+        # (у воркера нет egress: сеть backend internal, см. B9), сюда приходит
+        # готовый s3_key.
+        if "s3_key" not in data:
+            raise AppError(
+                error="invalid_job_payload",
+                message="В задании отсутствует s3_key",
+                status_code=500,
+            )
+        storage.download_to_file(data["s3_bucket"], data["s3_key"], input_audio_path)
 
         # 2. Probe audio properties
         probe_info = preprocessor.probe_audio(input_audio_path)
         total_duration = probe_info["duration"]
+        max_duration_sec = settings.max_audio_duration_hours * 3600
+        if total_duration > max_duration_sec:
+            raise AppError(
+                error="duration_exceeded",
+                message=f"Длительность аудио ({total_duration:.1f} с) превышает лимит ({max_duration_sec} с)",
+                status_code=400,
+            )
         is_stereo = probe_info["channels"] >= 2
 
         # Check explicit channel mapping or stereo mode in request
@@ -193,6 +174,7 @@ async def process_job(job_id: str, data: dict):
                 segs, _ = asr_engine.transcribe(
                     chunk["data"],
                     language=target_lang,
+                    beam_size=1,
                     initial_prompt=hints_prompt,
                     hotwords=hints_prompt,
                 )
@@ -215,6 +197,7 @@ async def process_job(job_id: str, data: dict):
                 segs, _ = asr_engine.transcribe(
                     chunk["data"],
                     language=target_lang,
+                    beam_size=1,
                     initial_prompt=hints_prompt,
                     hotwords=hints_prompt,
                 )
@@ -262,6 +245,7 @@ async def process_job(job_id: str, data: dict):
                 segs, _ = asr_engine.transcribe(
                     chunk["data"],
                     language=target_lang,
+                    beam_size=1,
                     initial_prompt=hints_prompt,
                     hotwords=hints_prompt,
                 )
@@ -289,13 +273,17 @@ async def process_job(job_id: str, data: dict):
             # Use local audio-based diarization
             from app.diarization.mono_diarizer import MonoDiarizer
 
-            mono_diarizer = MonoDiarizer(num_speakers=2)
+            mono_diarizer = MonoDiarizer(
+                num_speakers=2,
+                min_speaker_distance=settings.diarization_min_speaker_distance,
+            )
             raw_segments = mono_diarizer.diarize(mono_pcm, raw_segments)
 
             final_segments, role_conf = role_classifier.classify_mono_speakers(raw_segments)
 
-            # In local-full profile, semantically refine speaker roles with Qwen 2.5 7B
-            if settings.app_profile == "local-full" and final_segments:
+            # In local-full profile, semantically refine speaker roles with Qwen 2.5 7B if dialogue
+            unique_speakers = {s.get("speaker_label") for s in final_segments}
+            if settings.app_profile == "local-full" and final_segments and len(unique_speakers) > 1:
                 try:
                     async with AsyncSessionLocal() as db:
                         await db.execute(
@@ -364,7 +352,7 @@ async def process_job(job_id: str, data: dict):
         if is_answering_machine:
             analysis_result = {
                 "schema_version": "1.0.0",
-                "prompt_version": "v1.2-ru-outdoor",
+                "prompt_version": "v1.5-ru-types",
                 "summary": "Автоответчик или голосовая почта. Разговор не состоялся.",
                 "call_result": "unclear_spam",
                 "inquiry_type": "spam_irrelevant",
@@ -399,11 +387,19 @@ async def process_job(job_id: str, data: dict):
             analysis_result = structured_analysis.model_dump()
             analysis_result["deterministic_speech_metrics"] = speech_metrics
 
-        # Strict JSON Schema validation
+        # Strict JSON Schema validation & normalization
         try:
+            from app.llm.local_adapter import normalize_analysis_dict
+
+            analysis_result = normalize_analysis_dict(analysis_result, full_masked_text)
             validate_analysis_schema(analysis_result)
         except Exception as schema_err:
-            logger.warning("analysis_schema_validation_warning", error=str(schema_err))
+            logger.error("analysis_schema_validation_failed", error=str(schema_err))
+            raise AppError(
+                error="schema_validation_failed",
+                message=f"Результат анализа не соответствует схеме: {schema_err}",
+                status_code=500,
+            )
 
         # 8. Save Analysis & Complete Job
         async with AsyncSessionLocal() as db:
@@ -440,6 +436,12 @@ async def process_job(job_id: str, data: dict):
             await db.commit()
 
         logger.info("job_completed_successfully", job_id=job_id, call_id=call_id)
+        try:
+            from app.metrics.prometheus import JOBS_TOTAL
+
+            JOBS_TOTAL.labels(status="succeeded", namespace=namespace).inc()
+        except Exception:
+            pass
 
         # 9. Trigger callback if requested
         if callback_url:
@@ -475,11 +477,43 @@ async def process_job(job_id: str, data: dict):
                 logger.error("bitrix24_timeline_post_error", error=str(b24_err))
 
 
+async def prewarm(queue=None):
+    """Прогрев ASR-модели и холостой прогон на синтетике до первого задания."""
+    logger.info("prewarming_long_asr_engine", model=settings.asr_model_name)
+    try:
+        engine = get_asr_engine()
+        engine.load_model()
+        engine.transcribe(
+            io.BytesIO(synthetic_warmup_wav()),
+            language="ru",
+            beam_size=1,
+            temperature=0.0,
+            vad_filter=True,
+            word_timestamps=False,
+        )
+        logger.info("long_asr_warmup_run_completed")
+        await mark_worker_ready(queue or get_queue(), "long")
+    except Exception as e:
+        # Без прогрева воркер стартует как раньше (ленивая загрузка в задании),
+        # но флаг готовности не выставляется и /ready отвечает 503.
+        logger.warning("long_asr_prewarm_failed", error=str(e))
+    logger.info("long_audio_processor_warmup_done")
+
+
 async def main():
     queue = get_queue()
     await queue.ensure_groups()
+    await prewarm(queue)
     logger.info("long_audio_processor_worker_started", group=GROUP_WORKERS)
+    if not has_avx2():
+        logger.warning(
+            "cpu_without_avx2_asr_will_be_slow",
+            hint="инференс без AVX2 на порядок медленнее, SLA/RTF недостижимы",
+        )
 
+    # Heartbeat готовности — отдельный поток: переживает блокировку
+    # event loop длинным синхронным инференсом.
+    start_heartbeat_thread("long")
     while is_running:
         try:
             job_item = await queue.read_next_job(
@@ -496,20 +530,68 @@ async def main():
                 await process_job(job_id, payload)
                 await queue.ack_job(STREAM_LONG_JOBS, GROUP_WORKERS, msg_id)
             except Exception as e:
+                is_permanent = isinstance(e, AppError)
+                retry_count = int(payload.get("_retry_count", 0))
+                max_retries = 3
+
+                if not is_permanent and retry_count < max_retries:
+                    retry_count += 1
+                    payload["_retry_count"] = retry_count
+                    logger.warning(
+                        "job_processing_transient_error_retrying",
+                        job_id=job_id,
+                        retry_count=retry_count,
+                        error=str(e),
+                    )
+                    async with AsyncSessionLocal() as db:
+                        await db.execute(
+                            update(Job)
+                            .where(Job.id == job_id)
+                            .values(
+                                step=f"retrying_attempt_{retry_count}",
+                                error_details={
+                                    "error": "transient_error",
+                                    "message": str(e),
+                                    "retry": retry_count,
+                                },
+                            )
+                        )
+                        await db.commit()
+                    # Re-enqueue for retry after delay
+                    await asyncio.sleep(min(2**retry_count, 10))
+                    await queue.enqueue_long_job(job_id, payload)
+                    await queue.ack_job(STREAM_LONG_JOBS, GROUP_WORKERS, msg_id)
+                    continue
+
+                # Permanent failure or max retries exceeded
+                error_type = e.error if isinstance(e, AppError) else "job_processing_error"
+                error_msg = e.message if isinstance(e, AppError) else str(e)
+                error_step = e.error if isinstance(e, AppError) else "failed"
+
                 logger.error(
                     "job_processing_failed",
                     job_id=job_id,
-                    error=str(e),
+                    error=error_msg,
+                    error_type=error_type,
+                    retries=retry_count,
                     traceback=traceback.format_exc(),
                 )
+                try:
+                    from app.metrics.prometheus import JOBS_TOTAL
+
+                    JOBS_TOTAL.labels(
+                        status="failed", namespace=payload.get("namespace", "default")
+                    ).inc()
+                except Exception:
+                    pass
                 async with AsyncSessionLocal() as db:
                     await db.execute(
                         update(Job)
                         .where(Job.id == job_id)
                         .values(
                             status="failed",
-                            step="failed",
-                            error_details={"error": "job_processing_error", "message": str(e)},
+                            step=error_step,
+                            error_details={"error": error_type, "message": error_msg},
                         )
                     )
                     await db.commit()
@@ -522,13 +604,23 @@ async def main():
                             "job_id": job_id,
                             "call_id": payload.get("call_id"),
                             "status": "failed",
-                            "error": {"error": "job_processing_error", "message": str(e)},
+                            "error": {"error": error_type, "message": error_msg},
                         }
                         await queue.enqueue_callback(job_id, callback_url, failure_payload)
                     except Exception as cb_err:
                         logger.error(
                             "failure_callback_enqueue_error", job_id=job_id, error=str(cb_err)
                         )
+
+                # Move failed job to Dead Letter Queue (DLQ)
+                try:
+                    await queue.enqueue_dlq(
+                        job_id=job_id,
+                        error={"error": error_type, "message": error_msg},
+                        payload=payload,
+                    )
+                except Exception as dlq_err:
+                    logger.error("dlq_enqueue_failed", job_id=job_id, error=str(dlq_err))
 
                 await queue.ack_job(STREAM_LONG_JOBS, GROUP_WORKERS, msg_id)
 

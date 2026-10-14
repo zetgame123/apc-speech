@@ -1,0 +1,18 @@
+{
+  "measured_tokens": {
+    "prompt": 802,
+    "gen": 235,
+    "note": "один представительный разбор v1.3b (set_a[0], локальный Qwen2.5-7B, server-side prompt eval; часовые транскрипты урезаются адаптером до ~4000 символов)"
+  },
+  "prices_usd_per_1m": {
+    "input": 0.0,
+    "output": 0.0
+  },
+  "calculation": {
+    "per_call_usd": 0.0,
+    "per_1000_calls_usd": 0.0,
+    "calls": 1000,
+    "total_usd": 0.0
+  },
+  "actual_provider_cost": "не измерено, причина: нет ключа, адаптер выключен"
+}

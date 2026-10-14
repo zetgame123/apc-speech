@@ -15,6 +15,14 @@ router = APIRouter(prefix="/v1/calls", tags=["calls"])
 _pii_masker = PiiMasker()
 
 
+def _naive(dt: datetime | None) -> datetime | None:
+    # E6 (2026-10-14): Call.created_at в БД naive; aware-даты из запроса
+    # роняли Postgres (см. чинку в app/api/analytics.py).
+    if dt is not None and dt.tzinfo is not None:
+        return dt.replace(tzinfo=None)
+    return dt
+
+
 def _sanitize_words(words: list[dict] | None) -> list[dict] | None:
     if not words:
         return words
@@ -58,6 +66,8 @@ async def get_transcript(
 ):
     auth.require_scope("read")
     auth.verify_namespace(namespace)
+    if not masked:
+        auth.require_scope("admin")
 
     # Verify call exists
     call_stmt = select(Call).where(Call.id == call_id, Call.namespace == namespace)
@@ -78,7 +88,10 @@ async def get_transcript(
         for s in segments:
             txt = s.text_masked if masked else s.text_original
             lines.append(f"[{s.speaker_role}] {txt}")
-        return Response(content="\n".join(lines), media_type="text/plain; charset=utf-8")
+        headers = {"Content-Disposition": f'attachment; filename="transcript_{call_id}.txt"'}
+        return Response(
+            content="\n".join(lines), media_type="text/plain; charset=utf-8", headers=headers
+        )
 
     elif format == "srt":
         srt_entries = []
@@ -87,7 +100,10 @@ async def get_transcript(
             start = format_srt_timestamp(s.start_time)
             end = format_srt_timestamp(s.end_time)
             srt_entries.append(f"{i}\n{start} --> {end}\n[{s.speaker_role}] {txt}\n")
-        return Response(content="\n".join(srt_entries), media_type="text/plain; charset=utf-8")
+        headers = {"Content-Disposition": f'attachment; filename="transcript_{call_id}.srt"'}
+        return Response(
+            content="\n".join(srt_entries), media_type="text/plain; charset=utf-8", headers=headers
+        )
 
     elif format == "vtt":
         vtt_entries = ["WEBVTT\n"]
@@ -96,7 +112,10 @@ async def get_transcript(
             start = format_vtt_timestamp(s.start_time)
             end = format_vtt_timestamp(s.end_time)
             vtt_entries.append(f"{start} --> {end}\n<v {s.speaker_role}>{txt}\n")
-        return Response(content="\n".join(vtt_entries), media_type="text/vtt; charset=utf-8")
+        headers = {"Content-Disposition": f'attachment; filename="transcript_{call_id}.vtt"'}
+        return Response(
+            content="\n".join(vtt_entries), media_type="text/vtt; charset=utf-8", headers=headers
+        )
 
     # Default: JSON
     full_text = " ".join(s.text_masked if masked else s.text_original for s in segments)
@@ -219,9 +238,9 @@ async def list_calls(
     if manager_id:
         query = query.where(Call.manager_id == manager_id)
     if date_from:
-        query = query.where(Call.created_at >= date_from)
+        query = query.where(Call.created_at >= _naive(date_from))
     if date_to:
-        query = query.where(Call.created_at <= date_to)
+        query = query.where(Call.created_at <= _naive(date_to))
 
     # Fulltext search: find calls whose transcript segments contain the query string
     if q:

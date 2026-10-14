@@ -1,0 +1,270 @@
+{
+  "rules_A": {
+    "types": {
+      "n": 120,
+      "accuracy": 1.0,
+      "macro_f1": 1.0,
+      "confusion": {}
+    },
+    "entities": {
+      "city": {
+        "p": 0.8,
+        "r": 0.8,
+        "f1": 0.8
+      },
+      "format": {
+        "p": 0.5,
+        "r": 0.5,
+        "f1": 0.5
+      },
+      "quantity": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      },
+      "period": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      },
+      "budget": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      },
+      "category": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      }
+    }
+  },
+  "rules_B": {
+    "types": {
+      "n": 25,
+      "accuracy": 0.6,
+      "macro_f1": 0.5278,
+      "confusion": {
+        "pricing>inventory_search": 2,
+        "complaint>inventory_search": 2,
+        "order_status>production": 2,
+        "partnership_supply>programmatic_digital": 2,
+        "pricing>other": 1,
+        "complaint>other": 1
+      }
+    },
+    "entities": {
+      "city": {
+        "p": 0.727,
+        "r": 0.727,
+        "f1": 0.727
+      },
+      "format": {
+        "p": 0.824,
+        "r": 0.824,
+        "f1": 0.824
+      },
+      "quantity": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      },
+      "period": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      },
+      "budget": {
+        "p": 0.778,
+        "r": 0.778,
+        "f1": 0.778
+      },
+      "category": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      }
+    }
+  },
+  "qwen_Asub": {
+    "types": {
+      "n": 30,
+      "accuracy": 1.0,
+      "macro_f1": 1.0,
+      "confusion": {}
+    },
+    "entities": {
+      "city": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      },
+      "format": {
+        "p": 0.8,
+        "r": 0.8,
+        "f1": 0.8
+      },
+      "quantity": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      },
+      "period": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      },
+      "budget": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      },
+      "category": {
+        "p": 0.0,
+        "r": 0.0,
+        "f1": 0.0
+      }
+    }
+  },
+  "qwen_B": {
+    "types": {
+      "n": 25,
+      "accuracy": 0.8,
+      "macro_f1": 0.6706,
+      "confusion": {
+        "production>availability": 1,
+        "partnership_supply>inventory_search": 2,
+        "spam_irrelevant>other": 1,
+        "other>pricing": 1
+      }
+    },
+    "entities": {
+      "city": {
+        "p": 0.957,
+        "r": 0.957,
+        "f1": 0.957
+      },
+      "format": {
+        "p": 0.765,
+        "r": 0.765,
+        "f1": 0.765
+      },
+      "quantity": {
+        "p": 0.4,
+        "r": 0.4,
+        "f1": 0.4
+      },
+      "period": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      },
+      "budget": {
+        "p": 0.778,
+        "r": 0.778,
+        "f1": 0.778
+      },
+      "category": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      }
+    }
+  },
+  "asr_rules_B": {
+    "types": {
+      "n": 25,
+      "accuracy": 0.52,
+      "macro_f1": 0.4361,
+      "confusion": {
+        "pricing>inventory_search": 2,
+        "complaint>inventory_search": 2,
+        "order_status>production": 2,
+        "documents_billing>other": 2,
+        "partnership_supply>programmatic_digital": 2,
+        "pricing>other": 1,
+        "complaint>documents_billing": 1
+      }
+    },
+    "entities": {
+      "city": {
+        "p": 0.636,
+        "r": 0.636,
+        "f1": 0.636
+      },
+      "format": {
+        "p": 0.824,
+        "r": 0.824,
+        "f1": 0.824
+      },
+      "quantity": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      },
+      "period": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      },
+      "budget": {
+        "p": 0.778,
+        "r": 0.778,
+        "f1": 0.778
+      },
+      "category": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      }
+    }
+  },
+  "asr_qwen_B": {
+    "types": {
+      "n": 25,
+      "accuracy": 0.68,
+      "macro_f1": 0.5177,
+      "confusion": {
+        "documents_billing>pricing": 2,
+        "production>pricing": 1,
+        "partnership_supply>inventory_search": 1,
+        "spam_irrelevant>other": 1,
+        "other>pricing": 1,
+        "production>inventory_search": 1,
+        "partnership_supply>pricing": 1
+      }
+    },
+    "entities": {
+      "city": {
+        "p": 0.87,
+        "r": 0.87,
+        "f1": 0.87
+      },
+      "format": {
+        "p": 0.824,
+        "r": 0.824,
+        "f1": 0.824
+      },
+      "quantity": {
+        "p": 0.4,
+        "r": 0.4,
+        "f1": 0.4
+      },
+      "period": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      },
+      "budget": {
+        "p": 0.778,
+        "r": 0.778,
+        "f1": 0.778
+      },
+      "category": {
+        "p": 1.0,
+        "r": 1.0,
+        "f1": 1.0
+      }
+    }
+  }
+}

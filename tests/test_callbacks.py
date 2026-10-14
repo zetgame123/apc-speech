@@ -59,3 +59,110 @@ async def test_dispatch_callback_success():
         result = await dispatch_callback("job-123", "http://example.com/hook", {"status": "ok"})
         assert result is True
         mock_client.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_callback_retries_five_times_then_gives_up():
+    """5 попыток с нарастающей задержкой [5,15,60,300,900], затем сдаётся."""
+    import asyncio
+
+    from app.workers import callback_dispatcher
+    from app.workers.callback_dispatcher import dispatch_callback
+
+    assert callback_dispatcher.RETRY_DELAYS_SEC == [5, 15, 60, 300, 900]
+
+    mock_resp = MagicMock()
+    mock_resp.is_success = False
+    mock_resp.status_code = 500
+    mock_resp.text = "ERR"
+
+    mock_client = AsyncMock()
+    mock_client.post.return_value = mock_resp
+    slept = []
+
+    async def fake_sleep(delay):
+        slept.append(delay)
+
+    with (
+        patch("app.workers.callback_dispatcher.httpx.AsyncClient") as mock_cls,
+        patch("app.workers.callback_dispatcher.AsyncSessionLocal") as mock_db_cls,
+        patch.object(asyncio, "sleep", fake_sleep),
+    ):
+        mock_cls.return_value.__aenter__.return_value = mock_client
+        mock_session = AsyncMock()
+        mock_db_cls.return_value.__aenter__.return_value = mock_session
+
+        result = await dispatch_callback("job-123", "http://example.com/hook", {"status": "ok"})
+        assert not result
+        assert mock_client.post.call_count == 5
+        assert slept == [5, 15, 60, 300]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_callback_ssrf_rejected():
+    """Callback на внутренний адрес не уходит (SSRF), без HTTP-попыток."""
+    from unittest.mock import patch
+
+    from app.workers.callback_dispatcher import dispatch_callback
+
+    with patch("app.workers.callback_dispatcher.httpx.AsyncClient") as mock_cls:
+        result = await dispatch_callback("job-123", "http://127.0.0.1:9/hook", {"status": "ok"})
+        assert result is False
+        mock_cls.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_production_refuses_private_callback_flag(monkeypatch):
+    """Боевой профиль с включённым тестовым флагом не стартует."""
+    from app.workers.callback_dispatcher import enforce_production_callback_policy
+
+    settings = MagicMock()
+    settings.app_env = "production"
+    settings.callback_allow_private_net = True
+    with pytest.raises(RuntimeError, match="CALLBACK_ALLOW_PRIVATE_NET"):
+        enforce_production_callback_policy(settings)
+    settings.app_env = "development"
+    enforce_production_callback_policy(settings)
+    settings.callback_allow_private_net = False
+    settings.app_env = "production"
+    enforce_production_callback_policy(settings)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_callback_private_allowed_with_test_flag(monkeypatch):
+    """С тестовым флагом приватный URL уходит (без него — SSRF-отказ)."""
+    from app.workers import callback_dispatcher
+    from app.workers.callback_dispatcher import dispatch_callback
+
+    mock_resp = MagicMock()
+    mock_resp.is_success = True
+    mock_resp.status_code = 200
+    mock_resp.text = "OK"
+    mock_client = AsyncMock()
+    mock_client.post.return_value = mock_resp
+    mock_settings = MagicMock()
+    mock_settings.callback_allow_private_net = True
+    with (
+        patch.object(callback_dispatcher, "get_settings", return_value=mock_settings),
+        patch("app.workers.callback_dispatcher.httpx.AsyncClient") as mock_cls,
+        patch("app.workers.callback_dispatcher.AsyncSessionLocal") as mock_db_cls,
+    ):
+        mock_cls.return_value.__aenter__.return_value = mock_client
+        mock_session = AsyncMock()
+        mock_db_cls.return_value.__aenter__.return_value = mock_session
+        result = await dispatch_callback("job-1", "http://127.0.0.1:9/hook", {"status": "ok"})
+        assert result is True
+        mock_client.post.assert_called_once()
+
+
+def test_validate_callback_url_flag_scope():
+    """Флаг открывает только callback; strict-путь прежний."""
+    from app.core.errors import AppError
+    from app.core.urls import validate_callback_url
+
+    assert (
+        validate_callback_url("http://127.0.0.1:9/hook", allow_private_net=True)
+        == "http://127.0.0.1:9/hook"
+    )
+    with pytest.raises(AppError):
+        validate_callback_url("http://127.0.0.1:9/hook", allow_private_net=False)

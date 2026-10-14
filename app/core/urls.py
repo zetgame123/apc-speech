@@ -1,0 +1,29 @@
+"""URL-утилиты без зависимостей проекта (листовой модуль, циклов импорта нет)."""
+
+from urllib.parse import urlparse
+
+
+def redact_url_for_log(url: str) -> str:
+    """Для логов: только схема и хост (без пути, query, фрагмента, userinfo).
+
+    Query-параметры callback/download URL могут содержать секреты и ПД.
+    """
+    try:
+        parsed = urlparse(url or "")
+        host = parsed.hostname or ""
+        if not parsed.scheme or not host:
+            return "<invalid-url>"
+        port = f":{parsed.port}" if parsed.port else ""
+        return f"{parsed.scheme}://{host}{port}"
+    except Exception:
+        return "<invalid-url>"
+
+
+def validate_callback_url(url: str, *, allow_private_net: bool = False) -> str:
+    """Проверка callback-URL: SSRF по умолчанию; тестовый флаг разрешает
+    приватные адреса ТОЛЬКО для callback (скачивание — никогда)."""
+    if allow_private_net:
+        return url
+    from app.core.security import validate_ssrf_url
+
+    return validate_ssrf_url(url)

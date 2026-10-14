@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-12",
+  "target": "шаг 0: профиль времени разбора Qwen",
+  "server": {
+    "build": "b4738",
+    "threads": "дефолт n_threads=8 (флаг -t не задан)",
+    "cores_container": "2 логических CPU (cpuset 4,6 = 2 физ. ядра, SMT-пар нет)",
+    "cache_prompt": false,
+    "ctx": 4096,
+    "gpu_layers": 0
+  },
+  "prompt_speed": "80-83 мс/ток (~12.3 ток/с)",
+  "gen_speed": "165-185 мс/ток (~5.6 ток/с)",
+  "analyses": [
+    {
+      "call": "a05 (5с)",
+      "prompt_tok": 32,
+      "prompt_s": 3.0,
+      "out_tok": 182,
+      "gen_s": 32.8,
+      "total_s": 35.8
+    },
+    {
+      "call": "a11 (11с)",
+      "prompt_tok": 652,
+      "prompt_s": 52.7,
+      "out_tok": 192,
+      "gen_s": 34.5,
+      "total_s": 87.2
+    },
+    {
+      "call": "a34 (34с)",
+      "prompt_tok": 753,
+      "prompt_s": 61.3,
+      "out_tok": 201,
+      "gen_s": 36.2,
+      "total_s": 97.5
+    },
+    {
+      "call": "a68 (68с)",
+      "prompt_tok": 912,
+      "prompt_s": 74.6,
+      "out_tok": 281,
+      "gen_s": 51.4,
+      "total_s": 126.0
+    },
+    {
+      "call": "a123 (123с)",
+      "prompt_tok": 1166,
+      "prompt_s": 96.4,
+      "out_tok": 231,
+      "gen_s": 42.8,
+      "total_s": 139.2
+    }
+  ],
+  "note": "доразметка ролей отдельно: ~19с (промпт ~220-640 ток, выход ~20 ток)",
+  "where_time_goes": "оба: промпт растёт с длиной (27-96с), генерация 33-51с; короткие звонки — генерация, длинные — промпт"
+}

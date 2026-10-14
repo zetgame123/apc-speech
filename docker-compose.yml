@@ -1,27 +1,32 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:0.8.7-pg16
     restart: unless-stopped
+    networks:
+      - backend
     environment:
       POSTGRES_DB: apc_speech
-      POSTGRES_USER: ${DB_USER:?DB_USER is required}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_USER: ${DB_USER:-apc_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secure_pass}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-apc_user} -d apc_speech"]
       interval: 5s
-      timeout: 3s
-      retries: 5
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 512M
+          cpus: '0.3'
+          memory: 160M
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.2-alpine
     restart: unless-stopped
+    networks:
+      - backend
     command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy noeviction
     volumes:
       - redisdata:/data
@@ -29,51 +34,117 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+      start_period: 10s
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 256M
+          cpus: '0.2'
+          memory: 160M
 
   minio:
-    image: elestio/minio:latest
+    # Версия зафиксирована digest'ом: у elestio/minio есть только тег latest,
+    # официальный minio/minio недоступен для анонимного pull. Digest проверен
+    # через Docker Hub API (multi-arch, есть linux/amd64). Переопределение для
+    # закрытого registry — через MINIO_IMAGE в .env.
+    image: ${MINIO_IMAGE:-elestio/minio:latest@sha256:25348a257f1ece1b192f25f6cd9854618fa86422ac87b494b5d4e629c556d4bd}
     restart: unless-stopped
+    networks:
+      - backend
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret_pass}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio_admin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret_pass}
     volumes:
       - miniodata:/data
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
       interval: 5s
-      timeout: 3s
-      retries: 5
+      timeout: 5s
+      retries: 10
+      start_period: 15s
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 256M
+          cpus: '0.2'
+          memory: 272M
 
   alembic-migrate:
     build:
       context: .
       dockerfile: Dockerfile
     command: alembic upgrade head
+    networks:
+      - backend
     depends_on:
       postgres: { condition: service_healthy }
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${DB_USER:?DB_USER is required}:${DB_PASSWORD:?DB_PASSWORD is required}@postgres:5432/apc_speech
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 256M
+
+  # Скачивает модели CAM++ (диаризация) и Whisper (voice-search + long-audio ASR).
+  # Выполняется один раз перед стартом api/воркеров; при повторном запуске
+  # скрипт идемпотентен и пропускает уже скачанные файлы.
+  model-downloader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python scripts/download_models.py --profile small
+    # root только для этого одноразового init-job: Docker Engine на "чистой" Linux-машине
+    # автосоздаёт отсутствующую bind-mount директорию ./models с владельцем root:root (0755),
+    # и непривилегированный apcuser (образа по умолчанию) не может в неё писать. Сам джоб не
+    # принимает сетевой трафик и не обрабатывает пользовательские данные - пишет только
+    # заранее известные файлы моделей по фиксированным URL, поэтому запуск от root здесь
+    # не нарушает требование "без root" для обслуживающих трафик сервисов (см.
+    # common-requirements.md п.4 и docs/decisions.md ADR-008).
+    user: "0:0"
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - ./models:/app/models:rw
+      - ./scripts:/app/scripts:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          # 2G: джоб пишет ~2,8 ГБ весов (small), page cache записи считается
+          # в лимит cgroup — с 512M холодный старт падал OOM (exit 137) на
+          # скачивании podlodka (E6, 2026-10-13). Джоб одноразовый: воркеры
+          # стартуют после service_completed_successfully, в steady-state
+          # сумму профиля small не увеличивает.
+          memory: 2G
+
+  # Скачивает веса Qwen2.5-7B-Instruct GGUF (~4.4 ГБ) для профиля local-full.
+  # Активен только при `docker compose --profile local-full up`.
+  model-downloader-llm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python scripts/download_models.py --profile local-full
+    profiles: ["local-full"]
+    # root только для одноразового init-job, см. комментарий у model-downloader выше (ADR-008).
+    user: "0:0"
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - ./models:/app/models:rw
+      - ./scripts:/app/scripts:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          # 6G: Qwen-веса ~4,4 ГБ одним проходом, та же причина, что у
+          # model-downloader выше (E6, 2026-10-13). Только local-full.
+          memory: 6G
 
   api:
     build:
@@ -81,25 +152,48 @@ services:
       dockerfile: Dockerfile
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
     restart: unless-stopped
+    # api в обеих сетях: frontend — для скачивания аудио по внешним URL (by-url,
+    # Bitrix RECORD_URL) с SSRF-защитой; backend — для БД/очереди/хранилища/LLM.
+    networks:
+      - frontend
+      - backend
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }
       alembic-migrate: { condition: service_completed_successfully }
+      model-downloader: { condition: service_completed_successfully }
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${DB_USER:?}:${DB_PASSWORD:?}@postgres:5432/apc_speech
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
-      - DEV_TOKEN=${DEV_TOKEN:-}
-      - ASR_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
-      - VOICE_SEARCH_MODEL_NAME=./models/whisper-small
+      - APP_PROFILE=${APP_PROFILE:-small}
+      - APP_ENV=${APP_ENV:-development}
+      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
+      - ASR_MODEL_NAME=${ASR_MODEL_NAME:-./models/whisper-podlodka-turbo-ct2}
+      - VOICE_SEARCH_MODEL_NAME=${VOICE_SEARCH_MODEL_NAME:-./models/whisper-small}
       - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-2}
-      - ASR_THREADS=2
+      - VOICE_SEARCH_USE_WORKER=true
+      - VOICE_SEARCH_RESULT_TIMEOUT_SEC=${VOICE_SEARCH_RESULT_TIMEOUT_SEC:-2.4}
+      - ASR_THREADS=${ASR_THREADS:-4}
+      - OMP_NUM_THREADS=${ASR_THREADS:-4}
+      - OPENBLAS_NUM_THREADS=${ASR_THREADS:-4}
+      - MKL_NUM_THREADS=${ASR_THREADS:-4}
+      - RATE_LIMIT_REQUESTS_PER_WINDOW=${RATE_LIMIT_REQUESTS_PER_WINDOW:-30}
+      - RATE_LIMIT_WINDOW_SEC=${RATE_LIMIT_WINDOW_SEC:-10}
     volumes:
       - ./models:/app/models:ro
       - ./app:/app/app:ro
+      - ./config:/app/config:ro
+      - ./schemas:/app/schemas:ro
+      - ./scripts:/app/scripts:ro
+      # E6 (2026-10-13): без этого GET /v1/voice/sample-audio отвечал 404
+      # sample_not_found — образцы data/evaluation_suite лежат только на хосте.
+      - ./data:/app/data:ro
     ports:
       - "8000:8000"
     healthcheck:
@@ -107,11 +201,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+      start_period: 40s
     deploy:
       resources:
         limits:
-          cpus: '2.0'
-          memory: 1280M
+          cpus: '0.4'
+          memory: 384M
 
   worker-long:
     build:
@@ -119,33 +214,55 @@ services:
       dockerfile: Dockerfile
     command: python -m app.workers.long_audio_processor
     restart: unless-stopped
+    # Только backend (internal): распознавание локальное, аудио приходит из MinIO,
+    # скачивание по внешним URL выполняет api (у него есть egress). См. B9.
+    networks:
+      - backend
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }
       alembic-migrate: { condition: service_completed_successfully }
+      model-downloader: { condition: service_completed_successfully }
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${DB_USER:?}:${DB_PASSWORD:?}@postgres:5432/apc_speech
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
-      - DEV_TOKEN=${DEV_TOKEN:-}
-      - ASR_MODEL_NAME=./models/whisper-podlodka-turbo-ct2
+      - APP_PROFILE=${APP_PROFILE:-small}
+      - APP_ENV=${APP_ENV:-development}
+      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
+      - ASR_MODEL_NAME=${ASR_MODEL_NAME:-./models/whisper-podlodka-turbo-ct2}
       - ASR_COMPUTE_TYPE=int8
+      # BLAS-потоки поджаты под CPU-квоту контейнера (numpy/librosa/onnxruntime
+      # иначе плодят потоки на все ядра хоста). Потоки самого CTranslate2
+      # (ASR_THREADS, по умолчанию 2) не трогаем: замер B1 показал, что 1 поток
+      # замедляет инференс в разы даже под квотой. См. known-issues.md п.5.
+      - OMP_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      # Запрет сетевых попыток HuggingFace (телеметрия/докачка весов): модели
+      # уже лежат в ./models благодаря model-downloader. См. B9.
+      - HF_HUB_OFFLINE=1
     volumes:
       - ./models:/app/models:ro
       - ./app:/app/app:ro
+      - ./config:/app/config:ro
+      - ./schemas:/app/schemas:ro
+      - ./scripts:/app/scripts:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      test: ["CMD", "python", "/app/scripts/worker_healthcheck.py", "long_audio_processor"]
       interval: 10s
       timeout: 5s
       retries: 3
     deploy:
       resources:
         limits:
-          cpus: '1.5'
-          memory: 1792M
+          cpus: '0.6'
+          memory: 2112M
 
   worker-callback:
     build:
@@ -153,20 +270,29 @@ services:
       dockerfile: Dockerfile
     command: python -m app.workers.callback_dispatcher
     restart: unless-stopped
+    # Обе сети: backend — очередь/БД, frontend — доставка callback на внешние URL. См. B9.
+    networks:
+      - frontend
+      - backend
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       alembic-migrate: { condition: service_completed_successfully }
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${DB_USER:?}:${DB_PASSWORD:?}@postgres:5432/apc_speech
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
-      - DEV_TOKEN=${DEV_TOKEN:-}
+      - APP_PROFILE=${APP_PROFILE:-small}
+      - APP_ENV=${APP_ENV:-development}
+      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
     volumes:
       - ./app:/app/app:ro
+      - ./scripts:/app/scripts:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      test: ["CMD", "python", "/app/scripts/worker_healthcheck.py", "callback_dispatcher"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -182,18 +308,37 @@ services:
       dockerfile: Dockerfile
     command: python -m app.workers.fast_voice_search
     restart: unless-stopped
+    # Только backend (internal): инференс локальный, очередь — Redis в backend. См. B9.
+    networks:
+      - backend
     depends_on:
       redis: { condition: service_healthy }
+      model-downloader: { condition: service_completed_successfully }
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - DEV_TOKEN=${DEV_TOKEN:-}
+      - APP_PROFILE=${APP_PROFILE:-small}
+      - APP_ENV=${APP_ENV:-development}
+      - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - VOICE_SEARCH_MODEL_NAME=${VOICE_SEARCH_MODEL_NAME:-./models/whisper-small}
+      - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-2}
+      # BLAS-потоки поджаты под CPU-квоту 0.5 (см. комментарий у worker-long).
+      - OMP_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      # Ограничение glibc-арен: пик T-one 931МБ -> 496МБ без потери скорости.
+      - MALLOC_ARENA_MAX=2
+      - MALLOC_TRIM_THRESHOLD_=131072
+      # Запрет сетевых попыток HuggingFace (телеметрия/докачка весов). См. B9.
+      - HF_HUB_OFFLINE=1
     volumes:
       - ./models:/app/models:ro
       - ./app:/app/app:ro
+      - ./scripts:/app/scripts:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      test: ["CMD", "python", "/app/scripts/worker_healthcheck.py", "fast_voice_search"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -201,29 +346,84 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 512M
+          memory: 576M
+
+  cleanup-retention:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python scripts/retention_loop.py
+    restart: unless-stopped
+    networks:
+      - backend
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      alembic-migrate: { condition: service_completed_successfully }
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
+      - S3_ENDPOINT_URL=http://minio:9000
+      - APP_PROFILE=${APP_PROFILE:-small}
+      - APP_ENV=${APP_ENV:-development}
+    volumes:
+      - ./app:/app/app:ro
+      - ./scripts:/app/scripts:ro
+    healthcheck:
+      test: ["CMD", "python", "/app/scripts/worker_healthcheck.py", "retention_loop"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 80M
 
   # Активируется только для профиля local-full: docker compose --profile local-full up
+  # Профиль по brief.md: 8 vCPU / 32 ГБ RAM или GPU >= 12 ГБ.
   llm-runtime:
-    image: ghcr.io/ggml-org/llama.cpp:server
+    # Тег server-b5350 зафиксирован (проверен через ghcr API: есть linux/amd64,
+    # digest sha256:8a0a31d0b342f96b2c5453eedadbb0544d6d426bd43c9ea6f62b2bd2489be676).
+    image: ghcr.io/ggml-org/llama.cpp:server-b5350
     restart: unless-stopped
     profiles: ["local-full"]
+    depends_on:
+      model-downloader-llm: { condition: service_completed_successfully }
+    entrypoint: ["/bin/sh", "-c"]
     command: >
-      -m /models/qwen2.5-7b-instruct-q4_k_m.gguf
-      --alias qwen2.5-7b-instruct
-      --host 0.0.0.0 --port 8080
-      -c 4096 --n-gpu-layers 0
+      "if [ -f /models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf ]; then
+         MODEL=/models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf;
+       else
+         MODEL=/models/qwen2.5-7b-instruct-q4_k_m.gguf;
+       fi;
+       exec /app/llama-server -m $$MODEL --alias qwen2.5-7b-instruct --host 0.0.0.0 --port 8080 -c 4096 --n-gpu-layers 0 -t ${LLAMA_THREADS:-4} --threads-batch ${LLAMA_THREADS:-4}"
     volumes:
       - ./models:/models:ro
     ports:
       - "8080:8080"
+    # Только backend (internal): к LLM обращаются api/worker-long из backend. См. B9.
+    networks:
+      - backend
     deploy:
       resources:
         limits:
-          cpus: '4.0'
-          memory: 8192M
+          cpus: '6.0'
+          memory: 10240M
 
 volumes:
   pgdata:
   redisdata:
   miniodata:
+
+networks:
+  # Сеть по умолчанию для сервисов с выходом в интернет (api скачивает аудио
+  # по внешним URL, worker-callback доставляет callback, model-downloader
+  # тянет веса моделей). Явно объявлена, чтобы тест B9 мог отличить её от backend.
+  frontend:
+  # Изолированная сеть без выхода в интернет (internal: true) для распознавания:
+  # worker-long и worker-fast видят только БД/очередь/хранилище/LLM. См. B9.
+  backend:
+    internal: true
