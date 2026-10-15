@@ -13,6 +13,13 @@ function toIsoOrNull(value) {
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
 }
+
+/* Секунды таймкода для подписи (toFixed без падения на битых данных). */
+function fmtSec(value) {
+  const v = Number(value);
+  if (!Number.isFinite(v)) return '—';
+  return `${v.toFixed(1)}s`;
+}
 /* Названия типов обращений — из config/taxonomy.yaml; значений call_result —
  * из VALID_CALL_RESULTS (app/llm/local_adapter.py). Неизвестные слаги
  * показываются как есть, а не прячутся. */

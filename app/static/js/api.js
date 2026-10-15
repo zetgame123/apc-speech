@@ -181,6 +181,13 @@
     card.appendChild(submit);
     overlay.appendChild(card);
     document.body.appendChild(overlay);
+    tokenField.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submit.click();
+    });
+    nsInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submit.click();
+    });
+    tokenField.focus();
   }
 
   function initAuth() {

@@ -98,7 +98,10 @@
   const chatBox = document.getElementById('chatBox');
 
   btnUpload.addEventListener('click', () => {
-    if (!fileInput.files.length) return alert("Пожалуйста, выберите аудиофайл!");
+    if (!fileInput.files.length) {
+      statusCallText.innerText = "Выберите аудиофайл, затем нажмите «Загрузить звонок».";
+      return;
+    }
     uploadCallAudio(fileInput.files[0], fileInput.files[0].name);
   });
 
@@ -139,7 +142,7 @@
       btnRecordCall.classList.replace('btn-outline-danger', 'btn-danger');
       statusCallText.innerText = "Идёт запись разговора...";
     } catch (err) {
-      alert("Ошибка доступа к микрофону: " + err.message);
+      statusCallText.innerText = "Нет доступа к микрофону: " + err.message;
     }
   });
 
@@ -151,7 +154,7 @@
       const blob = await res.blob();
       uploadCallAudio(blob, "sample_dialogue_telephony.wav");
     } catch (e) {
-      alert("Ошибка: " + e.message);
+      statusCallText.innerText = "Ошибка записи: " + e.message;
     }
   });
 
@@ -186,8 +189,14 @@
   function pollCallJob(jobId) {
     if (callPollInterval) clearInterval(callPollInterval);
     let pollFailures = 0;
+    const pollNs = getNamespace();
 
     callPollInterval = setInterval(() => {
+      if (getNamespace() !== pollNs) {
+        clearInterval(callPollInterval);
+        statusCallText.innerText = "Загрузка отменена: сменён неймспейс.";
+        return;
+      }
       fetch(`/v1/jobs/${jobId}?namespace=${getNamespace()}`, { headers: getHeaders() })
         .then(checkAuthResponse).then(res => res.json())
         .then(data => {
@@ -249,7 +258,7 @@
     timeline.innerHTML = '';
 
     const wsDur = wavesurfer ? wavesurfer.getDuration() : 0;
-    const maxEnd = Math.max(...segments.map(s => s.end || 0));
+    const maxEnd = segments.reduce((m, s) => Math.max(m, s.end || 0), 0);
     const totalDur = wsDur > 0 ? wsDur : (maxEnd > 0 ? maxEnd : 1);
 
     segments.forEach(seg => {
@@ -274,7 +283,7 @@
       block.style.cursor = 'pointer';
       block.style.opacity = '0.85';
       block.style.transition = 'opacity 0.15s, transform 0.15s';
-      block.title = `${roleLabel} (${seg.start.toFixed(1)}s - ${seg.end.toFixed(1)}s): ${seg.text || ''}`;
+      block.title = `${roleLabel} (${fmtSec(seg.start)} - ${fmtSec(seg.end)}): ${seg.text || ''}`;
 
       block.addEventListener('mouseenter', () => {
         block.style.opacity = '1';
@@ -341,8 +350,8 @@
       const badge = document.createElement('div');
       badge.className = `speaker-badge ${isFirstSpeaker ? 'text-primary' : 'text-success'}`;
       badge.innerHTML = `
-        <span><i class="bi bi-person-${isFirstSpeaker ? 'badge' : 'fill'} me-1"></i>${roleLabel} (${escapeHtml(seg.speaker_label || (isFirstSpeaker ? 'SPEAKER_0' : 'SPEAKER_1'))})</span>
-        <span class="text-muted fw-normal">${seg.start.toFixed(1)}s - ${seg.end.toFixed(1)}s</span>
+        <span><i class="bi bi-person-${isFirstSpeaker ? 'check-fill' : 'fill'} me-1"></i>${roleLabel} (${escapeHtml(seg.speaker_label || (isFirstSpeaker ? 'SPEAKER_0' : 'SPEAKER_1'))})</span>
+        <span class="text-muted fw-normal">${fmtSec(seg.start)} - ${fmtSec(seg.end)}</span>
       `;
       bubble.appendChild(badge);
 
@@ -853,7 +862,7 @@
       const res = await fetch(url, { headers: getHeaders() });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ message: res.statusText }));
-        alert("Ошибка скачивания: " + (err.message || res.statusText));
+        showNetBanner("Ошибка скачивания: " + (err.message || res.statusText));
         return;
       }
       const blob = await res.blob();
@@ -867,7 +876,7 @@
       setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
     } catch (e) {
       console.error("Ошибка при скачивании файла:", e);
-      alert("Ошибка при скачивании: " + e.message);
+      showNetBanner("Ошибка при скачивании: " + e.message);
     }
   }
 

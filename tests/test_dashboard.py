@@ -315,6 +315,26 @@ def test_dashboard_call_card_player_and_highlight():
         assert f'id="{el}"' in html, f"нет элемента {el}"
 
 
+def test_dashboard_no_blocking_dialogs_and_guarded_formats():
+    """Пункт 8: без alert/confirm, лимит записи 60 с, защита toFixed/Math.max."""
+    for name in ("dashboard.js", "voice.js", "api.js", "format.js"):
+        text = (STATIC_DIR / "js" / name).read_text(encoding="utf-8")
+        assert "alert(" not in text, f"{name}: остался alert"
+        assert "confirm(" not in text, f"{name}: остался confirm"
+    voice = (STATIC_DIR / "js" / "voice.js").read_text(encoding="utf-8")
+    assert "VOICE_RECORD_LIMIT_SEC = 60" in voice
+    assert "0.25x" not in voice
+    dash = (STATIC_DIR / "js" / "dashboard.js").read_text(encoding="utf-8")
+    assert "fmtSec(" in dash and "pollNs" in dash and "clearHistoryArmed" in voice
+    assert "Math.max(..." not in dash and "Math.max(..." not in voice
+    fmt = (STATIC_DIR / "js" / "format.js").read_text(encoding="utf-8")
+    assert "function fmtSec" in fmt and "function toIsoOrNull" in fmt
+    for name in ("dashboard.html", "voice.html"):
+        html = (STATIC_DIR / name).read_text(encoding="utf-8")
+        assert "<th>" not in html, f"{name}: th без scope"
+        assert 'scope="col"' in html, f"{name}: нет scope=col"
+
+
 def test_dashboard_clusters_have_two_sources():
     """Пункт 7: кластеры из истории запросов и из текстов звонков (существующие ручки)."""
     html = (STATIC_DIR / "voice.html").read_text(encoding="utf-8")

@@ -60,20 +60,22 @@
       
       voiceTimerInterval = setInterval(() => {
         const elapsed = (Date.now() - voiceRecordStartTime) / 1000;
-        const remain = Math.max(0, 6.0 - elapsed).toFixed(0);
+        const remain = Math.max(0, VOICE_RECORD_LIMIT_SEC - elapsed).toFixed(0);
         voiceRecordingTimer.innerText = `Запись: ${elapsed.toFixed(1)} с (Кликните для отправки или авто-стоп через ${remain} с)`;
       }, 100);
 
       if (voiceAutoStopTimeout) clearTimeout(voiceAutoStopTimeout);
       voiceAutoStopTimeout = setTimeout(() => {
         if (isRecordingVoice) stopVoiceRecording();
-      }, 6000);
+      }, VOICE_RECORD_LIMIT_SEC * 1000);
 
     } catch (err) {
-      alert("Ошибка доступа к микрофону: " + err.message);
+      voiceRecordingStatus.innerText = "Нет доступа к микрофону: " + err.message;
     }
   }
 
+  // Лимит записи голосового запроса — как у POST /v1/voice/search (до 60 с).
+  const VOICE_RECORD_LIMIT_SEC = 60;
   let voiceAutoStopTimeout = null;
 
   function stopVoiceRecording() {
@@ -154,7 +156,7 @@
         const speedMultiplier = (duration / (ms / 1000)).toFixed(1);
         voiceRtfDisplay.innerText = `${rtf.toFixed(2)}x (${speedMultiplier}x быстрее)`;
       } else {
-        voiceRtfDisplay.innerText = '0.25x (~4x быстрее)';
+        voiceRtfDisplay.innerText = '—';
       }
     }
 
@@ -213,21 +215,48 @@
     }
   }
 
+  let clearHistoryArmed = false;
+  let clearHistoryTimer = null;
+
   async function clearQueryHistory() {
-    if (!confirm("Очистить историю голосовых поисковых запросов для текущего namespace?")) return;
+    const btn = document.getElementById('btnClearHistory');
+    if (!clearHistoryArmed) {
+      clearHistoryArmed = true;
+      if (btn) {
+        btn.dataset.label = btn.innerHTML;
+        btn.innerHTML = 'Нажмите ещё раз для подтверждения';
+        btn.classList.replace('btn-outline-danger', 'btn-danger');
+      }
+      if (clearHistoryTimer) clearTimeout(clearHistoryTimer);
+      clearHistoryTimer = setTimeout(() => {
+        clearHistoryArmed = false;
+        if (btn && btn.dataset.label) {
+          btn.innerHTML = btn.dataset.label;
+          btn.classList.replace('btn-danger', 'btn-outline-danger');
+        }
+      }, 5000);
+      return;
+    }
+    clearHistoryArmed = false;
+    if (clearHistoryTimer) clearTimeout(clearHistoryTimer);
+    if (btn && btn.dataset.label) {
+      btn.innerHTML = btn.dataset.label;
+      btn.classList.replace('btn-danger', 'btn-outline-danger');
+    }
     try {
       const resp = await fetch(`/v1/voice/history?namespace=${getNamespace()}`, {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${getToken()}` }
       });
+      checkAuthResponse(resp);
       if (resp.ok) {
         activeVoiceHistory = [];
         renderQueryHistoryTable([]);
       } else {
-        alert("Ошибка при очистке истории");
+        showNetBanner(`Не удалось очистить историю: сервер вернул ${resp.status}`);
       }
     } catch (e) {
-      alert("Ошибка при очистке истории: " + e.message);
+      if (!(e && e.auth)) showNetBanner("Не удалось очистить историю: " + (e.message || e));
     }
   }
 
@@ -484,7 +513,7 @@
     if (topics.length === 0) {
       setText(summaryTopics, '—');
     } else {
-      const max = Math.max(...topics.map((t) => t[1]), 1);
+      const max = topics.map((t) => t[1]).reduce((m, v) => Math.max(m, v), 1);
       topics.forEach(([key, cnt]) => {
         summaryTopics.appendChild(summaryBarRow(INQUIRY_TITLES[key] || key, `${cnt}`, cnt / max));
       });
@@ -498,7 +527,7 @@
     if (ents.length === 0) {
       setText(summaryEntities, '—');
     } else {
-      const max = Math.max(...ents.map((x) => x[1]), 1);
+      const max = ents.map((x) => x[1]).reduce((m, v) => Math.max(m, v), 1);
       ents.forEach(([name, cnt]) => {
         summaryEntities.appendChild(summaryBarRow(name, `${cnt}`, cnt / max));
       });
@@ -517,7 +546,7 @@
     if (trends.length === 0) {
       setText(summaryTrends, '—');
     } else {
-      const max = Math.max(...trends.map((t) => t.calls_count), 1);
+      const max = trends.map((t) => t.calls_count).reduce((m, v) => Math.max(m, v), 1);
       trends.forEach((t) => {
         summaryTrends.appendChild(summaryBarRow(
           t.week || '—', `${t.calls_count}`, t.calls_count / max));
