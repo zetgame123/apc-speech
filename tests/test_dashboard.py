@@ -473,6 +473,44 @@ def test_voice_search_browser_conversion_and_503_message():
         assert 'src="/static/js/wav-encode.js"' in html, f"{name}: не подключён wav-encode.js"
 
 
+def test_dashboard_live_check_wiring():
+    """П.6 ручной проверки: живой CDP-скрипт без внешних зависимостей,
+    отдельная цель make live-check (в make check и CI не входит —
+    там нет стенда с моделями и браузера)."""
+    script = Path("scripts/dashboard_live_check.mjs")
+    assert script.exists(), "нет scripts/dashboard_live_check.mjs"
+    text = script.read_text(encoding="utf-8")
+    for marker in (
+        "securitypolicyviolation",
+        "consoleAPICalled",
+        "exceptionThrown",
+        "openArchivedCall",
+        "Player.getDuration",
+        "btnRunClustering",
+        "btnVoiceSearchRecord",
+        "--use-fake-device-for-media-stream",
+        "--use-file-for-fake-audio-capture",
+    ):
+        assert marker in text, f"live-check: нет маркера: {marker}"
+    imports = [line for line in text.splitlines() if line.startswith("import ") and "from" in line]
+    assert imports, "live-check: нет импортов"
+    for line in imports:
+        assert "from 'node:" in line, f"live-check: внешняя зависимость: {line}"
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+    assert "live-check:" in makefile
+    check_line = next(line for line in makefile.splitlines() if line.startswith("check:"))
+    assert "live-check" not in check_line, (
+        "live-check не должен входить в make check (CI без стенда)"
+    )
+
+
+def test_dashboard_html_has_no_favicon_request():
+    """Пустой data:-favicon вместо /favicon.ico (иначе 404 шумит в консоли)."""
+    for name in ("dashboard.html", "voice.html"):
+        text = (STATIC_DIR / name).read_text(encoding="utf-8")
+        assert 'rel="icon" href="data:,' in text, f"{name}: нет data-favicon"
+
+
 def test_dashboard_call_card_player_and_highlight():
     """Пункт 4 + п.2 ручной проверки: собственный WebAudio-плеер
     (decodeAudioData, честный статус декодирования), подсветка реплики."""
