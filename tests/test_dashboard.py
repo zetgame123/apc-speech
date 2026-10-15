@@ -63,6 +63,13 @@ async def test_dashboard_pages_reference_only_existing_static():
 
 
 @pytest.mark.asyncio
+async def test_dashboard_static_missing_file_is_404():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/static/js/no-such-file.js")
+        assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_dashboard_pages_have_expected_markers_and_nav():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         dash = await client.get("/dashboard")
