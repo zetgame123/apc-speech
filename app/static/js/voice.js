@@ -347,13 +347,195 @@
     });
   }
 
+  // =========================================================================
+  // СВОДКА ПО ЗВОНКАМ (GET /v1/analytics/summary) + CSV (GET /v1/analytics/export_csv)
+  // Распределения — CSS-барами без внешних библиотек; весь текст через textContent.
+  // =========================================================================
+  const summaryBody = document.getElementById('summaryBody');
+  const summaryTopics = document.getElementById('summaryTopics');
+  const summaryEntities = document.getElementById('summaryEntities');
+  const summaryChecklist = document.getElementById('summaryChecklist');
+  const summaryTrends = document.getElementById('summaryTrends');
+  const summaryFilterError = document.getElementById('summaryFilterError');
+  const SUMMARY_CHECKLIST_LABELS = [
+    ['average_score', 'Средняя оценка (из 5)', false],
+    ['greeting_pct', 'Приветствие', true],
+    ['need_identification_pct', 'Выявление потребности', true],
+    ['options_offered_pct', 'Предложение вариантов', true],
+    ['next_step_named_pct', 'Следующий шаг', true],
+    ['contacts_taken_pct', 'Контакты', true],
+  ];
+
+  function summaryBarRow(label, displayValue, frac) {
+    const row = document.createElement('div');
+    row.className = 'mb-1';
+    const top = document.createElement('div');
+    top.className = 'd-flex justify-content-between small';
+    const name = document.createElement('span');
+    name.textContent = label;
+    const val = document.createElement('span');
+    val.className = 'fw-bold';
+    val.textContent = displayValue;
+    top.appendChild(name);
+    top.appendChild(val);
+    const track = document.createElement('div');
+    track.className = 'progress progress-slim';
+    const bar = document.createElement('div');
+    bar.className = 'progress-bar bg-success';
+    bar.style.width = `${Math.max(0, Math.min(100, Math.round(frac * 100)))}%`;
+    track.appendChild(bar);
+    row.appendChild(top);
+    row.appendChild(track);
+    return row;
+  }
+
+  function readSummaryFilter() {
+    const val = (id) => {
+      const el = document.getElementById(id);
+      return el ? el.value.trim() : '';
+    };
+    const fromIso = toIsoOrNull(val('sumFrom'));
+    const toIso = toIsoOrNull(val('sumTo'));
+    if (fromIso === null || toIso === null) {
+      setText(summaryFilterError, 'Некорректная дата в фильтре периода.');
+      return null;
+    }
+    return {
+      date_from: fromIso,
+      date_to: toIso,
+      manager_id: val('sumManager'),
+      inquiry_type: val('sumType'),
+    };
+  }
+
+  function summaryParams() {
+    const f = readSummaryFilter();
+    if (!f) return null;
+    if (f.date_from && f.date_to && f.date_from > f.date_to) {
+      setText(summaryFilterError, '«Период с» позже, чем «Период по». Исправьте даты.');
+      return null;
+    }
+    setText(summaryFilterError, '');
+    const params = new URLSearchParams({ namespace: getNamespace() });
+    if (f.date_from) params.set('date_from', f.date_from);
+    if (f.date_to) params.set('date_to', f.date_to);
+    if (f.manager_id) params.set('manager_id', f.manager_id);
+    if (f.inquiry_type) params.set('inquiry_type', f.inquiry_type);
+    return params;
+  }
+
+  function renderSummary(data) {
+    const total = (data && data.total_calls) || 0;
+    setText(summaryBody, total === 0
+      ? 'Нет данных за выбранный период'
+      : `Звонков за период: ${total}`);
+    const dist = (data && data.inquiry_distribution) || {};
+    summaryTopics.innerHTML = '';
+    const topics = Object.entries(dist).sort((a, b) => b[1] - a[1]);
+    if (topics.length === 0) {
+      setText(summaryTopics, '—');
+    } else {
+      const max = Math.max(...topics.map((t) => t[1]), 1);
+      topics.forEach(([key, cnt]) => {
+        summaryTopics.appendChild(summaryBarRow(INQUIRY_TITLES[key] || key, `${cnt}`, cnt / max));
+      });
+    }
+    const top = (data && data.top_entities) || {};
+    summaryEntities.innerHTML = '';
+    const ents = [
+      ...((top.cities || []).map((x) => [`📍 ${x.name}`, x.count])),
+      ...((top.formats || []).map((x) => [`📐 ${x.name}`, x.count])),
+    ].sort((a, b) => b[1] - a[1]).slice(0, 10);
+    if (ents.length === 0) {
+      setText(summaryEntities, '—');
+    } else {
+      const max = Math.max(...ents.map((x) => x[1]), 1);
+      ents.forEach(([name, cnt]) => {
+        summaryEntities.appendChild(summaryBarRow(name, `${cnt}`, cnt / max));
+      });
+    }
+    const avg = (data && data.checklist_averages) || {};
+    summaryChecklist.innerHTML = '';
+    SUMMARY_CHECKLIST_LABELS.forEach(([key, label, isPct]) => {
+      const v = avg[key];
+      if (v === undefined || v === null) return;
+      summaryChecklist.appendChild(summaryBarRow(
+        label, isPct ? `${v}%` : String(v), isPct ? v / 100 : v / 5));
+    });
+    if (!summaryChecklist.hasChildNodes()) setText(summaryChecklist, '—');
+    const trends = (data && data.weekly_trends) || [];
+    summaryTrends.innerHTML = '';
+    if (trends.length === 0) {
+      setText(summaryTrends, '—');
+    } else {
+      const max = Math.max(...trends.map((t) => t.calls_count), 1);
+      trends.forEach((t) => {
+        summaryTrends.appendChild(summaryBarRow(
+          t.week || '—', `${t.calls_count}`, t.calls_count / max));
+      });
+    }
+  }
+
+  function fetchSummary() {
+    const params = summaryParams();
+    if (!params) return;
+    setText(summaryBody, 'Загрузка сводки...');
+    fetch(`/v1/analytics/summary?${params.toString()}`, { headers: getHeaders() })
+      .then(checkAuthResponse).then(res => res.json())
+      .then(renderSummary)
+      .catch(err => {
+        if (err && err.auth) {
+          setText(summaryBody, 'Нет доступа: введите токен с правами read.');
+          return;
+        }
+        setText(summaryBody, `Ошибка загрузки сводки: ${err.message || err}`);
+      });
+  }
+
+  function exportSummaryCsv() {
+    const params = summaryParams();
+    if (!params) return;
+    fetch(`/v1/analytics/export_csv?${params.toString()}`, { headers: getHeaders() })
+      .then(checkAuthResponse)
+      .then(res => {
+        if (!res.ok) throw new Error(`сервер вернул ${res.status}`);
+        return res.blob();
+      })
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `summary-${getNamespace()}-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      })
+      .catch(err => {
+        if (!(err && err.auth)) showNetBanner(`Не удалось скачать CSV: ${err.message || err}`);
+      });
+  }
+
+  const btnRefreshSummary = document.getElementById('btnRefreshSummary');
+  if (btnRefreshSummary) btnRefreshSummary.addEventListener('click', fetchSummary);
+  const summaryFilterForm = document.getElementById('summaryFilterForm');
+  if (summaryFilterForm) {
+    summaryFilterForm.addEventListener('submit', (e) => { e.preventDefault(); fetchSummary(); });
+  }
+  const btnExportSummaryCsv = document.getElementById('btnExportSummaryCsv');
+  if (btnExportSummaryCsv) btnExportSummaryCsv.addEventListener('click', exportSummaryCsv);
+
   namespaceInput.addEventListener('change', () => {
     saveAuthInputs();
     if (typeof fetchVoiceHistory === 'function') fetchVoiceHistory();
+    if (typeof fetchSummary === 'function') fetchSummary();
   });
 
   // Старт страницы голосового поиска.
   updateProfileBadge();
   if (getToken() && typeof fetchVoiceHistory === 'function') {
     fetchVoiceHistory();
+  }
+  if (getToken() && typeof fetchSummary === 'function') {
+    fetchSummary();
   }

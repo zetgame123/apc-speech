@@ -9,15 +9,7 @@
   let isRecordingCall = false;
   let callPollInterval = null;
 
-  function getHeaders() {
-    return {
-      "Authorization": `Bearer ${getToken()}`,
-      "Accept": "application/json"
-    };
-  }
-  function getNamespace() {
-    return readNamespace();
-  }
+  // getHeaders/getNamespace — общие, см. /static/js/api.js.
 
   // =========================================================================
   // WAVESURFER INITIALIZATION
@@ -386,31 +378,7 @@
     }
   }
 
-  // Названия типов — из config/taxonomy.yaml; значений call_result — из VALID_CALL_RESULTS
-  // (app/llm/local_adapter.py). Неизвестные слаги показываются как есть, а не прячутся.
-  const INQUIRY_TITLES = {
-    pricing: 'Стоимость и прайс',
-    availability: 'Занятость и свободные периоды',
-    inventory_search: 'Подбор мест и инвентаря',
-    specs: 'Технические требования',
-    order_status: 'Статус заказа и брони',
-    production: 'Производство и монтаж',
-    documents_billing: 'Документы и бухгалтерия',
-    complaint: 'Претензии и проблемы',
-    partnership_supply: 'Сотрудничество и инвентарь партнёров',
-    programmatic_digital: 'Диджитал и программатик',
-    spam_irrelevant: 'Спам и нецелевые звонки',
-    other: 'Прочее',
-  };
-  const CALL_RESULT_TITLES = {
-    success_deal: 'Успех / сделка',
-    follow_up_scheduled: 'Назначен следующий шаг',
-    info_provided: 'Информация предоставлена',
-    client_declined: 'Клиент отказался',
-    unclear_spam: 'Неясно / спам',
-  };
-  const AGREEMENT_WHO = { manager: 'Менеджер', client: 'Клиент', both: 'Оба' };
-
+  // Названия типов/результатов/соглашений — общие, см. /static/js/format.js.
   function renderAnalysis(analysis) {
     if (!analysis || typeof analysis !== 'object') {
       statusCallText.innerText = "Разбор недоступен: сервер вернул пустой анализ";
@@ -676,16 +644,20 @@
       const el = document.getElementById(id);
       return el ? el.value.trim() : '';
     };
+    const fromIso = toIsoOrNull(val('fltFrom'));
+    const toIso = toIsoOrNull(val('fltTo'));
+    if (fromIso === null || toIso === null) {
+      setText(callsFilterError, 'Некорректная дата в фильтре периода.');
+      return null;
+    }
     const filter = {
       q: val('fltQ'),
       manager_id: val('fltManager'),
       inquiry_type: val('fltType'),
-      date_from: val('fltFrom'),
-      date_to: val('fltTo'),
+      date_from: fromIso,
+      date_to: toIso,
       limit: val('fltLimit') || '15',
     };
-    if (filter.date_from) filter.date_from = new Date(filter.date_from).toISOString();
-    if (filter.date_to) filter.date_to = new Date(filter.date_to).toISOString();
     return filter;
   }
 
@@ -731,6 +703,7 @@
   function loadCallsPage(append) {
     if (callsState.loading) return;
     const filter = readCallsFilter();
+    if (!filter) return;
     if (filter.date_from && filter.date_to && filter.date_from > filter.date_to) {
       setText(callsFilterError, '«Период с» позже, чем «Период по». Исправьте даты.');
       return;

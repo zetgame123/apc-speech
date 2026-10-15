@@ -260,6 +260,88 @@
         </div>
       </div>
 
+      <!-- Сводная аналитика по звонкам (GET /v1/analytics/summary) -->
+      <div class="row mt-4">
+        <div class="col-12">
+          <div class="card card-custom p-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+              <div>
+                <h5 class="fw-bold mb-1">
+                  <i class="bi bi-bar-chart-line me-2 text-success"></i>Сводка по звонкам
+                </h5>
+                <div class="small text-muted">Темы, менеджеры и качество по периоду (`GET /v1/analytics/summary`)</div>
+              </div>
+              <div class="d-flex gap-2">
+                <button id="btnRefreshSummary" class="btn btn-outline-primary btn-sm">
+                  <i class="bi bi-arrow-clockwise me-1"></i> Обновить сводку
+                </button>
+                <button id="btnExportSummaryCsv" class="btn btn-outline-success btn-sm" title="Выгрузка через GET /v1/analytics/export_csv">
+                  <i class="bi bi-file-earmark-spreadsheet me-1"></i> Скачать CSV
+                </button>
+              </div>
+            </div>
+
+            <form id="summaryFilterForm" class="row g-2 mb-3" aria-label="Фильтры сводки">
+              <div class="col-md-3">
+                <label class="form-label small mb-1" for="sumFrom">Период с</label>
+                <input id="sumFrom" type="datetime-local" class="form-control form-control-sm">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small mb-1" for="sumTo">Период по</label>
+                <input id="sumTo" type="datetime-local" class="form-control form-control-sm">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small mb-1" for="sumManager">Менеджер</label>
+                <input id="sumManager" class="form-control form-control-sm" placeholder="ID менеджера" autocomplete="off">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small mb-1" for="sumType">Тип обращения</label>
+                <select id="sumType" class="form-select form-select-sm">
+                  <option value="">Все типы</option>
+                  <option value="pricing">Стоимость и прайс</option>
+                  <option value="availability">Занятость и свободные периоды</option>
+                  <option value="inventory_search">Подбор мест и инвентаря</option>
+                  <option value="specs">Технические требования</option>
+                  <option value="order_status">Статус заказа и брони</option>
+                  <option value="production">Производство и монтаж</option>
+                  <option value="documents_billing">Документы и бухгалтерия</option>
+                  <option value="complaint">Претензии и проблемы</option>
+                  <option value="partnership_supply">Сотрудничество и инвентарь партнёров</option>
+                  <option value="programmatic_digital">Диджитал и программатик</option>
+                  <option value="spam_irrelevant">Спам и нецелевые звонки</option>
+                  <option value="other">Прочее</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <div id="summaryFilterError" class="small text-danger" role="alert"></div>
+              </div>
+            </form>
+
+            <div id="summaryBody">
+              <div class="text-center text-muted py-3">Нажмите «Обновить сводку», чтобы загрузить аналитику</div>
+            </div>
+            <div class="row g-3 mt-1">
+              <div class="col-md-6">
+                <h6 class="fw-bold small text-uppercase text-secondary">Распределение тем</h6>
+                <div id="summaryTopics"></div>
+              </div>
+              <div class="col-md-6">
+                <h6 class="fw-bold small text-uppercase text-secondary">Топ сущностей</h6>
+                <div id="summaryEntities"></div>
+              </div>
+              <div class="col-md-6">
+                <h6 class="fw-bold small text-uppercase text-secondary">Чек-лист в среднем</h6>
+                <div id="summaryChecklist"></div>
+              </div>
+              <div class="col-md-6">
+                <h6 class="fw-bold small text-uppercase text-secondary">Динамика по неделям</h6>
+                <div id="summaryTrends"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </main>

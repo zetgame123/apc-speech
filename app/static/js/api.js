@@ -212,6 +212,15 @@
       }
     });
   }
+  function getHeaders() {
+    return {
+      "Authorization": `Bearer ${getToken()}`,
+      "Accept": "application/json"
+    };
+  }
+  function getNamespace() {
+    return readNamespace();
+  }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initAuth);
   } else {

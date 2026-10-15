@@ -6,6 +6,7 @@
 - В разметке нет дефолтного токена; общий escape-хелпер экранирует XSS-векторы.
 """
 
+import json
 import re
 import shutil
 import subprocess
@@ -147,6 +148,87 @@ def test_dashboard_js_uses_escaped_render_for_voice_text():
         assert "function escapeHtml" not in text, f"{name}: дублирующий хелпер"
 
 
+def _run_dashboard_page_load_check(node, files, need):
+    """Грузит общие модули + одну страницу в node с DOM-заглушками.
+
+    Ловит ReferenceError/SyntaxError уровня загрузки (регрессия W1.6:
+    getHeaders/getNamespace были только на странице звонков).
+    """
+    harness = """
+const fs = require('fs');
+const dir = process.argv[1];
+const files = JSON.parse(process.argv[2]);
+const need = JSON.parse(process.argv[3]);
+const srcParts = [];
+function makeEl() {
+  return new Proxy(function () {}, {
+    get(t, p) {
+      if (p === 'style') return {};
+      if (p === 'dataset') return {};
+      if (p === 'classList') return { add() {}, remove() {}, toggle() {}, contains() { return false; } };
+      if (p === Symbol.toPrimitive) return () => '';
+      if (p === 'length') return 0;
+      if (p === 'then') return undefined;
+      return makeEl();
+    },
+    set() { return true; },
+    apply() { return makeEl(); },
+  });
+}
+global.window = { fetch: async () => { throw new Error('stub fetch'); } };
+global.fetch = global.window.fetch;
+global.sessionStorage = { getItem: () => null, setItem: () => {} };
+global.document = new Proxy({}, {
+  get(t, p) {
+    if (p === 'readyState') return 'complete';
+    if (p === 'querySelectorAll') return () => [];
+    return makeEl();
+  },
+  set() { return true; },
+});
+global.WaveSurfer = { create: () => ({ on() {}, load() {}, playPause() {}, setTime() {}, getDuration() { return 0; }, getCurrentTime() { return 0; }, destroy() {} }) };
+global.navigator = {};
+for (const f of files) srcParts.push(fs.readFileSync(dir + '/' + f, 'utf-8'));
+try {
+  eval.call(global, srcParts.join('\\n;\\n'));
+} catch (e) {
+  console.error(`FAIL load: ${e.constructor.name}: ${e.message}`);
+  process.exit(1);
+}
+for (const fn of ['getHeaders', 'getNamespace', 'escapeHtml', 'formatTime', ...need]) {
+  let ok = false;
+  try { ok = typeof eval(fn) === 'function'; } catch (e) { ok = false; }
+  if (!ok) { console.error(`FAIL: no function ${fn}`); process.exit(1); }
+}
+console.log('page load OK');
+"""
+    proc = subprocess.run(
+        [node, "-e", harness, str(STATIC_DIR / "js"), json.dumps(files), json.dumps(need)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert proc.returncode == 0, (proc.stderr or proc.stdout)[-2000:]
+    assert "page load OK" in proc.stdout
+    assert "FAIL" not in (proc.stderr or "")
+
+
+def test_dashboard_pages_load_without_js_reference_errors():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node отсутствует в окружении")
+    _run_dashboard_page_load_check(
+        node,
+        ["escape.js", "api.js", "format.js", "dashboard.js"],
+        ["refreshCallsList", "openArchivedCall", "renderAnalysis"],
+    )
+    _run_dashboard_page_load_check(
+        node,
+        ["escape.js", "api.js", "format.js", "voice.js"],
+        ["fetchSummary", "exportSummaryCsv", "fetchVoiceHistory", "runTopicClustering"],
+    )
+
+
 def test_dashboard_calls_list_has_filters_and_cursor_pagination():
     """Пункт 3: фильтры, курсорная пагинация, состояния — на существующих параметрах API."""
     html = (STATIC_DIR / "dashboard.html").read_text(encoding="utf-8")
@@ -231,6 +313,41 @@ def test_dashboard_call_card_player_and_highlight():
     html = (STATIC_DIR / "dashboard.html").read_text(encoding="utf-8")
     for el in ("callCardHeader", "callCardTitle", "callCardMeta", "callCardFlags"):
         assert f'id="{el}"' in html, f"нет элемента {el}"
+
+
+def test_dashboard_summary_section():
+    """Пункт 6: сводка — фильтры, распределения, тренды, экспорт CSV (существующие ручки)."""
+    html = (STATIC_DIR / "voice.html").read_text(encoding="utf-8")
+    for el in (
+        "summaryFilterForm",
+        "sumFrom",
+        "sumTo",
+        "sumManager",
+        "sumType",
+        "summaryFilterError",
+        "summaryBody",
+        "summaryTopics",
+        "summaryEntities",
+        "summaryChecklist",
+        "summaryTrends",
+        "btnRefreshSummary",
+        "btnExportSummaryCsv",
+    ):
+        assert f'id="{el}"' in html, f"нет элемента {el}"
+    js = (STATIC_DIR / "js" / "voice.js").read_text(encoding="utf-8")
+    for marker in (
+        "/v1/analytics/summary",
+        "/v1/analytics/export_csv",
+        "fetchSummary",
+        "exportSummaryCsv",
+        "weekly_trends",
+        "inquiry_distribution",
+        "top_entities",
+        "checklist_averages",
+        "summaryBarRow",
+    ):
+        assert marker in js, f"нет маркера: {marker}"
+    assert "cdn." not in js.lower() and "unpkg" not in js.lower()
 
 
 def test_escape_html_helper_vectors():
