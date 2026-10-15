@@ -302,3 +302,5 @@
 .api-banner.show { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
 .api-banner-error { background: #fef2f2; color: #991b1b; border-bottom: 2px solid #ef4444; }
 .api-banner-net { background: #fffbeb; color: #92400e; border-bottom: 2px solid #f59e0b; }
+/* Подсветка текущей реплики при воспроизведении (п. W1.4). */
+.msg-bubble.replica-active { outline: 2px solid #0284c7; outline-offset: 2px; }

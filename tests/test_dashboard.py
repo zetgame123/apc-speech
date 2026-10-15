@@ -183,6 +183,25 @@ def test_dashboard_calls_list_has_filters_and_cursor_pagination():
     assert "&limit=15" not in js, "остался захардкоженный limit=15"
 
 
+def test_dashboard_call_card_player_and_highlight():
+    """Пункт 4: лимит аудио, revoke blob-URL, подсветка реплики, шапка карточки."""
+    js = (STATIC_DIR / "js" / "dashboard.js").read_text(encoding="utf-8")
+    for marker in (
+        "MAX_BROWSER_AUDIO_BYTES",
+        "revokeObjectURL",
+        "currentAudioObjectUrl",
+        "replica-active",
+        "activeBubble",
+        "renderCallCardHeader",
+        "callCardHeader",
+        "слишком большое для браузерного плеера",
+    ):
+        assert marker in js, f"нет маркера: {marker}"
+    html = (STATIC_DIR / "dashboard.html").read_text(encoding="utf-8")
+    for el in ("callCardHeader", "callCardTitle", "callCardMeta", "callCardFlags"):
+        assert f'id="{el}"' in html, f"нет элемента {el}"
+
+
 def test_escape_html_helper_vectors():
     """Общий escape-хелпер: XSS-векторы обезвреживаются, обычный текст цел."""
     node = shutil.which("node")

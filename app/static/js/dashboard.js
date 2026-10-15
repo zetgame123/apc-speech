@@ -1,5 +1,9 @@
   let currentCallId = null;
   let wavesurfer = null;
+  let currentAudioObjectUrl = null;
+  let activeBubble = null;
+  // Лимит аудио для браузерного плеера: blob большего размера роняет вкладку.
+  const MAX_BROWSER_AUDIO_BYTES = 300 * 1024 * 1024;
   let mediaRecorder = null;
   let callAudioChunks = [];
   let isRecordingCall = false;
@@ -33,17 +37,24 @@
     });
 
     wavesurfer.on('timeupdate', (currentTime) => {
-      // Synchronized word highlighting
+      // Подсветка текущего слова и текущей реплики.
       const allWords = document.querySelectorAll('.word-span');
+      let currentBubble = null;
       allWords.forEach(span => {
         const s = parseFloat(span.dataset.start);
         const e = parseFloat(span.dataset.end);
         if (currentTime >= s && currentTime <= e) {
           span.classList.add('word-active');
+          currentBubble = span.parentNode ? span.parentNode.parentNode : null;
         } else {
           span.classList.remove('word-active');
         }
       });
+      if (currentBubble !== activeBubble) {
+        if (activeBubble) activeBubble.classList.remove('replica-active');
+        if (currentBubble && currentBubble.classList) currentBubble.classList.add('replica-active');
+        activeBubble = currentBubble;
+      }
       // Speaker timeline playhead update
       const totalDur = wavesurfer.getDuration();
       const playhead = document.getElementById('timelinePlayhead');
@@ -696,24 +707,76 @@
 
   function openArchivedCall(callId) {
     statusCallText.innerText = `Загрузка аудио и анализа звонка ${callId.substring(0,8)}...`;
+    renderCallCardHeader(callId);
     const ns = getNamespace();
-    // Load audio from S3 via new endpoint
+    // Аудио — через fetch с Authorization в blob-URL (<audio> заголовки не умеет).
+    // Очень большие файлы в память вкладки не грузим: отмена + понятное сообщение.
     fetch(`/v1/calls/${callId}/audio?namespace=${ns}`, { headers: getHeaders() })
       .then(res => {
+        checkAuthResponse(res);
         if (!res.ok) throw new Error("Не удалось получить аудиозапись из S3");
+        const declared = res.headers.get('content-length');
+        if (declared && Number(declared) > MAX_BROWSER_AUDIO_BYTES) {
+          if (res.body && res.body.cancel) res.body.cancel().catch(() => {});
+          const err = new Error(
+            `Аудио ${(Number(declared) / 1048576).toFixed(0)} МБ — слишком большое для браузерного плеера ` +
+            `(лимит ${(MAX_BROWSER_AUDIO_BYTES / 1048576).toFixed(0)} МБ). Показаны расшифровка и разбор; ` +
+            `аудио можно забрать напрямую через GET /v1/calls/{id}/audio с токеном.`
+          );
+          err.tooBig = true;
+          throw err;
+        }
         return res.blob();
       })
       .then(blob => {
-        const url = URL.createObjectURL(blob);
-        wavesurfer.load(url);
+        if (blob.size > MAX_BROWSER_AUDIO_BYTES) {
+          const err = new Error(
+            `Аудио ${(blob.size / 1048576).toFixed(0)} МБ — слишком большое для браузерного плеера. ` +
+            `Показаны расшифровка и разбор.`
+          );
+          err.tooBig = true;
+          throw err;
+        }
+        if (currentAudioObjectUrl) URL.revokeObjectURL(currentAudioObjectUrl);
+        currentAudioObjectUrl = URL.createObjectURL(blob);
+        wavesurfer.load(currentAudioObjectUrl);
         statusCallText.innerText = "Аудио загружено в плеер";
         loadCallResults(callId);
       })
       .catch(e => {
-        console.warn("Audio stream fetch error, loading results only:", e);
+        if (e && e.auth) return;
         loadCallResults(callId);
-        statusCallText.innerText = "Результаты загружены";
+        statusCallText.innerText = (e && e.tooBig)
+          ? e.message
+          : "Аудио недоступно, показаны расшифровка и разбор";
       });
+  }
+
+  function renderCallCardHeader(callId) {
+    const header = document.getElementById('callCardHeader');
+    if (!header) return;
+    const item = (callsState.items || []).find((c) => c.call_id === callId);
+    const title = document.getElementById('callCardTitle');
+    const meta = document.getElementById('callCardMeta');
+    const flags = document.getElementById('callCardFlags');
+    if (!item) {
+      setText(title, `Звонок ${(callId || '').substring(0, 8)}...`);
+      setText(meta, '');
+      if (flags) flags.innerHTML = '';
+    } else {
+      setText(title, item.external_id || `Звонок ${(item.call_id || '').substring(0, 8)}...`);
+      const parts = [];
+      if (item.duration_sec) parts.push(`${Math.round(item.duration_sec)} с`);
+      if (item.created_at) parts.push(new Date(item.created_at).toLocaleString('ru-RU'));
+      if (item.manager_id) parts.push(`менеджер ${item.manager_id}`);
+      setText(meta, parts.join(' · '));
+      if (flags) {
+        flags.innerHTML = item.is_answering_machine
+          ? '<span class="badge bg-danger">Автоответчик</span>'
+          : '<span class="badge bg-success">Живой разговор</span>';
+      }
+    }
+    header.classList.remove('d-none');
   }
 
   // Trigger Download helper with Authorization header
