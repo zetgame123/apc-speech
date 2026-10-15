@@ -21,9 +21,37 @@ STATIC_DIR = Path("app/static")
 DASHBOARD_PAGES = ["/", "/dashboard", "/ui", "/dashboard-modern", "/ui-modern", "/voice"]
 
 EXPECTED_CSP = (
-    "default-src 'self'; script-src 'self'; style-src 'self'; "
-    "media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'"
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob:; "
+    "frame-ancestors 'none'"
 )
+
+
+def _parse_csp(csp: str) -> dict:
+    directives = {}
+    for part in csp.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        name, _, values = part.partition(" ")
+        directives[name] = values.split()
+    return directives
+
+
+def test_dashboard_csp_keeps_scripts_strict():
+    """Пункт 1 ручной проверки: script-src остаётся 'self' без
+    unsafe-inline/unsafe-eval; blob:/data: разрешены только там, где нужны
+    плееру и картинкам (ADR-025)."""
+    csp = _parse_csp(EXPECTED_CSP)
+    assert csp["script-src"] == ["'self'"], csp["script-src"]
+    for name, values in csp.items():
+        assert "'unsafe-eval'" not in values, f"{name}: {values}"
+        if name != "style-src":
+            assert "'unsafe-inline'" not in values, f"{name}: {values}"
+    assert "blob:" in csp["connect-src"], "wavesurfer.load(fetch blob:) заблокирован"
+    assert "blob:" in csp["media-src"]
+    assert "data:" in csp["img-src"], "data:-SVG стрелок select заблокированы"
+    assert "blob:" in csp["img-src"]
 
 
 @pytest.mark.asyncio

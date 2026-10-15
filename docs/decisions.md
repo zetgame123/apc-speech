@@ -360,3 +360,27 @@
 | Bootstrap CSS+JS | 5.3.2, `vendor/bootstrap-5.3.2/` (источник `cdn.jsdelivr.net/npm/bootstrap@5.3.2`) | **MIT** (шапка файлов: `Licensed under MIT`) | Да |
 | Bootstrap Icons CSS+шрифты | 1.11.3, `vendor/bootstrap-icons-1.11.3/` + `fonts/` (источник `cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3`) | **MIT** (шапка CSS: `Licensed under MIT`) | Да |
 | WaveSurfer.js | 7.12.12, `vendor/wavesurfer-7.12.12/wavesurfer.min.js` (пин резолва `unpkg.com/wavesurfer.js@7` на 2026-10-15; текст лицензии — `vendor/wavesurfer-7.12.12/LICENSE`) | **BSD-3-Clause** (поле `license` в `package.json` версии 7.12.12 + файл LICENSE в пакете) | Да |
+
+## ADR-025: Минимальное ослабление CSP дашборда под WaveSurfer (2026-10-15)
+
+* **Статус**: Принято
+* **Контекст**: Ручная проверка в настоящем Chromium показала три нарушения CSP,
+  ломающие дашборд (подтверждено событиями `securitypolicyviolation` по CDP,
+  скриншоты «до» — `reports/dashboard-audit/repro_*.png`): `img-src` не задан —
+  заблокированы `data:`-SVG стрелки `select`/radio из `bootstrap.min.css`;
+  `connect-src 'self'` блокирует `fetch(blob:...)` внутри `wavesurfer.load()` —
+  звонок не проигрывается (плеер молча остаётся на `00:00 / 00:00`);
+  `style-src 'self'` блокирует инлайн-стили, которые WaveSurfer ставит
+  контейнеру/канвасу (`style-src-elem :: inline`).
+* **Решение**: оставить WaveSurfer (альтернатива — замена на `<audio>` +
+  собственный waveform/индикатор — отклонена по стоимости: переписывание плеера,
+  seek, подсветки и таймлайна — дни работы и новые баги ради снятия одного
+  стилевого ослабления для внутреннего инструмента). Ослабить CSP минимально:
+  `img-src 'self' data: blob:`, `connect-src 'self' blob:`,
+  `media-src 'self' blob:`, `style-src 'self' 'unsafe-inline'`.
+  `script-src` остаётся строго `'self'` без `unsafe-inline`/`unsafe-eval`
+  (покрыто тестом `test_dashboard_csp_keeps_scripts_strict`): инлайн-стили
+  не исполняют JS, XSS-вектор через скрипты закрыт.
+* **Последствия**: воспроизведение/перемотка/подсветка работают без событий
+  `securitypolicyviolation` (проверено CDP-скриптом `scripts/dashboard_live_check.mjs`,
+  п.6); обновления WaveSurfer — вручную как в ADR-024.

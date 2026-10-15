@@ -232,8 +232,10 @@ Callback: при `callback_url` результат уходит `POST` с заг
 
 Офлайн и безопасность страниц: внешние CDN отсутствуют — Bootstrap 5.3.2 (MIT),
 Bootstrap Icons 1.11.3 (MIT) и WaveSurfer.js 7.12.12 (BSD-3-Clause) лежат в
-`app/static/vendor/` (подробно — ADR-024). Заголовки страниц: строгий CSP
-(`script-src 'self'` и др.), `X-Content-Type-Options: nosniff`,
+`app/static/vendor/` (подробно — ADR-024). Заголовки страниц: CSP
+(`script-src 'self'` строго, без `unsafe-inline`/`unsafe-eval`;
+`style-src 'self' 'unsafe-inline'` + `connect-src`/`img-src`/`media-src` с `blob:`
+и `data:` — минимум для WaveSurfer, см. ADR-025), `X-Content-Type-Options: nosniff`,
 `Referrer-Policy: no-referrer`, `Cache-Control: no-store`.
 
 Ограничения (честно): аудио больше 300 МБ во вкладку не грузится (показываются
