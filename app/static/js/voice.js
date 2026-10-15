@@ -47,9 +47,16 @@
       };
 
       voiceMediaRecorder.onstop = () => {
-        const audioBlob = new Blob(voiceAudioChunks, { type: 'audio/wav' });
-        submitVoiceSearch(audioBlob, "mic_voice_search.wav");
         stream.getTracks().forEach(t => t.stop());
+        // MediaRecorder даёт webm/opus, а быстрый путь /v1/voice/search берёт
+        // только PCM WAV — конвертируем в браузере (WAV PCM16 16 кГц моно).
+        // При неудаче шлём как есть: сервер ответит честной ошибкой.
+        const rawBlob = new Blob(voiceAudioChunks, { type: voiceMediaRecorder.mimeType || 'audio/webm' });
+        voiceRecordingStatus.innerText = "Подготовка аудио (конвертация в WAV 16 кГц)...";
+        rawBlob.arrayBuffer()
+          .then((ab) => decodeToMono16kWav(ab))
+          .catch(() => rawBlob)
+          .then((blob) => submitVoiceSearch(blob, "mic_voice_search.wav"));
       };
 
       voiceMediaRecorder.start();
@@ -111,17 +118,33 @@
       headers: { "Authorization": `Bearer ${getToken()}` },
       body: formData
     })
-    .then(r => {
-      if (!r.ok) return r.json().then(e => { throw new Error(e.message || "Ошибка поиска"); });
-      return r.json();
+    .then(async r => {
+      if (r.ok) return r.json();
+      let body = null;
+      try { body = await r.json(); } catch (e) { body = null; }
+      const err = new Error((body && body.message) || `Сервер вернул ${r.status}`);
+      err.status = r.status;
+      try { err.retryAfter = r.headers.get('Retry-After'); } catch (e) { err.retryAfter = null; }
+      throw err;
     })
     .then(data => {
       const clientTotalMs = Math.round(performance.now() - startTime);
       handleVoiceSearchResult(data, clientTotalMs, "🎤 Голосовой");
     })
     .catch(err => {
-      voiceRecordingStatus.innerText = "Ошибка: " + err.message;
-      voiceTextResult.innerHTML = `<span class="text-danger">Ошибка: ${escapeHtml(err.message)}</span>`;
+      // 503/429 — воркеры не прогреты или очередь занята: понятный текст
+      // с Retry-After, а не «Ошибка распознавания». Без статуса — обрыв сети.
+      if (err && (err.status === 503 || err.status === 429)) {
+        const wait = err.retryAfter ? ` Повторите через ${err.retryAfter} с.` : ' Повторите чуть позже.';
+        voiceRecordingStatus.innerText = `Сервис распознавания временно недоступен (${err.status}).${wait}`;
+        voiceTextResult.innerHTML = `<span class="text-warning">Временно недоступно (${escapeHtml(String(err.status))}): повторите запрос.${err.retryAfter ? ` Retry-After: ${escapeHtml(String(err.retryAfter))} с.` : ''}</span>`;
+      } else if (err && err.status) {
+        voiceRecordingStatus.innerText = "Ошибка: " + err.message;
+        voiceTextResult.innerHTML = `<span class="text-danger">Ошибка: ${escapeHtml(err.message)}</span>`;
+      } else {
+        voiceRecordingStatus.innerText = "Нет связи с сервером. Проверьте, что сервис запущен, и повторите.";
+        voiceTextResult.innerHTML = '<span class="text-danger">Нет связи с сервером</span>';
+      }
     });
   }
 

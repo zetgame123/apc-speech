@@ -118,6 +118,7 @@ async def test_dashboard_static_served_by_api():
             ("/static/js/api.js", "getToken"),
             ("/static/js/format.js", "function formatTime"),
             ("/static/js/player.js", "decodeAudioData"),
+            ("/static/js/wav-encode.js", "encodeWavPcm16"),
             ("/static/js/dashboard.js", "refreshCallsList"),
             ("/static/js/voice.js", "fetchVoiceHistory"),
             ("/static/css/dashboard.css", ".auth-gate-overlay"),
@@ -255,12 +256,12 @@ def test_dashboard_pages_load_without_js_reference_errors():
         pytest.skip("node отсутствует в окружении")
     _run_dashboard_page_load_check(
         node,
-        ["escape.js", "api.js", "format.js", "player.js", "dashboard.js"],
+        ["escape.js", "api.js", "format.js", "player.js", "wav-encode.js", "dashboard.js"],
         ["refreshCallsList", "openArchivedCall", "renderAnalysis", "Player"],
     )
     _run_dashboard_page_load_check(
         node,
-        ["escape.js", "api.js", "format.js", "voice.js"],
+        ["escape.js", "api.js", "format.js", "wav-encode.js", "voice.js"],
         ["fetchSummary", "exportSummaryCsv", "fetchVoiceHistory", "runTopicClustering"],
     )
 
@@ -397,6 +398,81 @@ def test_dashboard_transcript_contrast_meets_wcag_aa():
             assert _contrast_ratio(fg, bg) >= 4.5, f"{label}: {_contrast_ratio(fg, bg):.2f} < 4.5"
 
 
+def test_voice_wav_encoder_bytes():
+    """П.5 ручной проверки: кодировщик WAV PCM16 16 кГц моно (js/wav-encode.js) —
+    корректный RIFF-заголовок, ресемплинг, микширование, клиппинг."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node отсутствует в окружении")
+    helper = (STATIC_DIR / "js" / "wav-encode.js").resolve()
+    script = (
+        f"const w = require({str(helper)!r});"
+        "const assert = require('assert');"
+        "// 1. Заголовок WAV 16 кГц моно 16 бит.\n"
+        "const enc = w.encodeWavPcm16(new Float32Array([0, 0.5, -0.5, 1, -1]));"
+        "const dv = new DataView(enc.buffer);"
+        "const s = (o, n) => String.fromCharCode(...new Uint8Array(enc.buffer, o, n));"
+        "assert.strictEqual(s(0, 4), 'RIFF');"
+        "assert.strictEqual(s(8, 4), 'WAVE');"
+        "assert.strictEqual(s(12, 4), 'fmt ');"
+        "assert.strictEqual(dv.getUint16(20, true), 1);"
+        "assert.strictEqual(dv.getUint16(22, true), 1);"
+        "assert.strictEqual(dv.getUint32(24, true), 16000);"
+        "assert.strictEqual(dv.getUint16(34, true), 16);"
+        "assert.strictEqual(s(36, 4), 'data');"
+        "assert.strictEqual(enc.length, 44 + 5 * 2);"
+        "// 2. Клиппинг значений.\n"
+        "assert.strictEqual(dv.getInt16(44 + 3 * 2, true), 32767);"
+        "assert.strictEqual(dv.getInt16(44 + 4 * 2, true), -32768);"
+        "// 3. Ресемплинг 48 кГц -> 16 кГц: длина втрое короче.\n"
+        "const r = w.resampleTo16k(new Float32Array(480).fill(0.25), 48000);"
+        "assert.strictEqual(r.length, 160);"
+        "assert.ok(Math.abs(r[80] - 0.25) < 1e-6);"
+        "// 4. Без ресемплинга на 16 кГц — копия.\n"
+        "const same = w.resampleTo16k(new Float32Array([0.1, 0.2]), 16000);"
+        "assert.ok(Math.abs(same[0] - 0.1) < 1e-6 && Math.abs(same[1] - 0.2) < 1e-6);"
+        "// 5. Микс в моно: среднее каналов.\n"
+        "const m = w.mixToMono([new Float32Array([1, -1]), new Float32Array([0.5, 0.5])]);"
+        "assert.ok(Math.abs(m[0] - 0.75) < 1e-6 && Math.abs(m[1] + 0.25) < 1e-6);"
+        "console.log('wav encoder OK');"
+    )
+    proc = subprocess.run(
+        [node, "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "wav encoder OK" in proc.stdout
+
+
+def test_voice_search_browser_conversion_and_503_message():
+    """П.5 ручной проверки: запись с микрофона конвертируется в WAV 16 кГц
+    (webm/opus MediaRecorder ронял быстрый путь 500-й), а 503 с Retry-After
+    показывается понятным текстом с повтором, а не «Ошибка распознавания»."""
+    voice = (STATIC_DIR / "js" / "voice.js").read_text(encoding="utf-8")
+    for marker in (
+        "decodeToMono16kWav",
+        "mic_voice_search.wav",
+        "конвертация в WAV 16 кГц",
+        "err.status === 503",
+        "Retry-After",
+        "retryAfter",
+        "Временно недоступно",
+        "Нет связи с сервером",
+    ):
+        assert marker in voice, f"voice.js: нет маркера: {marker}"
+    assert "new Blob(voiceAudioChunks, { type: 'audio/wav' })" not in voice, (
+        "ложный audio/wav для webm остался"
+    )
+    dash = (STATIC_DIR / "js" / "dashboard.js").read_text(encoding="utf-8")
+    assert "decodeToMono16kWav" in dash, "запись звонка с микрофона не конвертируется"
+    assert "new Blob(callAudioChunks, { type: 'audio/wav' })" not in dash
+    for name in ("dashboard.html", "voice.html"):
+        html = (STATIC_DIR / name).read_text(encoding="utf-8")
+        assert 'src="/static/js/wav-encode.js"' in html, f"{name}: не подключён wav-encode.js"
+
+
 def test_dashboard_call_card_player_and_highlight():
     """Пункт 4 + п.2 ручной проверки: собственный WebAudio-плеер
     (decodeAudioData, честный статус декодирования), подсветка реплики."""
@@ -439,7 +515,7 @@ def test_dashboard_call_card_player_and_highlight():
 
 def test_dashboard_no_blocking_dialogs_and_guarded_formats():
     """Пункт 8: без alert/confirm, лимит записи 60 с, защита toFixed/Math.max."""
-    for name in ("dashboard.js", "voice.js", "api.js", "format.js", "player.js"):
+    for name in ("dashboard.js", "voice.js", "api.js", "format.js", "player.js", "wav-encode.js"):
         text = (STATIC_DIR / "js" / name).read_text(encoding="utf-8")
         assert "alert(" not in text, f"{name}: остался alert"
         assert "confirm(" not in text, f"{name}: остался confirm"

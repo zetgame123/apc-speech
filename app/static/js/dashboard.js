@@ -122,9 +122,15 @@
       };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(callAudioChunks, { type: 'audio/wav' });
-        uploadCallAudio(audioBlob, "call_recorded_mic.wav");
         stream.getTracks().forEach(track => track.stop());
+        // MediaRecorder даёт webm/opus — конвертируем в WAV PCM16 16 кГц
+        // (см. /static/js/wav-encode.js); при неудаче шлём как есть.
+        const rawBlob = new Blob(callAudioChunks, { type: (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm' });
+        statusCallText.innerText = "Подготовка аудио (конвертация в WAV 16 кГц)...";
+        rawBlob.arrayBuffer()
+          .then((ab) => decodeToMono16kWav(ab))
+          .catch(() => rawBlob)
+          .then((wav) => uploadCallAudio(wav, "call_recorded_mic.wav"));
       };
 
       mediaRecorder.start();
