@@ -22,7 +22,7 @@ DASHBOARD_PAGES = ["/", "/dashboard", "/ui", "/dashboard-modern", "/ui-modern", 
 
 EXPECTED_CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; "
-    "img-src 'self' data:; media-src 'self'; connect-src 'self'; "
+    "img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; "
     "frame-ancestors 'none'"
 )
 
@@ -39,16 +39,20 @@ def _parse_csp(csp: str) -> dict:
 
 
 def test_dashboard_csp_keeps_scripts_strict():
-    """Пп.1–2 ручной проверки: скрипты/стили строго 'self' (WaveSurfer удалён,
-    плеер — собственный WebAudio без инлайн-стилей и fetch(blob:)); data:
-    разрешён только в img-src для SVG-стрелок Bootstrap (ADR-025)."""
+    """Пп.1–2 ручной проверки + длинные записи: скрипты/стили/connect строго
+    'self' (WaveSurfer удалён, плеер — собственный WebAudio без инлайн-стилей
+    и fetch(blob:)); data: — только в img-src (SVG-стрелки Bootstrap),
+    blob: — только в media-src (длинные записи играет MEDIA-элемент со своим
+    blob-URL, ADR-025)."""
     csp = _parse_csp(EXPECTED_CSP)
     assert csp["script-src"] == ["'self'"], csp["script-src"]
     assert csp["style-src"] == ["'self'"], csp["style-src"]
+    assert csp["connect-src"] == ["'self'"], csp["connect-src"]
+    assert csp["media-src"] == ["'self'", "blob:"], csp["media-src"]
     for name, values in csp.items():
         assert "'unsafe-eval'" not in values, f"{name}: {values}"
         assert "'unsafe-inline'" not in values, f"{name}: {values}"
-        if name != "img-src":
+        if name not in ("img-src", "media-src"):
             assert "data:" not in values, f"{name}: {values}"
             assert "blob:" not in values, f"{name}: {values}"
     assert "data:" in csp["img-src"], "data:-SVG стрелок select заблокированы"
@@ -486,8 +490,11 @@ def test_dashboard_live_check_wiring():
         "exceptionThrown",
         "openArchivedCall",
         "Player.getDuration",
+        "Player.backendName",
         "btnRunClustering",
         "btnVoiceSearchRecord",
+        "synthetic 60-min",
+        "rendererRssMb",
         "--use-fake-device-for-media-stream",
         "--use-file-for-fake-audio-capture",
     ):
@@ -509,6 +516,84 @@ def test_dashboard_html_has_no_favicon_request():
     for name in ("dashboard.html", "voice.html"):
         text = (STATIC_DIR / name).read_text(encoding="utf-8")
         assert 'rel="icon" href="data:,' in text, f"{name}: нет data-favicon"
+
+
+def test_dashboard_player_backends_and_markers():
+    """Длинные записи: route по длительности/размеру (без декодирования),
+    MEDIA-бэкенд с blob-URL, пики сканированием WAV-байт."""
+    player = (STATIC_DIR / "js" / "player.js").read_text(encoding="utf-8")
+    for marker in (
+        "LONG_AUDIO_SEC",
+        "LONG_AUDIO_BYTES",
+        "parseWavInfo",
+        "wavPeaks",
+        "probeDuration",
+        "loadViaMedia",
+        "loadViaWebAudio",
+        "backendName",
+        "new Audio()",
+    ):
+        assert marker in player, f"player.js: нет маркера: {marker}"
+    assert "wavesurfer" not in player.lower(), "остался WaveSurfer"
+
+
+def test_dashboard_wav_probe_bytes():
+    """Чистый разбор WAV-заголовка и пики без декодирования (js/player.js)."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node отсутствует в окружении")
+    helper = (STATIC_DIR / "js" / "player.js").resolve()
+    script = (
+        f"const p = require({str(helper)!r});\n"
+        "const assert = require('assert');\n"
+        "function mkWav({ rate = 16000, ch = 1, bits = 16, secs = 3600, list = true }) {\n"
+        "  const dataLen = Math.floor(rate * ch * (bits / 8) * secs);\n"
+        "  const head = Buffer.alloc(44);\n"
+        "  head.write('RIFF', 0); head.writeUInt32LE(36 + dataLen, 4); head.write('WAVE', 8);\n"
+        "  head.write('fmt ', 12); head.writeUInt32LE(16, 16); head.writeUInt16LE(1, 20);\n"
+        "  head.writeUInt16LE(ch, 22); head.writeUInt32LE(rate, 24);\n"
+        "  head.writeUInt32LE(Math.floor(rate * ch * (bits / 8)), 28);\n"
+        "  head.writeUInt16LE(Math.floor(ch * (bits / 8)), 32); head.writeUInt16LE(bits, 34);\n"
+        "  const parts = [head];\n"
+        "  if (list) { const l = Buffer.alloc(8 + 26, 0); l.write('LIST', 0); l.writeUInt32LE(26, 4); parts.push(l); }\n"
+        "  const dh = Buffer.alloc(8); dh.write('data', 0); dh.writeUInt32LE(dataLen, 4); parts.push(dh);\n"
+        "  return Buffer.concat(parts);\n"
+        "}\n"
+        "// 1. Часовой моно 16 кГц с LIST-чанком: длительность 3600.\n"
+        "const hour = mkWav({});\n"
+        "const info = p.parseWavInfo(new Uint8Array(hour.buffer, hour.byteOffset, hour.length));\n"
+        "assert.ok(info, 'не распознан WAV');\n"
+        "assert.strictEqual(Math.round(info.durationSec), 3600);\n"
+        "assert.strictEqual(info.dataOff, 44 + 8 + 26 + 8);\n"
+        "// 2. Стерео 8 кГц без LIST.\n"
+        "const stBuf = mkWav({ rate: 8000, ch: 2, secs: 60, list: false });\n"
+        "const st = p.parseWavInfo(new Uint8Array(stBuf.buffer, stBuf.byteOffset, stBuf.length));\n"
+        "assert.ok(st && Math.abs(st.durationSec - 60) < 1e-6, 'stereo 60s');\n"
+        "// 3. Не WAV и мусор — null.\n"
+        "assert.strictEqual(p.parseWavInfo(new Uint8Array([1, 2, 3])), null);\n"
+        "assert.strictEqual(p.parseWavInfo(new Uint8Array(Buffer.from('OggS....'))), null);\n"
+        "// 4. Пики: немой файл — нули; тон — форма видна.\n"
+        "const body = Buffer.alloc(Math.floor(16000 * 2 * 2), 0);\n"
+        "for (let i = 0; i < body.length; i += 2) body.writeInt16LE(i % 32000 < 16000 ? 16000 : -16000, i);\n"
+        "const full = Buffer.concat([mkWav({ secs: 2, list: false }), body]);\n"
+        "const fi = p.parseWavInfo(new Uint8Array(full.buffer, full.byteOffset, full.length));\n"
+        "const peaks = p.wavPeaks(new Uint8Array(full.buffer, full.byteOffset, full.length), fi, 100);\n"
+        "assert.strictEqual(peaks.length, 100);\n"
+        "assert.ok(Math.max(...peaks) > 0.4, 'тон виден в пиках');\n"
+        "const silence = Buffer.concat([mkWav({ secs: 1, list: false }), Buffer.alloc(16000 * 2, 0)]);\n"
+        "const si = p.parseWavInfo(new Uint8Array(silence.buffer, silence.byteOffset, silence.length));\n"
+        "const sp = p.wavPeaks(new Uint8Array(silence.buffer, silence.byteOffset, silence.length), si, 50);\n"
+        "assert.ok(Math.max(...sp) === 0, 'тишина — нули');\n"
+        "console.log('wav probe OK');\n"
+    )
+    proc = subprocess.run(
+        [node, "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "wav probe OK" in proc.stdout
 
 
 def test_dashboard_call_card_player_and_highlight():

@@ -14,7 +14,7 @@
 //   OUT_DIR (default reports/dashboard-audit).
 // Коды выхода: 0 — всё зелёное; 1 — дефект (печатается причина);
 //   2 — SKIP (нет chromium/сервера/токена).
-import { spawn } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -32,6 +32,31 @@ const FIXTURE_WAV = process.env.FIXTURE_WAV || path.join(REPO, 'data/evaluation_
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const failures = [];
+
+// RSS renderer-процессов запущенного guard-браузера (только его профиль).
+// Нужен для сценария длинного файла: ловим раздувание памяти декодированием.
+function rendererRssMb() {
+  try {
+    const profile = globalThis.__liveProfile || '';
+    if (!profile) return 0;
+    const out = execSync(
+      `ps -eo pid,args 2>/dev/null | grep -F "user-data-dir=${profile}" | grep -F -- "--type=renderer" | awk '{print $1}'`
+    ).toString().trim();
+    if (!out) return 0;
+    let sum = 0;
+    for (const pid of out.split('\n')) {
+      try {
+        sum += parseInt(
+          execSync(`grep VmRSS /proc/${pid}/status 2>/dev/null`).toString().replace(/\D+/g, ''),
+          10
+        );
+      } catch (e) { /* гонка */ }
+    }
+    return Math.round(sum / 1024);
+  } catch (e) {
+    return 0;
+  }
+}
 function check(cond, label, extra = '') {
   if (cond) console.log(`  ok: ${label}`);
   else failures.push(`${label}${extra ? ` (${extra})` : ''}`);
@@ -104,6 +129,7 @@ async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'apc-dash-live-'));
+  globalThis.__liveProfile = profile;
   const child = spawn(CHROMIUM, [
     '--headless=new', '--no-sandbox', '--disable-gpu',
     `--remote-debugging-port=${CDP_PORT}`,
@@ -240,6 +266,48 @@ async function main() {
     } else {
       check(false, 'call_id появился до готовности задания');
     }
+
+    // --- Сценарий 1b: длинный файл (синтетический WAV 60 мин, без загрузки
+    // на сервер): обязан ехать MEDIA-бэкендом без раздувания памяти.
+    console.log('scenario: long file (synthetic 60-min WAV)');
+    await client.send('Page.navigate', { url: `${BASE}/dashboard` });
+    await sleep(5000);
+    const rssBefore = rendererRssMb();
+    const synth = await ev(`(async()=>{
+      const rate=16000, secs=3600;
+      const dataLen=rate*2*secs;
+      const buf=new ArrayBuffer(44+dataLen);
+      const dv=new DataView(buf);
+      const ws=(o,s)=>{for(let i=0;i<s.length;i++)dv.setUint8(o+i,s.charCodeAt(i));};
+      ws(0,'RIFF');dv.setUint32(4,36+dataLen,true);ws(8,'WAVE');ws(12,'fmt ');
+      dv.setUint32(16,16,true);dv.setUint16(20,1,true);dv.setUint16(22,1,true);
+      dv.setUint32(24,rate,true);dv.setUint32(28,rate*2,true);
+      dv.setUint16(32,2,true);dv.setUint16(34,16,true);ws(36,'data');dv.setUint32(40,dataLen,true);
+      const blob=new Blob([buf],{type:'audio/wav'});
+      const t0=performance.now();
+      await Player.loadBlob(blob);
+      return JSON.stringify({backend:Player.backendName(),dur:Player.getDuration(),
+        ms:Math.round(performance.now()-t0),bytes:blob.size});
+    })()`, true);
+    let longInfo = {};
+    try { longInfo = JSON.parse(synth); } catch (e) { longInfo = {}; }
+    console.log(`  long: ${synth}`);
+    check(longInfo.backend === 'media', 'длинный файл ведёт MEDIA-бэкенд', longInfo.backend);
+    check(Math.abs((longInfo.dur || 0) - 3600) < 5, 'длительность ~3600 с', String(longInfo.dur));
+    await ev(`Player.setTime(100); Player.play();`);
+    await sleep(2500);
+    const lt = await ev(`Player.getCurrentTime()`);
+    check(lt > 101, 'длинный файл проигрывается', `t=${lt}`);
+    await ev(`Player.setTime(3500);`);
+    await sleep(1200);
+    const lt2 = await ev(`Player.getCurrentTime()`);
+    check(Math.abs(lt2 - 3500) < 10, 'перемотка часа работает', `t=${lt2}`);
+    await ev(`Player.pause()`);
+    const rssAfter = rendererRssMb();
+    const rssGrowth = rssAfter - rssBefore;
+    console.log(`  rss growth MB: ${rssGrowth} (before=${rssBefore} after=${rssAfter})`);
+    check(rssGrowth < 250, 'память не раздута декодированием', `+${rssGrowth} МБ`);
+    await shot('live_long.png');
 
     // --- Ждём готовности задания, затем карточка + проигрывание + разбор.
     console.log('wait: job succeeded');

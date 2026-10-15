@@ -306,3 +306,38 @@
 при `duration=0` — реального воспроизведения не было; `docker compose restart api`
 в этом окружении — молчаливый no-op (нужен `docker restart apc_small-api-1`;
 причина: стек поднят с двумя `-f`, голый `restart` мажет мимо проекта).
+
+---
+
+## 9. Часовые записи: потоковый бэкенд плеера (2026-10-16)
+
+Плеер `js/player.js` декодировал звонок целиком. Замер на часовом файле
+(`tmp/hour_suite/hour_mono_16k.wav`, 16 кГц моно, 115 МБ — в git не входит)
+в Chromium 152 по CDP (RSS renderer-процессов, `decodeAudioData`):
+
+| | До (WebAudio целиком) | После (MEDIA ≥ 600 с / 32 МБ) |
+|---|---|---|
+| Старт (fetch + готовность) | ~3,9 с (0,4 + 3,5 decode) | ~0,4 с |
+| Память вкладки (RSS) | **+671 МБ** | **+13…19 МБ** |
+| Перемотка на 30:00/58:20 | работает | работает |
+| Подсветка/таймер/таймлайн | работают | работают (тот же тик) |
+| Короткие (11 с) | webaudio | webaudio (без изменений) |
+
+Маршрутизация без декодирования: размер blob → WAV-PCM probe заголовка
+(`parseWavInfo`: длительность из `dataLen/byteRate`, LIST-чанки обходятся) →
+иначе дешёвый `probeDuration` MEDIA-элементом (`preload=metadata`). Пики
+длинного WAV — сканированием байт (`wavPeaks`), несжатое-нераспознанное —
+плоский трек с прогрессом. API не менялся (ограничение: Range невозможен —
+ручка отдаёт файл целиком; хватает blob-URL).
+
+Про `<audio>` + blob и `duration`: ранний вывод «MEDIA-элемент не работает
+в headless» опровергнут матрицей — по http-URL duration отдаётся сразу,
+blob-/data:-URL резались собственным CSP (`Media load rejected by URL safety
+check`); виноваты были `media-src` без `blob:`, не формат, не Content-Type
+(`audio/wav` vs `application/octet-stream` — без разницы) и не LIST-чанк.
+В CSP возвращён `blob:` только в `media-src`.
+
+Покрытие: `test_dashboard_wav_probe_bytes` (заголовки/LIST/пики, node),
+маркер-тест бэкендов, сценарий «long file» в `make live-check` (синтетический
+WAV 60 мин в странице, без загрузки на сервер): MEDIA-бэкенд, ~3600 с,
+проигрывание, перемотка, рост RSS < 250 МБ — PASSED. Скриншот: `live_long.png`.
