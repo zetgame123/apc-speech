@@ -342,3 +342,69 @@
   акцепт — за заказчиком), navec, CAM++; открыт остаётся только slovnet-веса.
   Проверка digest MinIO (`docker manifest inspect …@sha256:25348a…` — есть
   `linux/amd64`, 2026-10-14) и процедура `docker save` — в `docs/runbook.md` §5.
+
+## ADR-024: Вендоринг фронтенд-библиотек дашборда (без CDN)
+* **Статус**: Принято
+* **Контекст**: Дашборд тянул 4 ресурса из интернета (jsdelivr/unpkg, без SRI):
+  компрометация CDN = выполнение чужого JS в контексте страницы с токеном;
+  без интернета дашборд без стилей и плеера. Плюс строгий CSP
+  (`script-src 'self'`) несовместим с внешними скриптами.
+* **Решение**: Библиотеки лежат в `app/static/vendor/` с точной версией в имени
+  каталога, раздаются самим api (`/static`, mount в `app/main.py`), обновляются
+  вручную скачиванием фиксированной версии.
+* **Последствия**: Дашборд полностью офлайн; обновления зависимостей — ручные
+  (приемлемо для внутреннего инструмента).
+
+| Библиотека | Версия / файл | Лицензия | Коммерческое закрытое использование |
+|---|---|---|---|
+| Bootstrap CSS+JS | 5.3.2, `vendor/bootstrap-5.3.2/` (источник `cdn.jsdelivr.net/npm/bootstrap@5.3.2`) | **MIT** (шапка файлов: `Licensed under MIT`) | Да |
+| Bootstrap Icons CSS+шрифты | 1.11.3, `vendor/bootstrap-icons-1.11.3/` + `fonts/` (источник `cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3`) | **MIT** (шапка CSS: `Licensed under MIT`) | Да |
+| WaveSurfer.js | 7.12.12, `vendor/wavesurfer-7.12.12/wavesurfer.min.js` (пин резолва `unpkg.com/wavesurfer.js@7` на 2026-10-15; текст лицензии — `vendor/wavesurfer-7.12.12/LICENSE`) | **BSD-3-Clause** (поле `license` в `package.json` версии 7.12.12 + файл LICENSE в пакете) | Да |
+
+## ADR-025: Минимальное ослабление CSP дашборда под WaveSurfer (2026-10-15)
+
+* **Статус**: Принято
+* **Контекст**: Ручная проверка в настоящем Chromium показала три нарушения CSP,
+  ломающие дашборд (подтверждено событиями `securitypolicyviolation` по CDP,
+  скриншоты «до» — `reports/dashboard-audit/repro_*.png`): `img-src` не задан —
+  заблокированы `data:`-SVG стрелки `select`/radio из `bootstrap.min.css`;
+  `connect-src 'self'` блокирует `fetch(blob:...)` внутри `wavesurfer.load()` —
+  звонок не проигрывается (плеер молча остаётся на `00:00 / 00:00`);
+  `style-src 'self'` блокирует инлайн-стили, которые WaveSurfer ставит
+  контейнеру/канвасу (`style-src-elem :: inline`).
+* **Решение**: оставить WaveSurfer (альтернатива — замена на `<audio>` +
+  собственный waveform/индикатор — отклонена по стоимости: переписывание плеера,
+  seek, подсветки и таймлайна — дни работы и новые баги ради снятия одного
+  стилевого ослабления для внутреннего инструмента). Ослабить CSP минимально:
+  `img-src 'self' data: blob:`, `connect-src 'self' blob:`,
+  `media-src 'self' blob:`, `style-src 'self' 'unsafe-inline'`.
+  `script-src` остаётся строго `'self'` без `unsafe-inline`/`unsafe-eval`
+  (покрыто тестом `test_dashboard_csp_keeps_scripts_strict`): инлайн-стили
+  не исполняют JS, XSS-вектор через скрипты закрыт.
+* *Последствия*: воспроизведение/перемотка/подсветка работают без событий
+  `securitypolicyviolation` (проверено CDP-скриптом `scripts/dashboard_live_check.mjs`,
+  п.6); обновления WaveSurfer — вручную как в ADR-024.
+* **Пересмотр (2026-10-15, п.2 ручной проверки)**: после снятия `connect-src`-запрета
+  выяснилось вживую (CDP, headless Chromium 152), что `wavesurfer.load(blobUrl)`
+  **вечно висит**: MEDIA-элемент не отдаёт `loadedmetadata` даже для типированного
+  blob и синтетического WAV, при этом `decodeAudioData` те же байты декодирует.
+  Статус «Аудио загружено в плеер» при этом врал (ставился до декодирования, `duration=0`).
+  Решение изменено: WaveSurfer **удалён**, плеер — собственный WebAudio
+  (`app/static/js/player.js`: fetch с Authorization → arrayBuffer →
+  decodeAudioData → AudioBufferSourceNode, waveform рисуется на canvas,.seek кликом);
+  CSP возвращён к строгому (`style-src 'self'`, без `blob:` — инлайн-стилей и
+  fetch(blob:) больше нет). Альтернатива «<audio> + индикатор» не подошла по той же
+  причине — `<audio>` тоже MEDIA-элемент.
+* **Поправка (2026-10-16, часовые записи)**: вывод «MEDIA-элемент не работает» выше
+  был неверным. Точечная CDP-матрица показала: тот же часовой WAV по **http-URL**
+  отдаёт `loadedmetadata` сразу (`dur=3600`), а blob-/data:-URL сыплются с
+  `MEDIA_ELEMENT_ERROR: Media load rejected by URL safety check` — виноват был
+  собственный CSP `media-src` без `blob:`, а не headless, формат или Content-Type
+  (проверены типированный/нетипированный blob, крошечный синтетический WAV,
+  `decodingInfo: supported`). Поэтому длинные записи (порог в `player.js`:
+  дольше 600 с или больше 32 МБ) воспроизводятся через `<audio>` без декодирования всего файла в память; файл при этом загружается целиком в blob (лимит 300 МБ), Range-запросы без изменения API невозможны,
+  короткие — как раньше через WebAudio. Замер часа 16 кГц моно (CDP, RSS
+  renderer-процессов): было старт ~3,9 с (0,4 fetch + 3,5 decode) и **+671 МБ**,
+  стало старт ~0,4 с и **+13 МБ**; перемотка и подсветка работают в обоих путях.
+  В CSP возвращён `blob:` **только** в `media-src` (blob создаёт сама страница
+  из аудио с авторизацией; чужой подсунуть нельзя — blob-URLs привязаны к origin).

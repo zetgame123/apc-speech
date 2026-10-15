@@ -1,14 +1,45 @@
 import os
 
 from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 router = APIRouter(tags=["dashboard"])
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
-STATIC_INDEX_PATH = os.path.join(STATIC_DIR, "index.html")
-MODERN_DASHBOARD_PATH = os.path.join(STATIC_DIR, "dashboard-modern.html")
-CLASSIC_DASHBOARD_PATH = os.path.join(STATIC_DIR, "index-classic.html")
+DASHBOARD_PATH = os.path.join(STATIC_DIR, "dashboard.html")
+VOICE_PATH = os.path.join(STATIC_DIR, "voice.html")
+
+# Заголовки страниц дашборда (п.1 доработки W1): после вендоринга библиотек
+# в app/static/vendor страница не требует внешних ресурсов, поэтому всё
+# ограничено 'self'. Исключения (см. ADR-025):
+# - img-src data:: SVG-стрелки select/radio из bootstrap.min.css;
+# - media-src blob:: длинные записи играет MEDIA-элемент с blob-URL
+#   (URL создаёт сама страница из аудио, загруженного с авторизацией;
+#   чужой blob подсунуть нельзя — blob-URLs привязаны к origin).
+# WaveSurfer удалён в п.2: короткий путь — собственный WebAudio
+# (/static/js/player.js, decodeAudioData), инлайн-стилей и fetch(blob:)
+# нет — style-src/connect-src строгие. script-src — строго 'self'
+# без unsafe-inline/unsafe-eval (см. тест). frame-ancestors 'none' —
+# защита от clickjacking действий дашборда.
+DASHBOARD_SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self'; "
+        "img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; "
+        "frame-ancestors 'none'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-store",
+}
+
+
+def _dashboard_response(path: str, missing_text: str) -> HTMLResponse:
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read(), headers=DASHBOARD_SECURITY_HEADERS)
+    return HTMLResponse(
+        f"<h3>{missing_text}</h3>", status_code=404, headers=DASHBOARD_SECURITY_HEADERS
+    )
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -17,24 +48,18 @@ CLASSIC_DASHBOARD_PATH = os.path.join(STATIC_DIR, "index-classic.html")
 @router.get("/dashboard-modern", response_class=HTMLResponse)
 @router.get("/ui-modern", response_class=HTMLResponse)
 async def serve_dashboard():
-    """Serve the modern improved dashboard as the primary interface."""
-    target_path = (
-        MODERN_DASHBOARD_PATH if os.path.exists(MODERN_DASHBOARD_PATH) else STATIC_INDEX_PATH
-    )
-    if os.path.exists(target_path):
-        with open(target_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
-    return HTMLResponse("<h3>Dashboard file not found</h3>", status_code=404)
+    """Страница звонков: список, плеер, расшифровка, разбор."""
+    return _dashboard_response(DASHBOARD_PATH, "Dashboard file not found")
+
+
+@router.get("/voice", response_class=HTMLResponse)
+async def serve_voice():
+    """Страница голосового поиска: запрос, история, кластеры."""
+    return _dashboard_response(VOICE_PATH, "Voice page file not found")
 
 
 @router.get("/dashboard-classic", response_class=HTMLResponse)
 @router.get("/ui-classic", response_class=HTMLResponse)
 async def serve_classic_dashboard():
-    """Serve the classic legacy dashboard if needed for comparison."""
-    target_path = (
-        CLASSIC_DASHBOARD_PATH if os.path.exists(CLASSIC_DASHBOARD_PATH) else STATIC_INDEX_PATH
-    )
-    if os.path.exists(target_path):
-        with open(target_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
-    return HTMLResponse("<h3>Classic dashboard file not found</h3>", status_code=404)
+    """Удалена в W1.2 (консолидация): редирект на единый дашборд."""
+    return RedirectResponse(url="/dashboard", status_code=303, headers=DASHBOARD_SECURITY_HEADERS)
