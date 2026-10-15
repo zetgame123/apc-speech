@@ -181,9 +181,20 @@
               <h6 class="fw-bold text-primary mb-0">
                 <i class="bi bi-card-text me-1"></i> Краткое содержание (Саммари)
               </h6>
-              <span class="badge bg-info text-dark" id="inquiryTypeBadge">Тип: -</span>
+              <div class="d-flex gap-1">
+                <span class="badge bg-info text-dark" id="inquiryTypeBadge">Тип: -</span>
+                <span class="badge bg-success" id="callResultBadge">Результат: -</span>
+              </div>
             </div>
             <p class="small text-muted mb-3" id="summaryText">Данные пока не загружены</p>
+            <div class="small text-muted mb-2" id="schemaVersions"></div>
+
+            <h6 class="fw-bold small text-uppercase text-secondary mb-2">
+              <i class="bi bi-handshake me-1"></i> Договорённости
+            </h6>
+            <div class="small mb-2" id="agreementsBox">
+              <span class="text-muted">Нет данных</span>
+            </div>
 
             <h6 class="fw-bold small text-uppercase text-secondary mb-2">
               <i class="bi bi-tags me-1"></i> Извлеченные сущности (Наружная реклама)
@@ -275,13 +286,19 @@
                   <div class="fw-bold text-dark" id="metricInterruptions">-</div>
                 </div>
               </div>
-              <div class="col-6">
+              <div class="col-4">
                 <div class="p-2 border rounded bg-light">
                   <div class="small text-muted">Темп речи (WPM)</div>
                   <div class="fw-bold text-dark" id="metricWpm">-</div>
                 </div>
               </div>
-              <div class="col-6">
+              <div class="col-4">
+                <div class="p-2 border rounded bg-light">
+                  <div class="small text-muted">Тишина</div>
+                  <div class="fw-bold text-dark" id="metricSilence">-</div>
+                </div>
+              </div>
+              <div class="col-4">
                 <div class="p-2 border rounded bg-light">
                   <div class="small text-muted">Автоответчик</div>
                   <div class="fw-bold" id="metricAnsweringMachine">-</div>

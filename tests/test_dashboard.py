@@ -183,6 +183,37 @@ def test_dashboard_calls_list_has_filters_and_cursor_pagination():
     assert "&limit=15" not in js, "остался захардкоженный limit=15"
 
 
+def test_dashboard_analysis_follows_real_schema():
+    """Пункт 5: разбор по schemas/analysis_schema_v1.json, без неверных ключей."""
+    js = (STATIC_DIR / "js" / "dashboard.js").read_text(encoding="utf-8")
+    for marker in (
+        "target_period",
+        "product_category",
+        "client_overall",
+        "callResultBadge",
+        "agreementsBox",
+        "metricSilence",
+        "manager_speech_share",
+        "client_speech_share",
+        "silence_duration_sec",
+        "manager_wpm",
+        "client_wpm",
+        "schema_version",
+        "prompt_version",
+    ):
+        assert marker in js, f"нет маркера схемы: {marker}"
+    for wrong in (
+        "manager_speech_ratio",
+        "client_speech_ratio",
+        "words_per_minute",
+        "sent.overall",
+    ):
+        assert wrong not in js, f"неверный ключ схемы: {wrong}"
+    html = (STATIC_DIR / "dashboard.html").read_text(encoding="utf-8")
+    for el in ("callResultBadge", "schemaVersions", "agreementsBox", "metricSilence"):
+        assert f'id="{el}"' in html, f"нет элемента {el}"
+
+
 def test_dashboard_call_card_player_and_highlight():
     """Пункт 4: лимит аудио, revoke blob-URL, подсветка реплики, шапка карточки."""
     js = (STATIC_DIR / "js" / "dashboard.js").read_text(encoding="utf-8")

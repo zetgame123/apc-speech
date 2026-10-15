@@ -386,46 +386,111 @@
     }
   }
 
-  function renderAnalysis(analysis) {
-    document.getElementById('summaryText').innerText = analysis.summary || "Саммари сформировано на основе ключевых тем.";
-    document.getElementById('inquiryTypeBadge').innerText = "Тип: " + (analysis.inquiry_type || "общий");
+  // Названия типов — из config/taxonomy.yaml; значений call_result — из VALID_CALL_RESULTS
+  // (app/llm/local_adapter.py). Неизвестные слаги показываются как есть, а не прячутся.
+  const INQUIRY_TITLES = {
+    pricing: 'Стоимость и прайс',
+    availability: 'Занятость и свободные периоды',
+    inventory_search: 'Подбор мест и инвентаря',
+    specs: 'Технические требования',
+    order_status: 'Статус заказа и брони',
+    production: 'Производство и монтаж',
+    documents_billing: 'Документы и бухгалтерия',
+    complaint: 'Претензии и проблемы',
+    partnership_supply: 'Сотрудничество и инвентарь партнёров',
+    programmatic_digital: 'Диджитал и программатик',
+    spam_irrelevant: 'Спам и нецелевые звонки',
+    other: 'Прочее',
+  };
+  const CALL_RESULT_TITLES = {
+    success_deal: 'Успех / сделка',
+    follow_up_scheduled: 'Назначен следующий шаг',
+    info_provided: 'Информация предоставлена',
+    client_declined: 'Клиент отказался',
+    unclear_spam: 'Неясно / спам',
+  };
+  const AGREEMENT_WHO = { manager: 'Менеджер', client: 'Клиент', both: 'Оба' };
 
-    // Entities
+  function renderAnalysis(analysis) {
+    if (!analysis || typeof analysis !== 'object') {
+      statusCallText.innerText = "Разбор недоступен: сервер вернул пустой анализ";
+      return;
+    }
+    setText(document.getElementById('summaryText'), analysis.summary || "Саммари отсутствует");
+    const inquiryBadge = document.getElementById('inquiryTypeBadge');
+    if (inquiryBadge) {
+      const key = analysis.inquiry_type || 'other';
+      setText(inquiryBadge, "Тип: " + (INQUIRY_TITLES[key] || key));
+    }
+    const resultBadge = document.getElementById('callResultBadge');
+    if (resultBadge) {
+      const key = analysis.call_result || '';
+      setText(resultBadge, "Результат: " + (CALL_RESULT_TITLES[key] || key || '—'));
+    }
+    const versions = document.getElementById('schemaVersions');
+    if (versions) {
+      const parts = [];
+      if (analysis.schema_version) parts.push(`Схема ${analysis.schema_version}`);
+      if (analysis.prompt_version) parts.push(`промпт ${analysis.prompt_version}`);
+      setText(versions, parts.join(' · '));
+    }
+
+    // Entities — ключи строго по schemas/analysis_schema_v1.json.
     const entBox = document.getElementById('entitiesBox');
     entBox.innerHTML = '';
-    const e = analysis.entities || {};
+    const e = (analysis.entities && typeof analysis.entities === 'object') ? analysis.entities : {};
     let count = 0;
-    if (e.cities && e.cities.length) {
-      entBox.innerHTML += `<span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">📍 ${escapeHtml(e.cities.join(', '))}</span>`;
+    const addBadge = (cls, text) => {
+      entBox.innerHTML += `<span class="badge ${cls}">${escapeHtml(text)}</span>`;
       count++;
+    };
+    if (Array.isArray(e.cities) && e.cities.length) {
+      addBadge('bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25', `📍 ${e.cities.join(', ')}`);
     }
-    if (e.formats && e.formats.length) {
-      entBox.innerHTML += `<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">📐 ${escapeHtml(e.formats.join(', '))}</span>`;
-      count++;
+    if (Array.isArray(e.formats) && e.formats.length) {
+      addBadge('bg-success bg-opacity-10 text-success border border-success border-opacity-25', `📐 ${e.formats.join(', ')}`);
     }
-    if (e.budget_rub) {
-      entBox.innerHTML += `<span class="badge bg-warning bg-opacity-10 text-warning-emphasis border border-warning border-opacity-50">💰 ${escapeHtml(e.budget_rub.toLocaleString())} ₽</span>`;
-      count++;
+    if (e.quantity !== undefined && e.quantity !== null) {
+      addBadge('bg-info bg-opacity-10 text-info-emphasis border border-info border-opacity-50', `🔢 ${e.quantity} шт.`);
     }
-    if (e.quantity) {
-      entBox.innerHTML += `<span class="badge bg-info bg-opacity-10 text-info-emphasis border border-info border-opacity-50">🔢 ${escapeHtml(e.quantity)} шт.</span>`;
-      count++;
+    if (e.budget_rub !== undefined && e.budget_rub !== null) {
+      const budget = typeof e.budget_rub === 'number' ? e.budget_rub.toLocaleString('ru-RU') : e.budget_rub;
+      addBadge('bg-warning bg-opacity-10 text-warning-emphasis border border-warning border-opacity-50', `💰 ${budget} ₽`);
     }
-    if (e.period) {
-      entBox.innerHTML += `<span class="badge bg-secondary bg-opacity-10 text-secondary border">📅 ${escapeHtml(e.period)}</span>`;
-      count++;
+    if (e.target_period) {
+      addBadge('bg-secondary bg-opacity-10 text-secondary border', `📅 ${e.target_period}`);
+    }
+    if (e.product_category) {
+      addBadge('bg-dark bg-opacity-10 text-dark border', `🏷️ ${e.product_category}`);
     }
     if (!count) entBox.innerHTML = '<span class="text-muted small">Сущности не определены</span>';
 
+    // Agreements — массив {who, what, deadline} по схеме.
+    const agrBox = document.getElementById('agreementsBox');
+    if (agrBox) {
+      const list = Array.isArray(analysis.agreements) ? analysis.agreements : [];
+      if (list.length === 0) {
+        agrBox.innerHTML = '<span class="text-muted small">Договорённости не зафиксированы</span>';
+      } else {
+        agrBox.innerHTML = '<ul class="mb-0 ps-3 small">' + list.map((a) => {
+          const who = AGREEMENT_WHO[a && a.who] || (a && a.who) || '—';
+          const what = (a && a.what) || '—';
+          const deadline = (a && a.deadline) ? ` (срок: ${a.deadline})` : '';
+          return `<li><b>${escapeHtml(who)}</b>: ${escapeHtml(what)}${escapeHtml(deadline)}</li>`;
+        }).join('') + '</ul>';
+      }
+    }
+
     // Sentiment and Emotion Profile
-    const sent = analysis.sentiment || {};
-    const overallSent = (typeof sent === 'string' ? sent : sent.overall) || 'neutral';
+    const sent = (analysis.sentiment && typeof analysis.sentiment === 'object') ? analysis.sentiment : {};
+    const overallSent = sent.client_overall || 'neutral';
     const overallSentBadge = document.getElementById('overallSentimentBadge');
     if (overallSentBadge) {
       let sentLabel = 'Нейтральная';
       let sentBg = 'bg-secondary';
       if (overallSent === 'positive') { sentLabel = 'Позитивная'; sentBg = 'bg-success'; }
       else if (overallSent === 'negative') { sentLabel = 'Негативная'; sentBg = 'bg-danger'; }
+      else if (overallSent !== 'neutral') { sentLabel = overallSent; }
       overallSentBadge.innerText = `Тональность: ${sentLabel}`;
       overallSentBadge.className = `badge ${sentBg}`;
     }
@@ -452,20 +517,32 @@
     if (elManagerEmo) elManagerEmo.innerText = emotionMapManager[managerEmo] || managerEmo;
 
     const emoBreakdown = sent.emotions_breakdown || { positive_pct: 0, neutral_pct: 100, negative_pct: 0 };
+    const posPct = Number(emoBreakdown.positive_pct) || 0;
+    const neuPct = Number(emoBreakdown.neutral_pct) || 0;
+    const negPct = Number(emoBreakdown.negative_pct) || 0;
     const elEmoPercentages = document.getElementById('emotionPercentages');
     if (elEmoPercentages) {
-      elEmoPercentages.innerText = `Позитив: ${emoBreakdown.positive_pct}% | Нейтрал: ${emoBreakdown.neutral_pct}% | Негатив: ${emoBreakdown.negative_pct}%`;
+      elEmoPercentages.innerText = `Позитив: ${posPct}% | Нейтрал: ${neuPct}% | Негатив: ${negPct}%`;
     }
     const barPos = document.getElementById('emoPosBar');
     const barNeu = document.getElementById('emoNeuBar');
     const barNeg = document.getElementById('emoNegBar');
-    if (barPos) barPos.style.width = `${emoBreakdown.positive_pct}%`;
-    if (barNeu) barNeu.style.width = `${emoBreakdown.neutral_pct}%`;
-    if (barNeg) barNeg.style.width = `${emoBreakdown.negative_pct}%`;
+    if (barPos) barPos.style.width = `${posPct}%`;
+    if (barNeu) barNeu.style.width = `${neuPct}%`;
+    if (barNeg) barNeg.style.width = `${negPct}%`;
+    if (sent.manager_tone) {
+      const toneTitles = {
+        polite_constructive: 'вежливый, конструктивный',
+        neutral_formal: 'нейтрально-деловой',
+        rude_pushy: 'грубый / навязчивый',
+      };
+      if (elManagerEmo) elManagerEmo.innerText += ` (${toneTitles[sent.manager_tone] || sent.manager_tone})`;
+    }
 
     // Checklist & Compliance
-    const cl = analysis.manager_checklist || {};
-    const score = cl.score !== undefined ? cl.score : 0;
+    const cl = (analysis.manager_checklist && typeof analysis.manager_checklist === 'object')
+      ? analysis.manager_checklist : {};
+    const score = cl.score !== undefined && cl.score !== null ? cl.score : 0;
     const scoreBadge = document.getElementById('checklistScore');
     if (scoreBadge) {
       scoreBadge.innerText = `Оценка: ${score} / 5`;
@@ -505,16 +582,19 @@
       `;
     });
 
-    // Violations Box
+    // Violations Box (+ стоп-слова из forbidden_words_found, если есть).
     const violationsBox = document.getElementById('violationsBox');
     if (violationsBox) {
-      if (cl.violations && cl.violations.length > 0) {
+      const stops = Array.isArray(cl.forbidden_words_found) ? cl.forbidden_words_found : [];
+      const all = [...(Array.isArray(cl.violations) ? cl.violations : []),
+        ...stops.map((w) => `Стоп-слово в разговоре: ${w}`)];
+      if (all.length > 0) {
         violationsBox.style.display = 'block';
         violationsBox.innerHTML = `
           <div class="alert alert-danger py-2 px-3 mb-2">
-            <div class="fw-bold small mb-1"><i class="bi bi-exclamation-octagon-fill me-1"></i> Зафиксированные нарушения (${cl.violations.length}):</div>
+            <div class="fw-bold small mb-1"><i class="bi bi-exclamation-octagon-fill me-1"></i> Зафиксированные нарушения (${all.length}):</div>
             <ul class="mb-0 ps-3 small">
-              ${cl.violations.map(v => `<li>${escapeHtml(v)}</li>`).join('')}
+              ${all.map(v => `<li>${escapeHtml(v)}</li>`).join('')}
             </ul>
           </div>
         `;
@@ -546,14 +626,29 @@
       }
     }
 
-    // Speech metrics
-    const sm = analysis.deterministic_speech_metrics || {};
-    document.getElementById('metricManagerRatio').innerText = sm.manager_speech_ratio ? `${Math.round(sm.manager_speech_ratio * 100)}%` : '-';
-    document.getElementById('metricClientRatio').innerText = sm.client_speech_ratio ? `${Math.round(sm.client_speech_ratio * 100)}%` : '-';
-    document.getElementById('metricInterruptions').innerText = sm.interruptions_count !== undefined ? sm.interruptions_count : '-';
-    document.getElementById('metricWpm').innerText = sm.words_per_minute || '-';
-    document.getElementById('metricAnsweringMachine').innerText = sm.is_answering_machine ? '⚠️ Да' : 'Нет';
-    document.getElementById('metricAnsweringMachine').className = `fw-bold ${sm.is_answering_machine ? 'text-danger' : 'text-success'}`;
+    // Speech metrics — ключи строго по схеме (manager/client_wpm, *_speech_share,
+    // interruptions_count, silence_duration_sec). Флаг автоответчика — уровень звонка.
+    const sm = (analysis.deterministic_speech_metrics && typeof analysis.deterministic_speech_metrics === 'object')
+      ? analysis.deterministic_speech_metrics : {};
+    const pct = (v) => (v === undefined || v === null || Number.isNaN(Number(v)) ? '-' : `${Math.round(Number(v) * 100)}%`);
+    const num = (v) => (v === undefined || v === null ? '-' : String(v));
+    setText(document.getElementById('metricManagerRatio'), pct(sm.manager_speech_share));
+    setText(document.getElementById('metricClientRatio'), pct(sm.client_speech_share));
+    setText(document.getElementById('metricInterruptions'), num(sm.interruptions_count));
+    const wpmParts = [];
+    if (sm.manager_wpm !== undefined && sm.manager_wpm !== null) wpmParts.push(`М: ${sm.manager_wpm}`);
+    if (sm.client_wpm !== undefined && sm.client_wpm !== null) wpmParts.push(`К: ${sm.client_wpm}`);
+    setText(document.getElementById('metricWpm'), wpmParts.length ? wpmParts.join(' · ') : '-');
+    setText(document.getElementById('metricSilence'),
+      (sm.silence_duration_sec !== undefined && sm.silence_duration_sec !== null)
+        ? `${sm.silence_duration_sec} с` : '-');
+    const callItem = (callsState.items || []).find((c) => c.call_id === currentCallId);
+    const isAm = callItem ? !!callItem.is_answering_machine : null;
+    const amEl = document.getElementById('metricAnsweringMachine');
+    if (amEl) {
+      amEl.innerText = isAm === null ? '-' : (isAm ? '⚠️ Да' : 'Нет');
+      amEl.className = `fw-bold ${isAm ? 'text-danger' : 'text-success'}`;
+    }
   }
 
   // =========================================================================
