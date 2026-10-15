@@ -14,7 +14,7 @@
 //   OUT_DIR (default reports/dashboard-audit).
 // Коды выхода: 0 — всё зелёное; 1 — дефект (печатается причина);
 //   2 — SKIP (нет chromium/сервера/токена).
-import { execSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -38,18 +38,22 @@ const failures = [];
 function rendererRssMb() {
   try {
     const profile = globalThis.__liveProfile || '';
-    if (!profile) return 0;
-    const out = execSync(
-      `ps -eo pid,args 2>/dev/null | grep -F "user-data-dir=${profile}" | grep -F -- "--type=renderer" | awk '{print $1}'`
-    ).toString().trim();
-    if (!out) return 0;
+    if (!profile || !/^[-a-zA-Z0-9_/.]+$/.test(profile)) return 0;
+    const ps = execFileSync('ps', ['-eo', 'pid,args']).toString();
+    const pids = [];
+    for (const line of ps.split('\n')) {
+      if (!line.includes(profile) || !line.includes('--type=renderer')) continue;
+      const m = line.trim().match(/^(\d+)\s/);
+      if (m) pids.push(m[1]);
+    }
+    if (!pids.length) return 0;
     let sum = 0;
-    for (const pid of out.split('\n')) {
+    for (const pid of pids) {
+      if (!/^\d+$/.test(pid)) continue;
       try {
-        sum += parseInt(
-          execSync(`grep VmRSS /proc/${pid}/status 2>/dev/null`).toString().replace(/\D+/g, ''),
-          10
-        );
+        const status = execFileSync('grep', ['VmRSS', `/proc/${pid}/status`]).toString();
+        const num = status.replace(/\D+/g, '');
+        if (num) sum += parseInt(num, 10);
       } catch (e) { /* гонка */ }
     }
     return Math.round(sum / 1024);
@@ -111,12 +115,14 @@ async function main() {
   try {
     await import('node:child_process');
   } catch (e) { /* unreachable */ }
-  const which = spawn('sh', ['-c', `command -v ${CHROMIUM}`]);
-  const hasChromium = await new Promise((res) => {
-    let out = '';
-    which.stdout.on('data', (d) => { out += d; });
-    which.on('close', (code) => res(code === 0 && out.trim() !== ''));
-  });
+  const hasChromium = (() => {
+    try {
+      const r = spawnSync(CHROMIUM, ['--version'], { stdio: 'ignore' });
+      return r.status === 0;
+    } catch (e) {
+      return false;
+    }
+  })();
   if (!hasChromium) { console.log('SKIP: нет chromium в PATH'); process.exit(2); }
   if (!TOKEN) { console.log('SKIP: задайте DASHBOARD_TOKEN'); process.exit(2); }
   try {
