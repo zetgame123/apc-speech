@@ -303,6 +303,60 @@
               </button>
             </div>
 
+            <form id="callsFilterForm" class="row g-2 mb-3" aria-label="Фильтры списка звонков">
+              <div class="col-md-3">
+                <label class="form-label small mb-1" for="fltQ">Поиск по тексту расшифровки</label>
+                <input id="fltQ" class="form-control form-control-sm" placeholder="слово или фраза" autocomplete="off">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small mb-1" for="fltManager">Менеджер</label>
+                <input id="fltManager" class="form-control form-control-sm" placeholder="ID менеджера" autocomplete="off">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small mb-1" for="fltType">Тип обращения</label>
+                <select id="fltType" class="form-select form-select-sm">
+                  <option value="">Все типы</option>
+                  <option value="pricing">Стоимость и прайс</option>
+                  <option value="availability">Занятость и свободные периоды</option>
+                  <option value="inventory_search">Подбор мест и инвентаря</option>
+                  <option value="specs">Технические требования</option>
+                  <option value="order_status">Статус заказа и брони</option>
+                  <option value="production">Производство и монтаж</option>
+                  <option value="documents_billing">Документы и бухгалтерия</option>
+                  <option value="complaint">Претензии и проблемы</option>
+                  <option value="partnership_supply">Сотрудничество и инвентарь партнёров</option>
+                  <option value="programmatic_digital">Диджитал и программатик</option>
+                  <option value="spam_irrelevant">Спам и нецелевые звонки</option>
+                  <option value="other">Прочее</option>
+                </select>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small mb-1" for="fltFrom">Период с</label>
+                <input id="fltFrom" type="datetime-local" class="form-control form-control-sm">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small mb-1" for="fltTo">Период по</label>
+                <input id="fltTo" type="datetime-local" class="form-control form-control-sm">
+              </div>
+              <div class="col-md-1">
+                <label class="form-label small mb-1" for="fltLimit">Строк</label>
+                <select id="fltLimit" class="form-select form-select-sm">
+                  <option value="15" selected>15</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                </select>
+              </div>
+              <div class="col-12 d-flex flex-wrap gap-2 align-items-center">
+                <button type="submit" class="btn btn-primary btn-sm">Применить фильтры</button>
+                <button type="button" id="btnResetFilters" class="btn btn-outline-secondary btn-sm">Сбросить</button>
+                <button type="button" id="btnSortDir" class="btn btn-outline-secondary btn-sm" title="Порядок применяется к загруженным строкам">Порядок: новые → старые</button>
+                <span id="callsCount" class="small text-muted ms-auto" aria-live="polite"></span>
+              </div>
+              <div class="col-12">
+                <div id="callsFilterError" class="small text-danger" role="alert"></div>
+              </div>
+            </form>
+
             <div class="table-responsive">
               <table class="table table-hover align-middle table-calls mb-0">
                 <thead class="table-light">
@@ -322,6 +376,9 @@
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <div class="d-flex justify-content-center mt-2">
+              <button id="btnMoreCalls" class="btn btn-outline-primary btn-sm d-none">Загрузить ещё</button>
             </div>
           </div>
         </div>

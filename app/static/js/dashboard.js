@@ -553,45 +553,145 @@
 
   btnRefreshCalls.addEventListener('click', refreshCallsList);
 
-  function refreshCallsList() {
-    callsTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Загрузка звонков...</td></tr>';
-    fetch(`/v1/calls?namespace=${getNamespace()}&limit=15`, { headers: getHeaders() })
+  // Состояние списка: фильтры уходят в параметры существующей ручки
+  // GET /v1/calls (q, manager_id, inquiry_type, date_from, date_to, cursor, limit).
+  // Сервер всегда сортирует по дате (новые сначала); переключатель порядка
+  // применяется локально к загруженным строкам.
+  const callsState = { items: [], nextCursor: null, sortDir: 'desc', loading: false };
+  const callsFilterForm = document.getElementById('callsFilterForm');
+  const callsFilterError = document.getElementById('callsFilterError');
+  const callsCount = document.getElementById('callsCount');
+  const btnMoreCalls = document.getElementById('btnMoreCalls');
+  const btnSortDir = document.getElementById('btnSortDir');
+  const btnResetFilters = document.getElementById('btnResetFilters');
+
+  function readCallsFilter() {
+    const val = (id) => {
+      const el = document.getElementById(id);
+      return el ? el.value.trim() : '';
+    };
+    const filter = {
+      q: val('fltQ'),
+      manager_id: val('fltManager'),
+      inquiry_type: val('fltType'),
+      date_from: val('fltFrom'),
+      date_to: val('fltTo'),
+      limit: val('fltLimit') || '15',
+    };
+    if (filter.date_from) filter.date_from = new Date(filter.date_from).toISOString();
+    if (filter.date_to) filter.date_to = new Date(filter.date_to).toISOString();
+    return filter;
+  }
+
+  function appendCallRow(c) {
+    const tr = document.createElement('tr');
+    const durStr = c.duration_sec ? `${Math.round(c.duration_sec)} с` : '-';
+    const dtStr = c.created_at ? new Date(c.created_at).toLocaleString('ru-RU') : '-';
+    const safeId = escapeHtml(c.call_id);
+    const safeExternalId = c.external_id ? escapeHtml(c.external_id) : '<span class="text-muted">-</span>';
+    const safeManagerId = c.manager_id ? escapeHtml(c.manager_id) : 'Автоматически';
+    const answerBadge = c.is_answering_machine
+      ? '<span class="badge bg-danger">Автоответчик</span>'
+      : '<span class="badge bg-success">Живой разговор</span>';
+    tr.innerHTML = `
+      <td><code>${safeId.substring(0, 8)}...</code></td>
+      <td>${safeExternalId}</td>
+      <td><span class="badge bg-light text-dark border">${safeManagerId}</span></td>
+      <td>${durStr}</td>
+      <td>${answerBadge}</td>
+      <td class="small text-muted">${escapeHtml(dtStr)}</td>
+      <td>
+        <button class="btn btn-outline-primary btn-sm py-0 px-2" data-call-id="${safeId}">
+          <i class="bi bi-play-circle me-1"></i> Открыть
+        </button>
+      </td>
+    `;
+    callsTableBody.appendChild(tr);
+  }
+
+  function renderCallsList() {
+    const rows = callsState.sortDir === 'asc' ? [...callsState.items].reverse() : callsState.items;
+    callsTableBody.innerHTML = '';
+    if (rows.length === 0) {
+      callsTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Нет звонков по заданным фильтрам</td></tr>';
+    } else {
+      rows.forEach(appendCallRow);
+    }
+    const shown = `Показано: ${callsState.items.length}`;
+    setText(callsCount, callsState.nextCursor ? `${shown}. Есть ещё — нажмите «Загрузить ещё».` : `${shown}. Это все.`);
+    btnMoreCalls.classList.toggle('d-none', !callsState.nextCursor);
+  }
+
+  function loadCallsPage(append) {
+    if (callsState.loading) return;
+    const filter = readCallsFilter();
+    if (filter.date_from && filter.date_to && filter.date_from > filter.date_to) {
+      setText(callsFilterError, '«Период с» позже, чем «Период по». Исправьте даты.');
+      return;
+    }
+    setText(callsFilterError, '');
+    callsState.loading = true;
+    if (!append) {
+      callsTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Загрузка звонков...</td></tr>';
+    }
+    btnMoreCalls.disabled = true;
+    const params = new URLSearchParams({ namespace: getNamespace(), limit: filter.limit });
+    if (filter.q) params.set('q', filter.q);
+    if (filter.manager_id) params.set('manager_id', filter.manager_id);
+    if (filter.inquiry_type) params.set('inquiry_type', filter.inquiry_type);
+    if (filter.date_from) params.set('date_from', filter.date_from);
+    if (filter.date_to) params.set('date_to', filter.date_to);
+    if (append && callsState.nextCursor) params.set('cursor', callsState.nextCursor);
+    fetch(`/v1/calls?${params.toString()}`, { headers: getHeaders() })
       .then(checkAuthResponse).then(res => res.json())
       .then(data => {
-        if (!data.items || data.items.length === 0) {
-          callsTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Нет сохраненных звонков в этом namespace</td></tr>';
-          return;
-        }
-        callsTableBody.innerHTML = '';
-        data.items.forEach(c => {
-          const tr = document.createElement('tr');
-          const durStr = c.duration_sec ? `${Math.round(c.duration_sec)} с` : '-';
-          const dtStr = c.created_at ? new Date(c.created_at).toLocaleString('ru-RU') : '-';
-          const safeId = escapeHtml(c.call_id);
-          const safeExternalId = c.external_id ? escapeHtml(c.external_id) : '<span class="text-muted">-</span>';
-          const safeManagerId = c.manager_id ? escapeHtml(c.manager_id) : 'Автоматически';
-          tr.innerHTML = `
-            <td><code>${safeId.substring(0, 8)}...</code></td>
-            <td>${safeExternalId}</td>
-            <td><span class="badge bg-light text-dark border">${safeManagerId}</span></td>
-            <td>${durStr}</td>
-            <td>${c.is_answering_machine ? '<span class="badge bg-danger">Автоответчик</span>' : '<span class="badge bg-success">Живой разговор</span>'}</td>
-            <td class="small text-muted">${dtStr}</td>
-            <td>
-              <button class="btn btn-outline-primary btn-sm py-0 px-2" data-call-id="${safeId}">
-                <i class="bi bi-play-circle me-1"></i> Открыть
-              </button>
-            </td>
-          `;
-          callsTableBody.appendChild(tr);
-        });
+        callsState.loading = false;
+        btnMoreCalls.disabled = false;
+        if (!append) callsState.items = [];
+        (data.items || []).forEach((c) => callsState.items.push(c));
+        callsState.nextCursor = data.next_cursor || null;
+        renderCallsList();
       })
       .catch(err => {
+        callsState.loading = false;
+        btnMoreCalls.disabled = false;
+        if (append) return;
         const msg = (err && err.auth)
           ? "Нет доступа: введите токен с правами read."
           : `Ошибка загрузки: ${escapeHtml(err.message || err)}`;
         callsTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-3">${msg}</td></tr>`;
+        setText(callsCount, '');
+        btnMoreCalls.classList.add('d-none');
       });
+  }
+
+  function refreshCallsList() {
+    callsState.nextCursor = null;
+    loadCallsPage(false);
+  }
+
+  if (callsFilterForm) {
+    callsFilterForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      refreshCallsList();
+    });
+  }
+  if (btnResetFilters) {
+    btnResetFilters.addEventListener('click', () => {
+      if (callsFilterForm) callsFilterForm.reset();
+      setText(callsFilterError, '');
+      refreshCallsList();
+    });
+  }
+  if (btnMoreCalls) {
+    btnMoreCalls.addEventListener('click', () => loadCallsPage(true));
+  }
+  if (btnSortDir) {
+    btnSortDir.addEventListener('click', () => {
+      callsState.sortDir = callsState.sortDir === 'desc' ? 'asc' : 'desc';
+      setText(btnSortDir, callsState.sortDir === 'desc' ? 'Порядок: новые → старые' : 'Порядок: старые → новые');
+      renderCallsList();
+    });
   }
 
   function openArchivedCall(callId) {

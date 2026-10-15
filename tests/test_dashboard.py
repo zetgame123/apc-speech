@@ -147,6 +147,42 @@ def test_dashboard_js_uses_escaped_render_for_voice_text():
         assert "function escapeHtml" not in text, f"{name}: дублирующий хелпер"
 
 
+def test_dashboard_calls_list_has_filters_and_cursor_pagination():
+    """Пункт 3: фильтры, курсорная пагинация, состояния — на существующих параметрах API."""
+    html = (STATIC_DIR / "dashboard.html").read_text(encoding="utf-8")
+    for el in (
+        "fltQ",
+        "fltManager",
+        "fltType",
+        "fltFrom",
+        "fltTo",
+        "fltLimit",
+        "btnMoreCalls",
+        "btnSortDir",
+        "btnResetFilters",
+        "callsFilterError",
+        "callsCount",
+    ):
+        assert f'id="{el}"' in html, f"нет элемента {el}"
+    assert 'value="pricing"' in html and 'value="availability"' in html
+    js = (STATIC_DIR / "js" / "dashboard.js").read_text(encoding="utf-8")
+    for marker in (
+        "next_cursor",
+        "URLSearchParams",
+        "params.set('q'",
+        "params.set('manager_id'",
+        "params.set('inquiry_type'",
+        "params.set('date_from'",
+        "params.set('date_to'",
+        "params.set('cursor'",
+        "Загрузить ещё",
+        "Нет звонков по заданным фильтрам",
+        "Загрузка звонков...",
+    ):
+        assert marker in js, f"нет маркера: {marker}"
+    assert "&limit=15" not in js, "остался захардкоженный limit=15"
+
+
 def test_escape_html_helper_vectors():
     """Общий escape-хелпер: XSS-векторы обезвреживаются, обычный текст цел."""
     node = shutil.which("node")
