@@ -342,3 +342,21 @@
   акцепт — за заказчиком), navec, CAM++; открыт остаётся только slovnet-веса.
   Проверка digest MinIO (`docker manifest inspect …@sha256:25348a…` — есть
   `linux/amd64`, 2026-10-14) и процедура `docker save` — в `docs/runbook.md` §5.
+
+## ADR-024: Вендоринг фронтенд-библиотек дашборда (без CDN)
+* **Статус**: Принято
+* **Контекст**: Дашборд тянул 4 ресурса из интернета (jsdelivr/unpkg, без SRI):
+  компрометация CDN = выполнение чужого JS в контексте страницы с токеном;
+  без интернета дашборд без стилей и плеера. Плюс строгий CSP
+  (`script-src 'self'`) несовместим с внешними скриптами.
+* **Решение**: Библиотеки лежат в `app/static/vendor/` с точной версией в имени
+  каталога, раздаются самим api (`/static`, mount в `app/main.py`), обновляются
+  вручную скачиванием фиксированной версии.
+* **Последствия**: Дашборд полностью офлайн; обновления зависимостей — ручные
+  (приемлемо для внутреннего инструмента).
+
+| Библиотека | Версия / файл | Лицензия | Коммерческое закрытое использование |
+|---|---|---|---|
+| Bootstrap CSS+JS | 5.3.2, `vendor/bootstrap-5.3.2/` (источник `cdn.jsdelivr.net/npm/bootstrap@5.3.2`) | **MIT** (шапка файлов: `Licensed under MIT`) | Да |
+| Bootstrap Icons CSS+шрифты | 1.11.3, `vendor/bootstrap-icons-1.11.3/` + `fonts/` (источник `cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3`) | **MIT** (шапка CSS: `Licensed under MIT`) | Да |
+| WaveSurfer.js | 7.12.12, `vendor/wavesurfer-7.12.12/wavesurfer.min.js` (пин резолва `unpkg.com/wavesurfer.js@7` на 2026-10-15; текст лицензии — `vendor/wavesurfer-7.12.12/LICENSE`) | **BSD-3-Clause** (поле `license` в `package.json` версии 7.12.12 + файл LICENSE в пакете) | Да |

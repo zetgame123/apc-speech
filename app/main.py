@@ -11,6 +11,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.staticfiles import StaticFiles
 
 from app.api import admin, analytics, calls, dashboard, health, integrations, jobs, voice
 from app.core.config import get_settings
@@ -267,3 +268,12 @@ app.include_router(analytics.router)
 app.include_router(admin.router)
 app.include_router(dashboard.router)
 app.include_router(integrations.router)
+
+# Статика дашборда (вендорные CSS/JS, собственные css/js): без сборки,
+# отдаётся самим api. Mount невидим для контрактного теста openapi
+# (у Mount нет methods), API и openapi.yaml не затрагиваются.
+app.mount(
+    "/static",
+    StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")),
+    name="dashboard-static",
+)

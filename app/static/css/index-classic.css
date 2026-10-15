@@ -1,0 +1,207 @@
+    :root {
+      --navy-bg: #121622;
+      --card-bg: #ffffff;
+      --border-color: #e2e8f0;
+      --primary-accent: #3b82f6;
+      --success-accent: #10b981;
+      --warning-accent: #f59e0b;
+      --danger-accent: #ef4444;
+    }
+    body {
+      background-color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #1e293b;
+    }
+    /* Header Bar */
+    .header-bar {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: white;
+      padding: 0.85rem 2rem;
+      border-bottom: 1px solid #334155;
+    }
+    .nav-tabs .nav-link {
+      color: #94a3b8;
+      font-weight: 500;
+      border: none;
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px 8px 0 0;
+      transition: all 0.2s ease;
+    }
+    .nav-tabs .nav-link:hover {
+      color: white;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .nav-tabs .nav-link.active {
+      color: #38bdf8;
+      background: #f1f5f9;
+      font-weight: 600;
+      border-bottom: 3px solid #38bdf8;
+    }
+    /* Cards */
+    .card-custom {
+      border: none;
+      border-radius: 14px;
+      background: white;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .card-custom:hover {
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.07);
+    }
+    .dropdown-menu { z-index: 1060 !important; }
+    /* Waveform container */
+    #waveform {
+      width: 100%;
+      height: 90px;
+      background: #f8fafc;
+      border-radius: 10px;
+      border: 1px solid #e2e8f0;
+      margin-bottom: 0.75rem;
+    }
+    /* Chat bubbles */
+    .chat-container {
+      height: 480px;
+      overflow-y: auto;
+      padding: 1.25rem;
+      background: #fafafa;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+    }
+    .msg-bubble {
+      margin-bottom: 1.1rem;
+      padding: 12px 18px;
+      border-radius: 14px;
+      max-width: 88%;
+      line-height: 1.55;
+      font-size: 0.94rem;
+      position: relative;
+    }
+    .msg-manager {
+      background-color: #eff6ff;
+      border: 1px solid #dbeafe;
+      border-bottom-left-radius: 3px;
+      margin-right: auto;
+    }
+    .msg-client {
+      background-color: #f0fdf4;
+      border: 1px solid #dcfce7;
+      border-bottom-right-radius: 3px;
+      margin-left: auto;
+    }
+    .speaker-badge {
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+    /* Word synchronization */
+    .word-span {
+      cursor: pointer;
+      padding: 2px 2px;
+      border-radius: 4px;
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+    .word-span:hover {
+      background-color: #fed7aa;
+      color: #9a3412;
+    }
+    .word-active {
+      background-color: #f59e0b;
+      color: #ffffff !important;
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(245, 158, 11, 0.4);
+    }
+    /* Voice Search Big Button */
+    .btn-record-voice {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      font-size: 2rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px rgba(239, 68, 68, 0.35);
+      transition: all 0.25s ease;
+    }
+    .btn-record-voice:hover {
+      transform: scale(1.08);
+      box-shadow: 0 10px 28px rgba(239, 68, 68, 0.5);
+    }
+    .btn-recording-pulse {
+      animation: pulse-ring 1.5s infinite;
+    }
+    @keyframes pulse-ring {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+      70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    /* Speedometer SLA badge */
+    .sla-badge-fast {
+      background: #ecfdf5;
+      color: #065f46;
+      border: 1px solid #a7f3d0;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sla-badge-slow {
+      background: #fef2f2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .cluster-card {
+      border-left: 4px solid var(--primary-accent);
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 1rem;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+      margin-bottom: 0.75rem;
+    }
+    .table-calls tr {
+      cursor: pointer;
+    }
+    .table-calls tr:hover {
+      background-color: #f1f5f9;
+    }
+
+/* Классы вместо инлайн-style (CSP style-src 'self'). */
+.logo-box { width: 42px; height: 42px; }
+.auth-group { width: 220px; }
+.upload-card { position: relative; z-index: 30; }
+.file-input { max-width: 260px; }
+.timeline-label { font-size: 0.72rem; letter-spacing: 0.5px; }
+.timeline-legend { font-size: 0.75rem; }
+.legend-dot { display: inline-block; border-radius: 9999px; margin-right: 0.25rem; width: 10px; height: 10px; }
+.legend-dot-manager { background-color: #3b82f6; }
+.legend-dot-client { background-color: #f97316; }
+.legend-dot-pause { background-color: #e2e8f0; border: 1px solid #cbd5e1; }
+.timeline-wrapper { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; height: 32px; overflow: hidden; }
+.timeline-playhead { width: 2px; background: #ef4444; z-index: 10; pointer-events: none; left: 0%; }
+.export-dropdown { position: relative; z-index: 1050; }
+.export-menu { z-index: 1060; min-width: 260px; }
+.progress-thin { height: 8px; }
+.progress-slim { height: 6px; }
+.pb-zero { width: 0%; }
+.pb-full { width: 100%; }
+.voice-text-result { min-height: 60px; }
+.scroll-table { max-height: 380px; overflow-y: auto; }
+.scroll-clusters { max-height: 360px; overflow-y: auto; }
+/* Вход по токену и баннер ошибок API. */
+.auth-gate-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(15, 23, 42, 0.86); display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.auth-gate-card { background: #fff; border-radius: 12px; padding: 1.75rem; max-width: 460px; width: 100%; box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.4); }
+.api-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 1900; display: none; padding: 0.6rem 1rem; font-size: 0.9rem; }
+.api-banner.show { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
+.api-banner-error { background: #fef2f2; color: #991b1b; border-bottom: 2px solid #ef4444; }
+.api-banner-net { background: #fffbeb; color: #92400e; border-bottom: 2px solid #f59e0b; }
