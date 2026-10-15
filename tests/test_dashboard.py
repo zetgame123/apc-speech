@@ -17,7 +17,7 @@ from httpx import ASGITransport, AsyncClient
 from app.main import app
 
 STATIC_DIR = Path("app/static")
-DASHBOARD_PAGES = ["/", "/dashboard", "/ui", "/dashboard-modern", "/ui-modern"]
+DASHBOARD_PAGES = ["/", "/dashboard", "/ui", "/dashboard-modern", "/ui-modern", "/voice"]
 
 EXPECTED_CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; "
@@ -28,7 +28,7 @@ EXPECTED_CSP = (
 @pytest.mark.asyncio
 async def test_dashboard_pages_have_security_headers():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        for url in DASHBOARD_PAGES + ["/dashboard-classic", "/ui-classic"]:
+        for url in DASHBOARD_PAGES:
             resp = await client.get(url)
             assert resp.status_code == 200, url
             assert resp.headers["content-security-policy"] == EXPECTED_CSP, url
@@ -38,12 +38,50 @@ async def test_dashboard_pages_have_security_headers():
 
 
 @pytest.mark.asyncio
+async def test_dashboard_classic_redirects_to_dashboard():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for url in ("/dashboard-classic", "/ui-classic"):
+            resp = await client.get(url, follow_redirects=False)
+            assert resp.status_code == 303, url
+            assert resp.headers["location"] == "/dashboard", url
+            assert "content-security-policy" in resp.headers, url
+
+
+@pytest.mark.asyncio
+async def test_dashboard_pages_reference_only_existing_static():
+    """Все /static/-ссылки страниц указывают на существующие файлы (без 404)."""
+    refs = set()
+    for name in ("dashboard.html", "voice.html"):
+        text = (STATIC_DIR / name).read_text(encoding="utf-8")
+        refs.update(re.findall(r'(?:src|href)="(/static/[^"]+)"', text))
+    assert refs, "нет static-ссылок"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for url in sorted(refs):
+            resp = await client.get(url)
+            assert resp.status_code == 200, url
+
+
+@pytest.mark.asyncio
+async def test_dashboard_pages_have_expected_markers_and_nav():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        dash = await client.get("/dashboard")
+        assert "APC-SPEECH" in dash.text and "audioPlayer" in dash.text
+        assert 'href="/voice"' in dash.text
+        voice = await client.get("/voice")
+        assert "APC-SPEECH" in voice.text and "voiceTextResult" in voice.text
+        assert 'href="/dashboard"' in voice.text
+
+
+@pytest.mark.asyncio
 async def test_dashboard_static_served_by_api():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         for url, marker in (
             ("/static/js/escape.js", "function escapeHtml"),
-            ("/static/js/dashboard-modern.js", "getToken"),
-            ("/static/css/dashboard-modern.css", ".auth-gate-overlay"),
+            ("/static/js/api.js", "getToken"),
+            ("/static/js/format.js", "function formatTime"),
+            ("/static/js/dashboard.js", "refreshCallsList"),
+            ("/static/js/voice.js", "fetchVoiceHistory"),
+            ("/static/css/dashboard.css", ".auth-gate-overlay"),
             ("/static/vendor/wavesurfer-7.12.12/wavesurfer.min.js", "WaveSurfer"),
             ("/static/vendor/bootstrap-5.3.2/bootstrap.min.css", "Bootstrap"),
             (
@@ -87,7 +125,7 @@ def test_dashboard_static_has_no_external_resources():
 
 def test_dashboard_html_has_no_inline_code_or_default_token():
     """Условие CSP script-src/style-src 'self' + отсутствие дефолтного токена."""
-    for name in ("dashboard-modern.html", "index.html", "index-classic.html"):
+    for name in ("dashboard.html", "voice.html"):
         text = (STATIC_DIR / name).read_text(encoding="utf-8")
         assert "<style" not in text, f"{name}: инлайн-<style>"
         assert ' style="' not in text, f"{name}: инлайн style="
@@ -102,9 +140,10 @@ def test_dashboard_html_has_no_inline_code_or_default_token():
 
 def test_dashboard_js_uses_escaped_render_for_voice_text():
     """ASR-текст экранируется до подсветки терминов (бывший XSS, audit B1)."""
-    for name in ("dashboard-modern.js", "index.js", "index-classic.js"):
+    voice = (STATIC_DIR / "js" / "voice.js").read_text(encoding="utf-8")
+    assert "escapeHtml(cleanText)" in voice
+    for name in ("dashboard.js", "voice.js", "api.js", "format.js"):
         text = (STATIC_DIR / "js" / name).read_text(encoding="utf-8")
-        assert "escapeHtml(cleanText)" in text, f"{name}: нет экранирования ASR-текста"
         assert "function escapeHtml" not in text, f"{name}: дублирующий хелпер"
 
 

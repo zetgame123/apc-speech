@@ -1,14 +1,13 @@
 import os
 
 from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 router = APIRouter(tags=["dashboard"])
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
-STATIC_INDEX_PATH = os.path.join(STATIC_DIR, "index.html")
-MODERN_DASHBOARD_PATH = os.path.join(STATIC_DIR, "dashboard-modern.html")
-CLASSIC_DASHBOARD_PATH = os.path.join(STATIC_DIR, "index-classic.html")
+DASHBOARD_PATH = os.path.join(STATIC_DIR, "dashboard.html")
+VOICE_PATH = os.path.join(STATIC_DIR, "voice.html")
 
 # Заголовки страниц дашборда (п.1 доработки W1): после вендоринга библиотек
 # в app/static/vendor страница не требует внешних ресурсов, поэтому
@@ -26,12 +25,12 @@ DASHBOARD_SECURITY_HEADERS = {
 }
 
 
-def _dashboard_response(path: str, missing_text: str, missing_status: int = 404) -> HTMLResponse:
+def _dashboard_response(path: str, missing_text: str) -> HTMLResponse:
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read(), headers=DASHBOARD_SECURITY_HEADERS)
     return HTMLResponse(
-        f"<h3>{missing_text}</h3>", status_code=missing_status, headers=DASHBOARD_SECURITY_HEADERS
+        f"<h3>{missing_text}</h3>", status_code=404, headers=DASHBOARD_SECURITY_HEADERS
     )
 
 
@@ -41,18 +40,18 @@ def _dashboard_response(path: str, missing_text: str, missing_status: int = 404)
 @router.get("/dashboard-modern", response_class=HTMLResponse)
 @router.get("/ui-modern", response_class=HTMLResponse)
 async def serve_dashboard():
-    """Serve the modern improved dashboard as the primary interface."""
-    target_path = (
-        MODERN_DASHBOARD_PATH if os.path.exists(MODERN_DASHBOARD_PATH) else STATIC_INDEX_PATH
-    )
-    return _dashboard_response(target_path, "Dashboard file not found")
+    """Страница звонков: список, плеер, расшифровка, разбор."""
+    return _dashboard_response(DASHBOARD_PATH, "Dashboard file not found")
+
+
+@router.get("/voice", response_class=HTMLResponse)
+async def serve_voice():
+    """Страница голосового поиска: запрос, история, кластеры."""
+    return _dashboard_response(VOICE_PATH, "Voice page file not found")
 
 
 @router.get("/dashboard-classic", response_class=HTMLResponse)
 @router.get("/ui-classic", response_class=HTMLResponse)
 async def serve_classic_dashboard():
-    """Serve the classic legacy dashboard if needed for comparison."""
-    target_path = (
-        CLASSIC_DASHBOARD_PATH if os.path.exists(CLASSIC_DASHBOARD_PATH) else STATIC_INDEX_PATH
-    )
-    return _dashboard_response(target_path, "Classic dashboard file not found")
+    """Удалена в W1.2 (консолидация): редирект на единый дашборд."""
+    return RedirectResponse(url="/dashboard", status_code=303, headers=DASHBOARD_SECURITY_HEADERS)
