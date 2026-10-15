@@ -6,6 +6,7 @@
       --success-accent: #10b981;
       --warning-accent: #f59e0b;
       --danger-accent: #ef4444;
+      color-scheme: light;
     }
     body {
       background-color: #f1f5f9;
@@ -65,6 +66,7 @@
       background: #fafafa;
       border-radius: 12px;
       border: 1px solid #e2e8f0;
+      color: #172033;
     }
     .msg-bubble {
       margin-bottom: 1.1rem;
@@ -74,6 +76,7 @@
       line-height: 1.55;
       font-size: 0.94rem;
       position: relative;
+      color: #172033;
     }
     .msg-manager {
       background-color: #eff6ff;
@@ -101,15 +104,17 @@
       cursor: pointer;
       padding: 2px 2px;
       border-radius: 4px;
+      color: inherit;
       transition: background-color 0.15s ease, color 0.15s ease;
     }
     .word-span:hover {
       background-color: #fed7aa;
       color: #9a3412;
     }
+    /* Активное слово: тёмный текст на янтаре (белый на #f59e0b даёт 2.1 — мимо WCAG AA). */
     .word-active {
       background-color: #f59e0b;
-      color: #ffffff !important;
+      color: #451a03 !important;
       font-weight: 600;
       box-shadow: 0 1px 3px rgba(245, 158, 11, 0.4);
     }
@@ -305,4 +310,8 @@
 .api-banner-error { background: #fef2f2; color: #991b1b; border-bottom: 2px solid #ef4444; }
 .api-banner-net { background: #fffbeb; color: #92400e; border-bottom: 2px solid #f59e0b; }
 /* Подсветка текущей реплики при воспроизведении (п. W1.4). */
-.msg-bubble.replica-active { outline: 2px solid #0284c7; outline-offset: 2px; }
+.msg-bubble.replica-active { outline: 2px solid #0284c7; outline-offset: 2px; background-color: #e0f2fe; }
+/* Роли в стенограмме: затемнены до WCAG AA на светлых пузырях
+ * (text-primary/text-success дают 4.1–4.3 — мимо AA 4.5). */
+.speaker-badge-manager { color: #1d4ed8; }
+.speaker-badge-client { color: #15803d; }

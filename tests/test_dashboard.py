@@ -349,6 +349,54 @@ def test_dashboard_analysis_missing_shows_pending_state():
     assert "Ошибка загрузки результатов" in js, "настоящие ошибки должны показываться"
 
 
+def test_dashboard_main_not_inside_header():
+    """П.4 ручной проверки: незакрытый <header> красил весь <main> в белый
+    (белое на белом в стенограмме) — header закрыт до main на обеих страницах."""
+    for name in ("dashboard.html", "voice.html"):
+        text = (STATIC_DIR / name).read_text(encoding="utf-8")
+        assert "</header>" in text, f"{name}: нет </header>"
+        assert text.index("</header>") < text.index("<main"), f"{name}: main внутри header"
+
+
+def _rel_luminance(hex_color: str) -> float:
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i : i + 2], 16) / 255 for i in (0, 2, 4))
+
+    def channel(c: float) -> float:
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+
+def _contrast_ratio(fg: str, bg: str) -> float:
+    lighter = max(_rel_luminance(fg), _rel_luminance(bg))
+    darker = min(_rel_luminance(fg), _rel_luminance(bg))
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def test_dashboard_transcript_contrast_meets_wcag_aa():
+    """П.4 ручной проверки: пары текст/фон стенограммы — контраст WCAG AA (≥ 4.5).
+    Цвета — те же, что в dashboard.css (пузыри, активное слово, роли, реплика)."""
+    css = (STATIC_DIR / "css" / "dashboard.css").read_text(encoding="utf-8")
+    assert ".msg-bubble.replica-active" in css
+    assert "speaker-badge-manager" in css and "speaker-badge-client" in css
+    pairs = {
+        "основной текст (#172033 на #eef6ff/#effcf5)": [
+            ("#172033", "#eef6ff"),
+            ("#172033", "#effcf5"),
+        ],
+        "активное слово (#451a03 на #f59e0b)": [("#451a03", "#f59e0b")],
+        "роль менеджера (#1d4ed8 на #eef6ff)": [("#1d4ed8", "#eef6ff")],
+        "роль клиента (#15803d на #effcf5)": [("#15803d", "#effcf5")],
+        "текущая реплика (#172033 на #e0f2fe)": [("#172033", "#e0f2fe")],
+    }
+    for label, cases in pairs.items():
+        for fg, bg in cases:
+            assert fg.lower() in css.lower(), f"{label}: цвета {fg} нет в css"
+            assert bg.lower() in css.lower(), f"{label}: фона {bg} нет в css"
+            assert _contrast_ratio(fg, bg) >= 4.5, f"{label}: {_contrast_ratio(fg, bg):.2f} < 4.5"
+
+
 def test_dashboard_call_card_player_and_highlight():
     """Пункт 4 + п.2 ручной проверки: собственный WebAudio-плеер
     (decodeAudioData, честный статус декодирования), подсветка реплики."""

@@ -421,7 +421,7 @@
       }
 
       const badge = document.createElement('div');
-      badge.className = `speaker-badge ${isFirstSpeaker ? 'text-primary' : 'text-success'}`;
+      badge.className = `speaker-badge ${isFirstSpeaker ? 'speaker-badge-manager' : 'speaker-badge-client'}`;
       badge.innerHTML = `
         <span><i class="bi bi-person-${isFirstSpeaker ? 'check-fill' : 'fill'} me-1"></i>${roleLabel} (${escapeHtml(seg.speaker_label || (isFirstSpeaker ? 'SPEAKER_0' : 'SPEAKER_1'))})</span>
         <span class="text-muted fw-normal">${fmtSec(seg.start)} - ${fmtSec(seg.end)}</span>
