@@ -220,22 +220,102 @@
     }, 1500);
   }
 
+  function analysisFetchOrPending(callId, ns) {
+    // Путь сверен с openapi.yaml: GET /v1/calls/{call_id}/analysis.
+    // 404 здесь — штатное «разбора ещё нет» (обработка идёт, автоответчик),
+    // а не ошибка: показываем состояние ожидания, стенограмму рендерим.
+    return fetch(`/v1/calls/${callId}/analysis?namespace=${ns}`, { headers: getHeaders() })
+      .then(checkAuthResponse)
+      .then((r) => {
+        if (r.status === 404) return { __pending: true };
+        if (!r.ok) throw new Error(`разбор: сервер вернул ${r.status}`);
+        return r.json();
+      });
+  }
+
   function loadCallResults(callId) {
     currentCallId = callId;
     const ns = getNamespace();
     Promise.all([
-      fetch(`/v1/calls/${callId}/transcript?namespace=${ns}`, { headers: getHeaders() }).then(checkAuthResponse).then(r => r.json()),
-      fetch(`/v1/calls/${callId}/analysis?namespace=${ns}`, { headers: getHeaders() }).then(checkAuthResponse).then(r => r.json())
+      fetch(`/v1/calls/${callId}/transcript?namespace=${ns}`, { headers: getHeaders() }).then(checkAuthResponse).then((r) => {
+        if (!r.ok) throw new Error(`расшифровка: сервер вернул ${r.status}`);
+        return r.json();
+      }),
+      analysisFetchOrPending(callId, ns)
     ]).then(([transcript, analysis]) => {
       document.getElementById('btnQuickTxt').disabled = false;
       document.getElementById('btnQuickSrt').disabled = false;
       document.getElementById('btnQuickJson').disabled = false;
       document.getElementById('btnExportMenu').disabled = false;
       renderChat(transcript.segments);
-      renderAnalysis(analysis);
+      if (analysis && analysis.__pending) renderAnalysisPending();
+      else renderAnalysis(analysis);
     }).catch(err => {
       if (!(err && err.auth)) statusCallText.innerText = "Ошибка загрузки результатов: " + (err.message || err);
     });
+  }
+
+  function renderAnalysisPending() {
+    setText(document.getElementById('summaryText'), "Разбор отсутствует — звонок ещё обрабатывается, либо это автоответчик без разбора.");
+    setText(document.getElementById('inquiryTypeBadge'), "Тип: —");
+    setText(document.getElementById('callResultBadge'), "Результат: —");
+    setText(document.getElementById('schemaVersions'), '');
+    setText(document.getElementById('entitiesBox'), '');
+    const entBox = document.getElementById('entitiesBox');
+    if (entBox) entBox.innerHTML = '<span class="text-muted small">Сущности появятся после разбора</span>';
+    const agrBox = document.getElementById('agreementsBox');
+    if (agrBox) agrBox.innerHTML = '<span class="text-muted small">Договорённости появятся после разбора</span>';
+    const overallSentBadge = document.getElementById('overallSentimentBadge');
+    if (overallSentBadge) {
+      overallSentBadge.innerText = 'Тональность: —';
+      overallSentBadge.className = 'badge bg-secondary';
+    }
+    setText(document.getElementById('clientEmotionText'), '-');
+    setText(document.getElementById('managerEmotionText'), '-');
+    setText(document.getElementById('emotionPercentages'), 'Позитив: 0% | Нейтрал: 100% | Негатив: 0%');
+    const barPos = document.getElementById('emoPosBar');
+    const barNeu = document.getElementById('emoNeuBar');
+    const barNeg = document.getElementById('emoNegBar');
+    if (barPos) barPos.style.width = '0%';
+    if (barNeu) barNeu.style.width = '100%';
+    if (barNeg) barNeg.style.width = '0%';
+    const scoreBadge = document.getElementById('checklistScore');
+    if (scoreBadge) {
+      scoreBadge.innerText = 'Оценка: — / 5';
+      scoreBadge.className = 'badge fs-6 bg-secondary';
+    }
+    setText(document.getElementById('complianceScoreText'), '—');
+    const complianceBar = document.getElementById('complianceProgressBar');
+    if (complianceBar) {
+      complianceBar.style.width = '0%';
+      complianceBar.className = 'progress-bar bg-secondary';
+    }
+    const ul = document.getElementById('checklistUl');
+    if (ul) ul.innerHTML = '<li class="list-group-item text-muted px-0">Чек-лист появится после разбора звонка</li>';
+    const violationsBox = document.getElementById('violationsBox');
+    if (violationsBox) {
+      violationsBox.innerHTML = '';
+      violationsBox.style.display = 'none';
+      violationsBox.classList.add('d-none');
+    }
+    const recommendationsBox = document.getElementById('recommendationsBox');
+    if (recommendationsBox) {
+      recommendationsBox.innerHTML = '';
+      recommendationsBox.style.display = 'none';
+      recommendationsBox.classList.add('d-none');
+    }
+    setText(document.getElementById('metricManagerRatio'), '-');
+    setText(document.getElementById('metricClientRatio'), '-');
+    setText(document.getElementById('metricInterruptions'), '-');
+    setText(document.getElementById('metricWpm'), '-');
+    setText(document.getElementById('metricSilence'), '-');
+    const callItem = (callsState.items || []).find((c) => c.call_id === currentCallId);
+    const amEl = document.getElementById('metricAnsweringMachine');
+    if (amEl) {
+      const isAm = callItem ? !!callItem.is_answering_machine : null;
+      amEl.innerText = isAm === null ? '-' : (isAm ? '⚠️ Да' : 'Нет');
+      amEl.className = `fw-bold ${isAm ? 'text-danger' : 'text-success'}`;
+    }
   }
 
   function renderSpeakerTimeline(segments) {
@@ -553,6 +633,8 @@
     // Violations Box (+ стоп-слова из forbidden_words_found, если есть).
     const violationsBox = document.getElementById('violationsBox');
     if (violationsBox) {
+      violationsBox.classList.remove('d-none');
+      violationsBox.style.display = 'block';
       const stops = Array.isArray(cl.forbidden_words_found) ? cl.forbidden_words_found : [];
       const all = [...(Array.isArray(cl.violations) ? cl.violations : []),
         ...stops.map((w) => `Стоп-слово в разговоре: ${w}`)];
@@ -580,6 +662,7 @@
     const recommendationsBox = document.getElementById('recommendationsBox');
     if (recommendationsBox) {
       if (cl.recommendations && cl.recommendations.length > 0) {
+        recommendationsBox.classList.remove('d-none');
         recommendationsBox.style.display = 'block';
         recommendationsBox.innerHTML = `
           <div class="alert alert-info py-2 px-3 mb-0">

@@ -332,6 +332,23 @@ def test_dashboard_analysis_follows_real_schema():
         assert f'id="{el}"' in html, f"нет элемента {el}"
 
 
+def test_dashboard_analysis_missing_shows_pending_state():
+    """П.3 ручной проверки: 404 GET .../analysis — штатное «разбор отсутствует»,
+    путь сверен с openapi.yaml, стенограмма при этом рендерится, ошибки нет."""
+    js = (STATIC_DIR / "js" / "dashboard.js").read_text(encoding="utf-8")
+    for marker in (
+        "analysisFetchOrPending",
+        "renderAnalysisPending",
+        "__pending",
+        "r.status === 404",
+        "/v1/calls/${callId}/analysis",
+        "Разбор отсутствует",
+        "Чек-лист появится после разбора",
+    ):
+        assert marker in js, f"нет маркера: {marker}"
+    assert "Ошибка загрузки результатов" in js, "настоящие ошибки должны показываться"
+
+
 def test_dashboard_call_card_player_and_highlight():
     """Пункт 4 + п.2 ручной проверки: собственный WebAudio-плеер
     (decodeAudioData, честный статус декодирования), подсветка реплики."""
