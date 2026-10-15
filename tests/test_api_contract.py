@@ -81,7 +81,7 @@ async def test_dashboard_endpoint():
         resp = await client.get("/dashboard")
         assert resp.status_code == 200
         assert "APC-SPEECH" in resp.text
-        assert "audioPlayer" in resp.text
+        assert "waveform" in resp.text
 
 
 @pytest.mark.asyncio

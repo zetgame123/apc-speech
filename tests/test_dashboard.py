@@ -21,8 +21,8 @@ STATIC_DIR = Path("app/static")
 DASHBOARD_PAGES = ["/", "/dashboard", "/ui", "/dashboard-modern", "/ui-modern", "/voice"]
 
 EXPECTED_CSP = (
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-    "img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob:; "
+    "default-src 'self'; script-src 'self'; style-src 'self'; "
+    "img-src 'self' data:; media-src 'self'; connect-src 'self'; "
     "frame-ancestors 'none'"
 )
 
@@ -39,19 +39,19 @@ def _parse_csp(csp: str) -> dict:
 
 
 def test_dashboard_csp_keeps_scripts_strict():
-    """Пункт 1 ручной проверки: script-src остаётся 'self' без
-    unsafe-inline/unsafe-eval; blob:/data: разрешены только там, где нужны
-    плееру и картинкам (ADR-025)."""
+    """Пп.1–2 ручной проверки: скрипты/стили строго 'self' (WaveSurfer удалён,
+    плеер — собственный WebAudio без инлайн-стилей и fetch(blob:)); data:
+    разрешён только в img-src для SVG-стрелок Bootstrap (ADR-025)."""
     csp = _parse_csp(EXPECTED_CSP)
     assert csp["script-src"] == ["'self'"], csp["script-src"]
+    assert csp["style-src"] == ["'self'"], csp["style-src"]
     for name, values in csp.items():
         assert "'unsafe-eval'" not in values, f"{name}: {values}"
-        if name != "style-src":
-            assert "'unsafe-inline'" not in values, f"{name}: {values}"
-    assert "blob:" in csp["connect-src"], "wavesurfer.load(fetch blob:) заблокирован"
-    assert "blob:" in csp["media-src"]
+        assert "'unsafe-inline'" not in values, f"{name}: {values}"
+        if name != "img-src":
+            assert "data:" not in values, f"{name}: {values}"
+            assert "blob:" not in values, f"{name}: {values}"
     assert "data:" in csp["img-src"], "data:-SVG стрелок select заблокированы"
-    assert "blob:" in csp["img-src"]
 
 
 @pytest.mark.asyncio
@@ -101,8 +101,10 @@ async def test_dashboard_static_missing_file_is_404():
 async def test_dashboard_pages_have_expected_markers_and_nav():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         dash = await client.get("/dashboard")
-        assert "APC-SPEECH" in dash.text and "audioPlayer" in dash.text
+        assert "APC-SPEECH" in dash.text and "waveform" in dash.text
         assert 'href="/voice"' in dash.text
+        assert "wavesurfer" not in dash.text.lower(), "WaveSurfer удалён (ADR-025)"
+        assert "/static/js/player.js" in dash.text
         voice = await client.get("/voice")
         assert "APC-SPEECH" in voice.text and "voiceTextResult" in voice.text
         assert 'href="/dashboard"' in voice.text
@@ -115,10 +117,10 @@ async def test_dashboard_static_served_by_api():
             ("/static/js/escape.js", "function escapeHtml"),
             ("/static/js/api.js", "getToken"),
             ("/static/js/format.js", "function formatTime"),
+            ("/static/js/player.js", "decodeAudioData"),
             ("/static/js/dashboard.js", "refreshCallsList"),
             ("/static/js/voice.js", "fetchVoiceHistory"),
             ("/static/css/dashboard.css", ".auth-gate-overlay"),
-            ("/static/vendor/wavesurfer-7.12.12/wavesurfer.min.js", "WaveSurfer"),
             ("/static/vendor/bootstrap-5.3.2/bootstrap.min.css", "Bootstrap"),
             (
                 "/static/vendor/bootstrap-icons-1.11.3/bootstrap-icons.min.css",
@@ -221,7 +223,6 @@ global.document = new Proxy({}, {
   },
   set() { return true; },
 });
-global.WaveSurfer = { create: () => ({ on() {}, load() {}, playPause() {}, setTime() {}, getDuration() { return 0; }, getCurrentTime() { return 0; }, destroy() {} }) };
 global.navigator = {};
 for (const f of files) srcParts.push(fs.readFileSync(dir + '/' + f, 'utf-8'));
 try {
@@ -232,7 +233,7 @@ try {
 }
 for (const fn of ['getHeaders', 'getNamespace', 'escapeHtml', 'formatTime', ...need]) {
   let ok = false;
-  try { ok = typeof eval(fn) === 'function'; } catch (e) { ok = false; }
+  try { const v = eval(fn); ok = typeof v === 'function' || (v !== null && typeof v === 'object'); } catch (e) { ok = false; }
   if (!ok) { console.error(`FAIL: no function ${fn}`); process.exit(1); }
 }
 console.log('page load OK');
@@ -254,8 +255,8 @@ def test_dashboard_pages_load_without_js_reference_errors():
         pytest.skip("node отсутствует в окружении")
     _run_dashboard_page_load_check(
         node,
-        ["escape.js", "api.js", "format.js", "dashboard.js"],
-        ["refreshCallsList", "openArchivedCall", "renderAnalysis"],
+        ["escape.js", "api.js", "format.js", "player.js", "dashboard.js"],
+        ["refreshCallsList", "openArchivedCall", "renderAnalysis", "Player"],
     )
     _run_dashboard_page_load_check(
         node,
@@ -332,17 +333,38 @@ def test_dashboard_analysis_follows_real_schema():
 
 
 def test_dashboard_call_card_player_and_highlight():
-    """Пункт 4: лимит аудио, revoke blob-URL, подсветка реплики, шапка карточки."""
+    """Пункт 4 + п.2 ручной проверки: собственный WebAudio-плеер
+    (decodeAudioData, честный статус декодирования), подсветка реплики."""
     js = (STATIC_DIR / "js" / "dashboard.js").read_text(encoding="utf-8")
+    assert "wavesurfer" not in js.lower() and "WaveSurfer" not in js, "остался WaveSurfer"
+    player = (STATIC_DIR / "js" / "player.js").read_text(encoding="utf-8")
+    for marker in (
+        "decodeAudioData",
+        "onTimeUpdate",
+        "onReady",
+        "onError",
+        "wave-canvas",
+        "getCurrentTime",
+        "setTime",
+    ):
+        assert marker in player, f"player.js: нет маркера: {marker}"
     for marker in (
         "MAX_BROWSER_AUDIO_BYTES",
-        "revokeObjectURL",
-        "currentAudioObjectUrl",
         "replica-active",
         "activeBubble",
         "renderCallCardHeader",
         "callCardHeader",
         "слишком большое для браузерного плеера",
+        # П.2 ручной проверки: честный статус декодирования, без вранья.
+        "Player.loadBlob",
+        "Player.onReady",
+        "Player.onError",
+        "Player.setTime",
+        "Player.toggle",
+        "Player.play",
+        "Загрузка аудио в плеер",
+        "Аудио загружено в плеер",
+        "Не удалось подготовить аудио к воспроизведению",
     ):
         assert marker in js, f"нет маркера: {marker}"
     html = (STATIC_DIR / "dashboard.html").read_text(encoding="utf-8")
@@ -352,7 +374,7 @@ def test_dashboard_call_card_player_and_highlight():
 
 def test_dashboard_no_blocking_dialogs_and_guarded_formats():
     """Пункт 8: без alert/confirm, лимит записи 60 с, защита toFixed/Math.max."""
-    for name in ("dashboard.js", "voice.js", "api.js", "format.js"):
+    for name in ("dashboard.js", "voice.js", "api.js", "format.js", "player.js"):
         text = (STATIC_DIR / "js" / name).read_text(encoding="utf-8")
         assert "alert(" not in text, f"{name}: остался alert"
         assert "confirm(" not in text, f"{name}: остался confirm"

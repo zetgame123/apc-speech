@@ -243,6 +243,8 @@
     .form-control, .form-select { border-radius: 10px; border-color: var(--line); padding-top: .6rem; padding-bottom: .6rem; }
     .form-control:focus, .form-select:focus { border-color: #60a5fa; box-shadow: 0 0 0 .2rem rgba(37,99,235,.12); }
     #waveform { background: linear-gradient(180deg, #f8fbff, #eef5fb); border: 1px solid #d8e5f3; border-radius: 14px; height: 98px; }
+    /* Waveform canvas (рисует /static/js/player.js; клик — перемотка). */
+    .wave-canvas { width: 100%; height: 90px; display: block; cursor: pointer; }
     #speakerTimelineWrapper { background: #edf3f9 !important; border-color: #d6e2ef !important; border-radius: 10px !important; }
     .chat-container { height: 500px; padding: 1.15rem; background: linear-gradient(180deg, #f8fbff 0%, #f2f6fb 100%); border: 1px solid #dbe6f1; border-radius: 16px; }
     .msg-bubble { box-shadow: 0 5px 16px rgba(15,23,42,.05); border-radius: 15px; }

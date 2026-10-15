@@ -1,7 +1,6 @@
   let currentCallId = null;
-  let wavesurfer = null;
-  let currentAudioObjectUrl = null;
   let activeBubble = null;
+  // Player — общий WebAudio-плеер, см. /static/js/player.js.
   // Лимит аудио для браузерного плеера: blob большего размера роняет вкладку.
   const MAX_BROWSER_AUDIO_BYTES = 300 * 1024 * 1024;
   let mediaRecorder = null;
@@ -12,23 +11,10 @@
   // getHeaders/getNamespace — общие, см. /static/js/api.js.
 
   // =========================================================================
-  // WAVESURFER INITIALIZATION
+  // PLAYER: WebAudio (Player) + подсветка реплик/слов на его тике
   // =========================================================================
-  function initWavesurfer() {
-    if (wavesurfer) wavesurfer.destroy();
-    wavesurfer = WaveSurfer.create({
-      container: '#waveform',
-      waveColor: '#94a3b8',
-      progressColor: '#0284c7',
-      cursorColor: '#0369a1',
-      barWidth: 2,
-      barGap: 1,
-      barRadius: 2,
-      height: 85,
-      responsive: true
-    });
-
-    wavesurfer.on('timeupdate', (currentTime) => {
+  function initPlayer() {
+    Player.onTimeUpdate = (currentTime, totalDur) => {
       // Подсветка текущего слова и текущей реплики.
       const allWords = document.querySelectorAll('.word-span');
       let currentBubble = null;
@@ -48,17 +34,16 @@
         activeBubble = currentBubble;
       }
       // Speaker timeline playhead update
-      const totalDur = wavesurfer.getDuration();
       const playhead = document.getElementById('timelinePlayhead');
       if (playhead && totalDur > 0) {
         playhead.style.display = 'block';
         playhead.style.left = `${(currentTime / totalDur) * 100}%`;
       }
       // Timer update
-      updateAudioTimer(currentTime, wavesurfer.getDuration());
-    });
+      updateAudioTimer(currentTime, totalDur);
+    };
 
-    wavesurfer.on('ready', () => {
+    Player.onReady = (duration) => {
       document.getElementById('btnPlayPause').disabled = false;
       document.getElementById('btnRewind5').disabled = false;
       document.getElementById('btnForward5').disabled = false;
@@ -66,8 +51,14 @@
       document.getElementById('btnQuickTxt').disabled = false;
       document.getElementById('btnQuickSrt').disabled = false;
       document.getElementById('btnQuickJson').disabled = false;
-      updateAudioTimer(0, wavesurfer.getDuration());
-    });
+      updateAudioTimer(0, duration);
+      statusCallText.innerText = "Аудио загружено в плеер";
+    };
+
+    // Ошибка декодирования blob-аудио — понятным текстом, а не молчанием.
+    Player.onError = () => {
+      statusCallText.innerText = "Не удалось подготовить аудио к воспроизведению (файл не декодируется). Показаны расшифровка и разбор.";
+    };
   }
 
 
@@ -76,16 +67,16 @@
   }
 
   document.getElementById('btnPlayPause').addEventListener('click', () => {
-    if (wavesurfer) wavesurfer.playPause();
+    Player.toggle();
   });
   document.getElementById('btnRewind5').addEventListener('click', () => {
-    if (wavesurfer) wavesurfer.setTime(Math.max(0, wavesurfer.getCurrentTime() - 5));
+    Player.setTime(Math.max(0, Player.getCurrentTime() - 5));
   });
   document.getElementById('btnForward5').addEventListener('click', () => {
-    if (wavesurfer) wavesurfer.setTime(Math.min(wavesurfer.getDuration(), wavesurfer.getCurrentTime() + 5));
+    Player.setTime(Math.min(Player.getDuration(), Player.getCurrentTime() + 5));
   });
 
-  initWavesurfer();
+  initPlayer();
 
   // =========================================================================
   // TAB 1: CALL RECORDING & UPLOAD
@@ -159,8 +150,11 @@
   });
 
   function uploadCallAudio(blob, filename) {
-    const blobUrl = URL.createObjectURL(blob);
-    wavesurfer.load(blobUrl);
+    // Декодирование в плеере — честный статус: «загружено» только в onReady.
+    statusCallText.innerText = "Подготовка аудио к воспроизведению...";
+    Player.loadBlob(blob).catch(() => {
+      /* текст ошибки уже выставлен Player.onError */
+    });
 
     const formData = new FormData();
     formData.append("file", blob, filename);
@@ -257,7 +251,7 @@
     timelineWrapper.style.display = 'block';
     timeline.innerHTML = '';
 
-    const wsDur = wavesurfer ? wavesurfer.getDuration() : 0;
+    const wsDur = Player.getDuration();
     const maxEnd = segments.reduce((m, s) => Math.max(m, s.end || 0), 0);
     const totalDur = wsDur > 0 ? wsDur : (maxEnd > 0 ? maxEnd : 1);
 
@@ -295,21 +289,20 @@
       });
       block.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (wavesurfer) {
-          wavesurfer.setTime(seg.start);
-          wavesurfer.play();
-        }
+        Player.setTime(seg.start);
+        Player.play();
       });
 
       timeline.appendChild(block);
     });
 
     timelineWrapper.onclick = (e) => {
+      const totalDur = Player.getDuration();
       const rect = timelineWrapper.getBoundingClientRect();
       const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      if (wavesurfer && totalDur > 0) {
-        wavesurfer.setTime(clickRatio * totalDur);
-        wavesurfer.play();
+      if (totalDur > 0) {
+        Player.setTime(clickRatio * totalDur);
+        Player.play();
       }
     };
   }
@@ -364,10 +357,8 @@
           span.dataset.start = w.start;
           span.dataset.end = w.end;
           span.addEventListener('click', () => {
-            if (wavesurfer) {
-              wavesurfer.setTime(w.start);
-              wavesurfer.play();
-            }
+            Player.setTime(w.start);
+            Player.play();
           });
           textContainer.appendChild(span);
         });
@@ -814,10 +805,12 @@
           err.tooBig = true;
           throw err;
         }
-        if (currentAudioObjectUrl) URL.revokeObjectURL(currentAudioObjectUrl);
-        currentAudioObjectUrl = URL.createObjectURL(blob);
-        wavesurfer.load(currentAudioObjectUrl);
-        statusCallText.innerText = "Аудио загружено в плеер";
+        // Плеер декодирует blob напрямую через WebAudio (decodeAudioData):
+        // «Загружено» выставит Player.onReady после фактического декодирования.
+        statusCallText.innerText = "Загрузка аудио в плеер...";
+        Player.loadBlob(blob).catch(() => {
+          /* текст ошибки уже выставлен Player.onError */
+        });
         loadCallResults(callId);
       })
       .catch(e => {

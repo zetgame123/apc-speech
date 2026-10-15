@@ -381,6 +381,17 @@
   `script-src` остаётся строго `'self'` без `unsafe-inline`/`unsafe-eval`
   (покрыто тестом `test_dashboard_csp_keeps_scripts_strict`): инлайн-стили
   не исполняют JS, XSS-вектор через скрипты закрыт.
-* **Последствия**: воспроизведение/перемотка/подсветка работают без событий
+* *Последствия*: воспроизведение/перемотка/подсветка работают без событий
   `securitypolicyviolation` (проверено CDP-скриптом `scripts/dashboard_live_check.mjs`,
   п.6); обновления WaveSurfer — вручную как в ADR-024.
+* **Пересмотр (2026-10-15, п.2 ручной проверки)**: после снятия `connect-src`-запрета
+  выяснилось вживую (CDP, headless Chromium 152), что `wavesurfer.load(blobUrl)`
+  **вечно висит**: MEDIA-элемент не отдаёт `loadedmetadata` даже для типированного
+  blob и синтетического WAV, при этом `decodeAudioData` те же байты декодирует.
+  Статус «Аудио загружено в плеер» при этом врал (ставился до декодирования, `duration=0`).
+  Решение изменено: WaveSurfer **удалён**, плеер — собственный WebAudio
+  (`app/static/js/player.js`: fetch с Authorization → arrayBuffer →
+  decodeAudioData → AudioBufferSourceNode, waveform рисуется на canvas,.seek кликом);
+  CSP возвращён к строгому (`style-src 'self'`, без `blob:` — инлайн-стилей и
+  fetch(blob:) больше нет). Альтернатива «<audio> + индикатор» не подошла по той же
+  причине — `<audio>` тоже MEDIA-элемент.

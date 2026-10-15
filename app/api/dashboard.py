@@ -10,18 +10,17 @@ DASHBOARD_PATH = os.path.join(STATIC_DIR, "dashboard.html")
 VOICE_PATH = os.path.join(STATIC_DIR, "voice.html")
 
 # Заголовки страниц дашборда (п.1 доработки W1): после вендоринга библиотек
-# в app/static/vendor страница не требует внешних ресурсов, поэтому
-# script-src ограничен 'self' (без unsafe-inline/unsafe-eval — см. тест).
-# Ослабления — только минимально необходимые для WaveSurfer (ADR-025):
-# style-src 'unsafe-inline' (плеер ставит инлайн-стили контейнера/канваса),
-# connect-src blob: (wavesurfer.load тянет аудио через fetch(blob:...)),
-# img-src data: (SVG-стрелки select/radio из bootstrap.min.css) + blob:.
-# media-src blob: — аудио грузится через fetch с Authorization в blob-URL.
+# в app/static/vendor страница не требует внешних ресурсов, поэтому всё
+# ограничено 'self'. Единственное исключение — img-src data:: SVG-стрелки
+# select/radio из bootstrap.min.css (см. ADR-025). WaveSurfer удалён в п.2:
+# плеер — собственный WebAudio (/static/js/player.js, decodeAudioData),
+# инлайн-стили и fetch(blob:) больше не нужны — style-src/connect-src строгие.
+# script-src — строго 'self' без unsafe-inline/unsafe-eval (см. тест).
 # frame-ancestors 'none' — защита от clickjacking действий дашборда.
 DASHBOARD_SECURITY_HEADERS = {
     "Content-Security-Policy": (
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob:; "
+        "default-src 'self'; script-src 'self'; style-src 'self'; "
+        "img-src 'self' data:; media-src 'self'; connect-src 'self'; "
         "frame-ancestors 'none'"
     ),
     "X-Content-Type-Options": "nosniff",

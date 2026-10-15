@@ -214,8 +214,9 @@ Callback: при `callback_url` результат уходит `POST` с заг
 `js/escape.js`, `js/format.js`):
 
 - `/dashboard` (также `/`, `/ui`) — звонки: журнал с фильтрами (текст, менеджер,
-  тип обращения, период) и курсорной пагинацией; карточка звонка — плеер WaveSurfer
-  (аудио грузится через `fetch` с `Authorization` в blob-URL), пословная подсветка
+  тип обращения, период) и курсорной пагинацией; карточка звонка — собственный
+  WebAudio-плеер (аудио грузится через `fetch` с `Authorization` и декодируется
+  `decodeAudioData`, waveform на canvas, клик — перемотка), пословная подсветка
   и подсветка текущей реплики, клик по реплике перематывает плеер, говорящие и роли;
   разбор по схеме (тип, результат, сущности, договорённости, чек-лист, метрики речи,
   эмоции, версии схемы и промпта).
@@ -230,13 +231,12 @@ Callback: при `callback_url` результат уходит `POST` с заг
 только в `sessionStorage` вкладки, в коде и разметке его нет. `401/403` и обрывы сети
 показываются явным баннером с кнопкой «Ввести токен», а не глотаются.
 
-Офлайн и безопасность страниц: внешние CDN отсутствуют — Bootstrap 5.3.2 (MIT),
-Bootstrap Icons 1.11.3 (MIT) и WaveSurfer.js 7.12.12 (BSD-3-Clause) лежат в
-`app/static/vendor/` (подробно — ADR-024). Заголовки страниц: CSP
-(`script-src 'self'` строго, без `unsafe-inline`/`unsafe-eval`;
-`style-src 'self' 'unsafe-inline'` + `connect-src`/`img-src`/`media-src` с `blob:`
-и `data:` — минимум для WaveSurfer, см. ADR-025), `X-Content-Type-Options: nosniff`,
-`Referrer-Policy: no-referrer`, `Cache-Control: no-store`.
+Офлайн и безопасность страниц: внешние CDN отсутствуют — Bootstrap 5.3.2 (MIT)
+и Bootstrap Icons 1.11.3 (MIT) лежат в `app/static/vendor/` (подробно — ADR-024).
+Плеер — собственный WebAudio (`js/player.js`, WaveSurfer удалён как ненадёжный —
+см. ADR-025). Заголовки страниц: строгий CSP (`default/script/style/connect/media-src
+'self'`, из исключений только `img-src data:` для SVG-стрелок Bootstrap),
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`.
 
 Ограничения (честно): аудио больше 300 МБ во вкладку не грузится (показываются
 расшифровка и разбор + подсказка забрать файл через API); голосовой поиск на CPU без
@@ -281,7 +281,9 @@ Bootstrap Icons 1.11.3 (MIT) и WaveSurfer.js 7.12.12 (BSD-3-Clause) лежат 
 | faster-whisper / CTranslate2 / onnxruntime, whisper-подлодка (Apache 2.0), Qwen2.5-7B (Apache 2.0), llama.cpp (MIT), Redis 7.2 (BSD-3-Clause), PostgreSQL/pgvector (PostgreSQL Licence) | См. `docs/decisions.md` ADR-012 | Библиотеки / веса / образы | Полный разбор — в ADR-012 и ADR-023 |
 | Bootstrap 5.3.2 (`app/static/vendor/bootstrap-5.3.2/`) | MIT | CSS+JS дашборда, вендор без CDN | Обновление вручную фиксированной версией (ADR-024) |
 | Bootstrap Icons 1.11.3 (`app/static/vendor/bootstrap-icons-1.11.3/`) | MIT | Иконки и шрифты дашборда, вендор без CDN | Обновление вручную фиксированной версией (ADR-024) |
-| WaveSurfer.js 7.12.12 (`app/static/vendor/wavesurfer-7.12.12/`, текст лицензии рядом) | BSD-3-Clause | Аудиоплеер дашборда, вендор без CDN | Обновление вручную фиксированной версией (ADR-024) |
+
+WaveSurfer.js 7.12.12 (BSD-3-Clause) удалён из вендора 2026-10-15 (см. ADR-025:
+плеер заменён собственным WebAudio `js/player.js`).
 
 Полный разбор лицензий — в [`docs/decisions.md`](docs/decisions.md) (ADR-012, ADR-023).
 
