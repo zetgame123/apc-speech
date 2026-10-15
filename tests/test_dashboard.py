@@ -315,6 +315,22 @@ def test_dashboard_call_card_player_and_highlight():
         assert f'id="{el}"' in html, f"нет элемента {el}"
 
 
+def test_dashboard_clusters_have_two_sources():
+    """Пункт 7: кластеры из истории запросов и из текстов звонков (существующие ручки)."""
+    html = (STATIC_DIR / "voice.html").read_text(encoding="utf-8")
+    assert 'id="clusterSourceHistory"' in html
+    assert 'id="clusterSourceCalls"' in html
+    js = (STATIC_DIR / "js" / "voice.js").read_text(encoding="utf-8")
+    for marker in (
+        "collectCallTexts",
+        "clusterSourceCalls",
+        "/v1/calls/${c.call_id}/transcript",
+        "renderClusters",
+        "representative_queries",
+    ):
+        assert marker in js, f"нет маркера: {marker}"
+
+
 def test_dashboard_summary_section():
     """Пункт 6: сводка — фильтры, распределения, тренды, экспорт CSV (существующие ручки)."""
     html = (STATIC_DIR / "voice.html").read_text(encoding="utf-8")

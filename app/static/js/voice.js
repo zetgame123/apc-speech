@@ -270,14 +270,63 @@
   const clusteringContainer = document.getElementById('clusteringResultsContainer');
   const btnRunClustering = document.getElementById('btnRunClustering');
 
-  async function runTopicClustering() {
-    const list = activeVoiceHistory;
-    if (list.length < 3) {
-      alert("Для кластеризации нужно хотя бы 3 запроса в истории. Сделайте голосовые запросы через микрофон или загрузите аудиозаписи!");
-      return;
+  async function collectCallTexts(limit) {
+    // Тексты звонков через существующие ручки: список + расшифровка каждого.
+    const listResp = await fetch(
+      `/v1/calls?${new URLSearchParams({ namespace: getNamespace(), limit: String(limit) }).toString()}`,
+      { headers: getHeaders() }
+    );
+    checkAuthResponse(listResp);
+    if (!listResp.ok) throw new Error(`список звонков: сервер вернул ${listResp.status}`);
+    const list = await listResp.json();
+    const items = (list && list.items) || [];
+    const texts = [];
+    for (const c of items) {
+      if (!c.call_id) continue;
+      const tResp = await fetch(
+        `/v1/calls/${c.call_id}/transcript?${new URLSearchParams({ namespace: getNamespace() }).toString()}`,
+        { headers: getHeaders() }
+      );
+      checkAuthResponse(tResp);
+      if (!tResp.ok) continue;
+      const t = await tResp.json();
+      if (t && t.full_text && t.full_text.trim()) texts.push(t.full_text.trim());
     }
+    return texts;
+  }
 
-    const texts = list.map(q => q.text);
+  function clusteringNotice(message, isError) {
+    clusteringContainer.innerHTML = `<div class="alert ${isError ? 'alert-danger' : 'alert-info'} small">${escapeHtml(message)}</div>`;
+  }
+
+  async function runTopicClustering() {
+    const useCalls = document.getElementById('clusterSourceCalls')
+      && document.getElementById('clusterSourceCalls').checked;
+    let texts;
+    if (useCalls) {
+      setText(clusteringContainer, 'Загрузка текстов звонков из журнала...');
+      try {
+        texts = await collectCallTexts(20);
+      } catch (e) {
+        if (!(e && e.auth)) clusteringNotice(`Не удалось собрать тексты звонков: ${e.message || e}`, true);
+        return;
+      }
+      if (texts.length < 2) {
+        clusteringNotice("В журнале нет расшифровок для кластеризации (нужно хотя бы 2 непустых текста).", true);
+        return;
+      }
+    } else {
+      const list = activeVoiceHistory;
+      if (list.length < 3) {
+        clusteringNotice("Для кластеризации нужно хотя бы 3 запроса в истории. Сделайте голосовые запросы через микрофон или загрузите аудиозаписи!", true);
+        return;
+      }
+      texts = list.map(q => q.text).filter((t) => t && t.trim());
+      if (texts.length < 3) {
+        clusteringNotice("В истории нет текстов запросов для кластеризации.", true);
+        return;
+      }
+    }
     btnRunClustering.disabled = true;
     btnRunClustering.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Нейросетевая кластеризация...';
     clusteringContainer.innerHTML = '<div class="text-center text-muted py-4">Кластеризация запросов алгоритмом HDBSCAN / TF-IDF...</div>';

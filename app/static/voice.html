@@ -243,6 +243,16 @@
                   <i class="bi bi-diagram-3-fill me-2 text-info"></i>Анализ «О чём спрашивают»
                 </h5>
                 <div class="small text-muted">AI-кластеризация поисковых запросов (`POST /v1/texts/analyze`)</div>
+                <div class="mt-2" role="radiogroup" aria-label="Источник текстов для кластеризации">
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="clusterSource" id="clusterSourceHistory" checked>
+                    <label class="form-check-label small" for="clusterSourceHistory">История голосовых запросов</label>
+                  </div>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="clusterSource" id="clusterSourceCalls">
+                    <label class="form-check-label small" for="clusterSourceCalls">Тексты звонков из журнала (первые 20)</label>
+                  </div>
+                </div>
               </div>
             </div>
 
