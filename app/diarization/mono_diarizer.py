@@ -539,9 +539,6 @@ class MonoDiarizer:
         if self.seg_session is None or self.campplus_session is None or len(y) == 0:
             return None
 
-        from scipy.cluster.hierarchy import fcluster, linkage
-        from scipy.spatial.distance import pdist
-
         meta = self.seg_session.get_modelmeta().custom_metadata_map or {}
         window_size = int(meta.get("window_size", 160000))
         rf_shift = int(meta.get("receptive_field_shift", 270))
@@ -616,13 +613,25 @@ class MonoDiarizer:
             cluster_ids = [0]
         else:
             X = np.stack(embs, axis=0)
-            dists = pdist(X, metric="cosine")
-            if float(np.max(dists)) < self.min_speaker_distance:
+            n_clust = min(self.num_speakers, len(embs))
+            if n_clust < 2:
                 cluster_ids = [0] * len(embs)
             else:
-                Z = linkage(dists, method="average")
-                n_clust = min(self.num_speakers, len(embs))
-                cluster_ids = (fcluster(Z, t=n_clust, criterion="maxclust") - 1).tolist()
+                # Spherical KMeans on L2-normalized CAM++ embeddings: unlike average-linkage,
+                # a single noisy/outlier chunk cannot steal cluster #2 and collapse both real
+                # speakers into cluster #1 on long real-world calls.
+                km = KMeans(n_clusters=n_clust, random_state=42, n_init=10)
+                raw_ids = km.fit_predict(X)
+                c0 = km.cluster_centers_[0]
+                c1 = km.cluster_centers_[1]
+                n0, n1 = float(np.linalg.norm(c0)), float(np.linalg.norm(c1))
+                centroid_dist = (
+                    1.0 - float(np.dot(c0 / n0, c1 / n1)) if n0 > 1e-8 and n1 > 1e-8 else 0.0
+                )
+                if centroid_dist < self.min_speaker_distance:
+                    cluster_ids = [0] * len(embs)
+                else:
+                    cluster_ids = raw_ids.tolist()
 
         key_to_global = dict(zip(emb_keys, cluster_ids, strict=False))
         n_global = max(cluster_ids) + 1
