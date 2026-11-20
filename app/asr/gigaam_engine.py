@@ -96,10 +96,16 @@ def _split_long_waveform(
     waveform: np.ndarray,
     sr: int = TARGET_SAMPLE_RATE,
     max_sec: float = MAX_UTTERANCE_SEC,
+    split_on_silence: bool = False,
 ) -> list[tuple[float, float, np.ndarray]]:
-    """Splits long audio into <=max_sec speech chunks along low-energy silence valleys."""
+    """Splits audio into <=max_sec speech chunks along low-energy silence valleys.
+
+    When `split_on_silence=True` (dialogue / long-audio mode), utterances separated by
+    pauses >= MIN_SILENCE_SEC are kept as separate segments so mono diarization (CAM++)
+    can cluster speaker turns accurately even for short (<22s) dialogues.
+    """
     total_sec = len(waveform) / sr
-    if total_sec <= max_sec:
+    if not split_on_silence and total_sec <= max_sec:
         return [(0.0, total_sec, waveform)]
 
     frame_len = int(0.02 * sr)  # 20ms frames
@@ -147,17 +153,20 @@ def _split_long_waveform(
             chunks.append((pos / sr, end_pos / sr, waveform[pos:end_pos]))
         return chunks
 
-    # Merge adjacent short spans up to max_frames and split overly long spans at lowest RMS
+    # In silence-split mode keep pause-separated utterances distinct; otherwise merge up to max_frames
     chunks: list[tuple[float, float, np.ndarray]] = []
-    cur_s, cur_e = raw_spans[0]
-    merged: list[tuple[int, int]] = []
-    for s, e in raw_spans[1:]:
-        if e - cur_s <= max_frames:
-            cur_e = e
-        else:
-            merged.append((cur_s, cur_e))
-            cur_s, cur_e = s, e
-    merged.append((cur_s, cur_e))
+    if split_on_silence:
+        merged = raw_spans
+    else:
+        cur_s, cur_e = raw_spans[0]
+        merged = []
+        for s, e in raw_spans[1:]:
+            if e - cur_s <= max_frames:
+                cur_e = e
+            else:
+                merged.append((cur_s, cur_e))
+                cur_s, cur_e = s, e
+        merged.append((cur_s, cur_e))
 
     for s, e in merged:
         s_pad = max(0, s - pad_frames)
@@ -387,7 +396,12 @@ class GigaamEngine:
         if len(waveform) == 0:
             return [], {"language": "ru", "language_probability": 1.0, "duration": 0.0}
 
-        chunks = _split_long_waveform(waveform, TARGET_SAMPLE_RATE, MAX_UTTERANCE_SEC)
+        chunks = _split_long_waveform(
+            waveform,
+            TARGET_SAMPLE_RATE,
+            MAX_UTTERANCE_SEC,
+            split_on_silence=word_timestamps,
+        )
         normalizer = get_normalizer()
         segments: list[dict[str, Any]] = []
 
