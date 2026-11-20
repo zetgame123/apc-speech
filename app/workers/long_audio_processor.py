@@ -6,7 +6,7 @@ import tempfile
 import traceback
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 
 from app.asr.engine import get_asr_engine
 from app.asr.preprocessor import AudioPreprocessor
@@ -18,11 +18,11 @@ from app.core.logging import get_logger, setup_logging
 from app.db.models import Analysis, Call, Job, TranscriptSegment
 from app.db.session import AsyncSessionLocal
 from app.diarization.roles import RoleClassifier
-from app.integrations.bitrix24 import format_timeline_comment, post_to_crm_timeline
-from app.llm.local_adapter import LocalLlamaCppAdapter
+from app.integrations.bitrix24 import format_timeline_comment
+from app.llm.factory import get_llm_adapter
 from app.llm.port import AnalysisContext, validate_analysis_schema
 from app.metrics.speech_metrics import SpeechMetricsCalculator
-from app.pii.masker import PiiMasker
+from app.pii.masker import get_pii_masker
 from app.queue.redis_streams import (
     GROUP_WORKERS,
     STREAM_LONG_JOBS,
@@ -48,6 +48,161 @@ signal.signal(signal.SIGTERM, handle_sigterm)
 signal.signal(signal.SIGINT, handle_sigterm)
 
 
+async def _update_job_progress(
+    job_id: str, progress: int, step: str, status: str | None = None
+) -> None:
+    values: dict = {"progress": progress, "step": step}
+    if status is not None:
+        values["status"] = status
+    async with AsyncSessionLocal() as db:
+        await db.execute(update(Job).where(Job.id == job_id).values(**values))
+        await db.commit()
+
+
+async def _transcribe_chunks(
+    asr_engine,
+    chunks: list[dict],
+    *,
+    job_id: str,
+    target_lang: str,
+    hints_prompt: str | None,
+    step_prefix: str,
+    progress_offset: int,
+    total_chunks: int,
+) -> list[list[dict]]:
+    all_segments = []
+    for idx, chunk in enumerate(chunks):
+        segs, _ = asr_engine.transcribe(
+            chunk["data"],
+            language=target_lang,
+            beam_size=1,
+            initial_prompt=hints_prompt,
+            hotwords=hints_prompt,
+        )
+        all_segments.append(segs)
+        chunk_progress = 25 + int(30 * (progress_offset + idx + 1) / max(1, total_chunks))
+        await _update_job_progress(
+            job_id,
+            chunk_progress,
+            f"{step_prefix}_{idx + 1}_of_{len(chunks)}",
+        )
+    return all_segments
+
+
+def _build_answering_machine_analysis(speech_metrics: dict) -> dict:
+    return {
+        "schema_version": "1.0.0",
+        "prompt_version": "v1.5-ru-types",
+        "summary": "Автоответчик или голосовая почта. Разговор не состоялся.",
+        "call_result": "unclear_spam",
+        "inquiry_type": "spam_irrelevant",
+        "entities": {
+            "cities": [],
+            "formats": [],
+            "quantity": None,
+            "target_period": None,
+            "budget_rub": None,
+            "product_category": None,
+        },
+        "agreements": [],
+        "sentiment": {"client_overall": "neutral", "manager_tone": "indifferent"},
+        "manager_checklist": {
+            "greeting": False,
+            "need_identification": False,
+            "options_offered": False,
+            "next_step_named": False,
+            "contacts_taken": False,
+            "forbidden_words_found": [],
+            "score": 0,
+        },
+        "deterministic_speech_metrics": speech_metrics,
+    }
+
+
+async def _store_masked_segments(
+    call_id: str,
+    namespace: str,
+    final_segments: list[dict],
+) -> str:
+    pii_masker = get_pii_masker()
+    masked_full_lines = []
+    async with AsyncSessionLocal() as db:
+        # Idempotent retry safety: clear partial segments from an earlier failed attempt
+        await db.execute(delete(TranscriptSegment).where(TranscriptSegment.call_id == call_id))
+        for idx, s in enumerate(final_segments):
+            raw_txt = s["text"]
+            masked_txt = pii_masker.mask_text(raw_txt)
+            masked_full_lines.append(f"[{s['speaker_role']}] {masked_txt}")
+
+            db.add(
+                TranscriptSegment(
+                    call_id=call_id,
+                    namespace=namespace,
+                    segment_order=idx + 1,
+                    start_time=s["start"],
+                    end_time=s["end"],
+                    speaker_label=s["speaker_label"],
+                    speaker_role=s["speaker_role"],
+                    text_original=raw_txt,
+                    text_masked=masked_txt,
+                    confidence=s.get("confidence", 1.0),
+                    words_json=s.get("words"),
+                )
+            )
+        await db.commit()
+    return "\n".join(masked_full_lines)
+
+
+async def _dispatch_completion_hooks(
+    *,
+    job_id: str,
+    call_id: str,
+    total_duration: float,
+    is_answering_machine: bool,
+    analysis_result: dict,
+    full_masked_text: str,
+    callback_url: str | None,
+    data: dict,
+) -> None:
+    if callback_url:
+        queue = get_queue()
+        callback_payload = {
+            "job_id": job_id,
+            "call_id": call_id,
+            "status": "succeeded",
+            "duration_sec": total_duration,
+            "is_answering_machine": is_answering_machine,
+            "summary": analysis_result["summary"],
+            "inquiry_type": analysis_result["inquiry_type"],
+        }
+        await queue.enqueue_callback(job_id, callback_url, callback_payload)
+
+    # worker-long lives in the isolated backend network without egress;
+    # dispatch timeline delivery through worker-callback (which has frontend egress).
+    bitrix_meta = (data.get("metadata") or {}).get("bitrix24") or {}
+    if bitrix_meta.get("webhook_url") and bitrix_meta.get("crm_entity_id"):
+        try:
+            comment_text = format_timeline_comment(
+                analysis=analysis_result,
+                full_text=full_masked_text,
+                duration_sec=total_duration,
+            )
+            queue = get_queue()
+            await queue.enqueue_callback(
+                job_id,
+                bitrix_meta["webhook_url"],
+                {
+                    "type": "bitrix24_timeline",
+                    "webhook_url": bitrix_meta["webhook_url"],
+                    "entity_type": bitrix_meta.get("crm_entity_type") or "deal",
+                    "entity_id": bitrix_meta["crm_entity_id"],
+                    "comment": comment_text,
+                },
+            )
+        except Exception as b24_err:
+            logger.error("bitrix24_timeline_enqueue_error", error=str(b24_err))
+
+
 async def process_job(job_id: str, data: dict):
     call_id = data["call_id"]
     namespace = data["namespace"]
@@ -58,19 +213,10 @@ async def process_job(job_id: str, data: dict):
     asr_engine = get_asr_engine()
     role_classifier = RoleClassifier()
     metrics_calc = SpeechMetricsCalculator()
-    pii_masker = PiiMasker()
-    llm_adapter = LocalLlamaCppAdapter()
+    llm_adapter = get_llm_adapter()
 
     logger.info("starting_job_processing", job_id=job_id, call_id=call_id)
-
-    async with AsyncSessionLocal() as db:
-        # Update Job -> running (step: preprocessing)
-        await db.execute(
-            update(Job)
-            .where(Job.id == job_id)
-            .values(status="running", progress=10, step="downloading_audio")
-        )
-        await db.commit()
+    await _update_job_progress(job_id, 10, "downloading_audio", status="running")
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         input_audio_path = os.path.join(tmp_dir, "input_raw_audio")
@@ -169,50 +315,28 @@ async def process_job(job_id: str, data: dict):
             ch1_chunks = chunk_audio(ch1_pcm, chunk_length_sec=600, overlap_sec=15)
             total_chunks = len(ch0_chunks) + len(ch1_chunks)
 
-            all_segs_ch0 = []
-            for idx, chunk in enumerate(ch0_chunks):
-                segs, _ = asr_engine.transcribe(
-                    chunk["data"],
-                    language=target_lang,
-                    beam_size=1,
-                    initial_prompt=hints_prompt,
-                    hotwords=hints_prompt,
-                )
-                all_segs_ch0.append(segs)
-                chunk_progress = 25 + int(30 * (idx + 1) / max(1, total_chunks))
-                async with AsyncSessionLocal() as db:
-                    await db.execute(
-                        update(Job)
-                        .where(Job.id == job_id)
-                        .values(
-                            progress=chunk_progress,
-                            step=f"asr_transcription_ch0_chunk_{idx + 1}_of_{len(ch0_chunks)}",
-                        )
-                    )
-                    await db.commit()
+            all_segs_ch0 = await _transcribe_chunks(
+                asr_engine,
+                ch0_chunks,
+                job_id=job_id,
+                target_lang=target_lang,
+                hints_prompt=hints_prompt,
+                step_prefix="asr_transcription_ch0_chunk",
+                progress_offset=0,
+                total_chunks=total_chunks,
+            )
             segs_ch0 = merge_and_deduplicate(all_segs_ch0, ch0_chunks)
 
-            all_segs_ch1 = []
-            for idx, chunk in enumerate(ch1_chunks):
-                segs, _ = asr_engine.transcribe(
-                    chunk["data"],
-                    language=target_lang,
-                    beam_size=1,
-                    initial_prompt=hints_prompt,
-                    hotwords=hints_prompt,
-                )
-                all_segs_ch1.append(segs)
-                chunk_progress = 25 + int(30 * (len(ch0_chunks) + idx + 1) / max(1, total_chunks))
-                async with AsyncSessionLocal() as db:
-                    await db.execute(
-                        update(Job)
-                        .where(Job.id == job_id)
-                        .values(
-                            progress=chunk_progress,
-                            step=f"asr_transcription_ch1_chunk_{idx + 1}_of_{len(ch1_chunks)}",
-                        )
-                    )
-                    await db.commit()
+            all_segs_ch1 = await _transcribe_chunks(
+                asr_engine,
+                ch1_chunks,
+                job_id=job_id,
+                target_lang=target_lang,
+                hints_prompt=hints_prompt,
+                step_prefix="asr_transcription_ch1_chunk",
+                progress_offset=len(ch0_chunks),
+                total_chunks=total_chunks,
+            )
             segs_ch1 = merge_and_deduplicate(all_segs_ch1, ch1_chunks)
 
             channel_mapping = data.get("metadata", {}).get("channel_mapping")
@@ -238,37 +362,19 @@ async def process_job(job_id: str, data: dict):
             preprocessor.convert_to_pcm16(input_audio_path, mono_pcm)
 
             chunks_info = chunk_audio(mono_pcm, chunk_length_sec=600, overlap_sec=15)
-            all_raw_segments = []
-            total_chunks = len(chunks_info)
-
-            for idx, chunk in enumerate(chunks_info):
-                segs, _ = asr_engine.transcribe(
-                    chunk["data"],
-                    language=target_lang,
-                    beam_size=1,
-                    initial_prompt=hints_prompt,
-                    hotwords=hints_prompt,
-                )
-                all_raw_segments.append(segs)
-                chunk_progress = 25 + int(30 * (idx + 1) / max(1, total_chunks))
-                async with AsyncSessionLocal() as db:
-                    await db.execute(
-                        update(Job)
-                        .where(Job.id == job_id)
-                        .values(
-                            progress=chunk_progress,
-                            step=f"asr_transcription_chunk_{idx + 1}_of_{total_chunks}",
-                        )
-                    )
-                    await db.commit()
-
+            all_raw_segments = await _transcribe_chunks(
+                asr_engine,
+                chunks_info,
+                job_id=job_id,
+                target_lang=target_lang,
+                hints_prompt=hints_prompt,
+                step_prefix="asr_transcription_chunk",
+                progress_offset=0,
+                total_chunks=len(chunks_info),
+            )
             raw_segments = merge_and_deduplicate(all_raw_segments, chunks_info)
 
-            async with AsyncSessionLocal() as db:
-                await db.execute(
-                    update(Job).where(Job.id == job_id).values(progress=55, step="mono_diarization")
-                )
-                await db.commit()
+            await _update_job_progress(job_id, 55, "mono_diarization")
 
             # Use local audio-based diarization
             from app.diarization.mono_diarizer import MonoDiarizer
@@ -278,20 +384,18 @@ async def process_job(job_id: str, data: dict):
                 min_speaker_distance=settings.diarization_min_speaker_distance,
             )
             raw_segments = mono_diarizer.diarize(mono_pcm, raw_segments)
-
             final_segments, role_conf = role_classifier.classify_mono_speakers(raw_segments)
 
             # In local-full profile, semantically refine speaker roles with Qwen 2.5 7B if dialogue
             unique_speakers = {s.get("speaker_label") for s in final_segments}
-            if settings.app_profile == "local-full" and final_segments and len(unique_speakers) > 1:
+            if (
+                settings.app_profile == "local-full"
+                and final_segments
+                and len(unique_speakers) > 1
+                and hasattr(llm_adapter, "refine_speaker_roles")
+            ):
                 try:
-                    async with AsyncSessionLocal() as db:
-                        await db.execute(
-                            update(Job)
-                            .where(Job.id == job_id)
-                            .values(progress=58, step="llm_speaker_refinement")
-                        )
-                        await db.commit()
+                    await _update_job_progress(job_id, 58, "llm_speaker_refinement")
                     final_segments = await llm_adapter.refine_speaker_roles(final_segments)
                 except Exception as e:
                     logger.warning("llm_speaker_refinement_failed_fallback", error=str(e))
@@ -317,66 +421,13 @@ async def process_job(job_id: str, data: dict):
             await db.commit()
 
         # 6. PII Masking & Segment Storage
-        masked_full_lines = []
-        async with AsyncSessionLocal() as db:
-            for idx, s in enumerate(final_segments):
-                raw_txt = s["text"]
-                masked_txt = pii_masker.mask_text(raw_txt)
-                masked_full_lines.append(f"[{s['speaker_role']}] {masked_txt}")
-
-                seg_record = TranscriptSegment(
-                    call_id=call_id,
-                    namespace=namespace,
-                    segment_order=idx + 1,
-                    start_time=s["start"],
-                    end_time=s["end"],
-                    speaker_label=s["speaker_label"],
-                    speaker_role=s["speaker_role"],
-                    text_original=raw_txt,
-                    text_masked=masked_txt,
-                    confidence=s.get("confidence", 1.0),
-                    words_json=s.get("words"),
-                )
-                db.add(seg_record)
-            await db.commit()
-
-        full_masked_text = "\n".join(masked_full_lines)
+        full_masked_text = await _store_masked_segments(call_id, namespace, final_segments)
 
         # 7. Semantic Analysis (Skip LLM if Answering Machine is detected)
-        async with AsyncSessionLocal() as db:
-            await db.execute(
-                update(Job).where(Job.id == job_id).values(progress=80, step="semantic_analysis")
-            )
-            await db.commit()
+        await _update_job_progress(job_id, 80, "semantic_analysis")
 
         if is_answering_machine:
-            analysis_result = {
-                "schema_version": "1.0.0",
-                "prompt_version": "v1.5-ru-types",
-                "summary": "Автоответчик или голосовая почта. Разговор не состоялся.",
-                "call_result": "unclear_spam",
-                "inquiry_type": "spam_irrelevant",
-                "entities": {
-                    "cities": [],
-                    "formats": [],
-                    "quantity": None,
-                    "target_period": None,
-                    "budget_rub": None,
-                    "product_category": None,
-                },
-                "agreements": [],
-                "sentiment": {"client_overall": "neutral", "manager_tone": "indifferent"},
-                "manager_checklist": {
-                    "greeting": False,
-                    "need_identification": False,
-                    "options_offered": False,
-                    "next_step_named": False,
-                    "contacts_taken": False,
-                    "forbidden_words_found": [],
-                    "score": 0,
-                },
-                "deterministic_speech_metrics": speech_metrics,
-            }
+            analysis_result = _build_answering_machine_analysis(speech_metrics)
         else:
             ctx = AnalysisContext(
                 namespace=namespace,
@@ -412,6 +463,8 @@ async def process_job(job_id: str, data: dict):
                 logger.info("job_cancelled_skipping_save", job_id=job_id)
                 return
 
+            # Idempotent retry safety: replace any existing analysis row for this call
+            await db.execute(delete(Analysis).where(Analysis.call_id == call_id))
             analysis_record = Analysis(
                 call_id=call_id,
                 namespace=namespace,
@@ -443,38 +496,17 @@ async def process_job(job_id: str, data: dict):
         except Exception:
             pass
 
-        # 9. Trigger callback if requested
-        if callback_url:
-            queue = get_queue()
-            callback_payload = {
-                "job_id": job_id,
-                "call_id": call_id,
-                "status": "succeeded",
-                "duration_sec": total_duration,
-                "is_answering_machine": is_answering_machine,
-                "summary": analysis_result["summary"],
-                "inquiry_type": analysis_result["inquiry_type"],
-            }
-            await queue.enqueue_callback(job_id, callback_url, callback_payload)
-
-        # 10. Bitrix24 CRM timeline integration
-        bitrix_meta = (data.get("metadata") or {}).get("bitrix24") or {}
-        if bitrix_meta.get("webhook_url") and bitrix_meta.get("crm_entity_id"):
-            try:
-                # Use masked text for Bitrix24 timeline comment to prevent PII leakage
-                comment_text = format_timeline_comment(
-                    analysis=analysis_result,
-                    full_text=full_masked_text,
-                    duration_sec=total_duration,
-                )
-                await post_to_crm_timeline(
-                    webhook_url=bitrix_meta["webhook_url"],
-                    entity_type=bitrix_meta.get("crm_entity_type") or "deal",
-                    entity_id=bitrix_meta["crm_entity_id"],
-                    comment=comment_text,
-                )
-            except Exception as b24_err:
-                logger.error("bitrix24_timeline_post_error", error=str(b24_err))
+        # 9 & 10. Trigger callback & Bitrix24 CRM timeline via worker-callback
+        await _dispatch_completion_hooks(
+            job_id=job_id,
+            call_id=call_id,
+            total_duration=total_duration,
+            is_answering_machine=is_answering_machine,
+            analysis_result=analysis_result,
+            full_masked_text=full_masked_text,
+            callback_url=callback_url,
+            data=data,
+        )
 
 
 async def prewarm(queue=None):
@@ -514,6 +546,10 @@ async def main():
     # Heartbeat готовности — отдельный поток: переживает блокировку
     # event loop длинным синхронным инференсом.
     start_heartbeat_thread("long")
+    # Long audio jobs can run up to max_audio_duration_hours; prevent XAUTOCLAIM from
+    # stealing an actively running job after 3 minutes and causing duplicate processing.
+    claim_idle_ms = max(3_600_000, settings.max_audio_duration_hours * 3600 * 1000)
+
     while is_running:
         try:
             job_item = await queue.read_next_job(
@@ -521,6 +557,7 @@ async def main():
                 group=GROUP_WORKERS,
                 consumer=f"worker_{os.getpid()}",
                 block_ms=3000,
+                claim_min_idle_ms=claim_idle_ms,
             )
             if not job_item:
                 continue

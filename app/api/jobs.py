@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import os
 import tempfile
@@ -19,7 +20,6 @@ from fastapi import (
 )
 from pydantic import BaseModel
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.audio_ingest import ingest_url_job
@@ -33,6 +33,14 @@ from app.core.urls import validate_callback_url
 from app.db.models import AudioObject, Call, Job
 from app.db.session import get_db
 from app.queue.redis_streams import get_queue
+from app.services.job_service import (
+    check_idempotency_conflict,
+    commit_job_records,
+    compute_param_hash,
+    find_existing_job,
+    format_utc_datetime,
+    parse_call_created_at,
+)
 from app.storage.s3 import get_storage
 
 router = APIRouter(prefix="/v1/jobs", tags=["jobs"])
@@ -161,40 +169,23 @@ async def create_job_upload(
 
         # B8: ранняя проверка враждебного/битого файла. ffprobe читает только
         # заголовки (дёшево, timeout 10 c) — мусор отклоняем сразу 400,
-        # не тащим его в S3 и очередь.
-        AudioPreprocessor().probe_audio(tmp_upload_path)
+        # не тащим его в S3 и очередь. Вынесено в thread, чтобы не блокировать event loop.
+        await asyncio.to_thread(AudioPreprocessor().probe_audio, tmp_upload_path)
 
         file_hash = hasher.hexdigest()
-        param_fingerprint = f"{language or 'ru'}:{channel_manager}:{vocabulary_hints}"
-        param_hash = hashlib.sha256(param_fingerprint.encode()).hexdigest()[:8]
+        param_hash = compute_param_hash(language, channel_manager, vocabulary_hints)
         effective_idempotency = idempotency_key or f"hash:{file_hash}:{param_hash}"
 
-        # Check for existing job with same idempotency key (explicit or content-hash derived)
-        # Note on Idempotency semantics:
-        # Strict and immutable: retries always return the exact existing job (including failed) with HTTP 200.
-        stmt = select(Job).where(
-            Job.namespace == namespace, Job.idempotency_key == effective_idempotency
-        )
-        existing_job = (await db.execute(stmt)).scalar_one_or_none()
+        # Strict and immutable idempotency: retries return the exact existing job with HTTP 200.
+        existing_job = await find_existing_job(db, namespace, effective_idempotency)
         if existing_job:
-            if (
-                idempotency_key
-                and existing_job.file_hash_sha256
-                and existing_job.file_hash_sha256 != file_hash
-            ):
-                raise AppError(
-                    error="idempotency_conflict",
-                    message="Idempotency key has already been used with different content",
-                    status_code=409,
-                )
+            check_idempotency_conflict(existing_job, idempotency_key, file_hash)
             response.status_code = status.HTTP_200_OK
             return JobAcceptedResponse(
                 job_id=existing_job.id,
                 status=existing_job.status,
                 status_url=f"/v1/jobs/{existing_job.id}?namespace={namespace}",
-                created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
-                if existing_job.created_at.tzinfo is None
-                else existing_job.created_at,
+                created_at=format_utc_datetime(existing_job.created_at),
             )
 
         # Generate IDs
@@ -202,24 +193,30 @@ async def create_job_upload(
         call_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-        # Upload raw audio to MinIO directly from disk
+        # Upload raw audio to MinIO directly from disk (offloaded from event loop)
         storage = get_storage()
         s3_key = f"{namespace}/{now.strftime('%Y/%m/%d')}/{call_id}/original_{file.filename}"
+        content_type = file.content_type or "application/octet-stream"
         if hasattr(storage, "upload_file"):
-            storage.upload_file(
-                local_path=tmp_upload_path,
-                bucket=settings.s3_bucket_audio,
-                key=s3_key,
-                content_type=file.content_type or "application/octet-stream",
+            await asyncio.to_thread(
+                storage.upload_file,
+                tmp_upload_path,
+                settings.s3_bucket_audio,
+                s3_key,
+                content_type,
             )
         else:
-            with open(tmp_upload_path, "rb") as f:
-                storage.upload_bytes(
-                    bucket=settings.s3_bucket_audio,
-                    key=s3_key,
-                    data=f.read(),
-                    content_type=file.content_type or "application/octet-stream",
-                )
+
+            def _upload_from_disk():
+                with open(tmp_upload_path, "rb") as f:
+                    storage.upload_bytes(
+                        bucket=settings.s3_bucket_audio,
+                        key=s3_key,
+                        data=f.read(),
+                        content_type=content_type,
+                    )
+
+            await asyncio.to_thread(_upload_from_disk)
     finally:
         if os.path.exists(tmp_upload_path):
             try:
@@ -227,7 +224,6 @@ async def create_job_upload(
             except Exception:
                 pass
 
-    # Create Call record
     call = Call(
         id=call_id,
         namespace=namespace,
@@ -239,9 +235,6 @@ async def create_job_upload(
         created_at=now,
         expires_at=now + timedelta(days=settings.retention_text_days),
     )
-    db.add(call)
-
-    # Create AudioObject record
     audio_obj = AudioObject(
         call_id=call_id,
         namespace=namespace,
@@ -252,9 +245,6 @@ async def create_job_upload(
         created_at=now,
         expires_at=now + timedelta(days=settings.retention_audio_days),
     )
-    db.add(audio_obj)
-
-    # Create Job record
     job = Job(
         id=job_id,
         namespace=namespace,
@@ -267,34 +257,25 @@ async def create_job_upload(
         callback_url=callback_url,
         created_at=now,
     )
-    db.add(job)
 
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        existing_job = (await db.execute(stmt)).scalar_one_or_none()
-        if existing_job:
-            if (
-                idempotency_key
-                and existing_job.file_hash_sha256
-                and existing_job.file_hash_sha256 != file_hash
-            ):
-                raise AppError(
-                    error="idempotency_conflict",
-                    message="Idempotency key has already been used with different content",
-                    status_code=409,
-                )
-            response.status_code = status.HTTP_200_OK
-            return JobAcceptedResponse(
-                job_id=existing_job.id,
-                status=existing_job.status,
-                status_url=f"/v1/jobs/{existing_job.id}?namespace={namespace}",
-                created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
-                if existing_job.created_at.tzinfo is None
-                else existing_job.created_at,
-            )
-        raise
+    existing_job = await commit_job_records(
+        db,
+        call=call,
+        job=job,
+        audio_obj=audio_obj,
+        namespace=namespace,
+        idempotency_key=effective_idempotency,
+        response=response,
+        explicit_idempotency_key=idempotency_key,
+        file_hash=file_hash,
+    )
+    if existing_job:
+        return JobAcceptedResponse(
+            job_id=existing_job.id,
+            status=existing_job.status,
+            status_url=f"/v1/jobs/{existing_job.id}?namespace={namespace}",
+            created_at=format_utc_datetime(existing_job.created_at),
+        )
 
     # Enqueue task in Redis Streams
     queue = get_queue()
@@ -341,8 +322,8 @@ async def create_job_by_url(
 
     await ensure_job_capacity(db)
 
-    # SSRF Protection
-    safe_url = validate_ssrf_url(req.url)
+    # SSRF Protection (DNS resolution offloaded from event loop)
+    safe_url = await asyncio.to_thread(validate_ssrf_url, req.url)
     if req.callback_url:
         validate_callback_url(
             req.callback_url, allow_private_net=settings.callback_allow_private_net
@@ -350,50 +331,37 @@ async def create_job_by_url(
 
     meta = req.metadata or {}
     options = req.options or {}
-    param_fingerprint = f"{req.language or 'ru'}:{options.get('channel_manager') or meta.get('channel_manager')}:{options.get('vocabulary_hints') or meta.get('vocabulary_hints')}"
-    param_hash = hashlib.sha256(param_fingerprint.encode()).hexdigest()[:8]
-    effective_idempotency = idempotency_key or f"url:{safe_url}:{param_hash}"
-    stmt = select(Job).where(
-        Job.namespace == req.namespace, Job.idempotency_key == effective_idempotency
+    param_hash = compute_param_hash(
+        req.language,
+        options.get("channel_manager") or meta.get("channel_manager"),
+        options.get("vocabulary_hints") or meta.get("vocabulary_hints"),
     )
-    existing_job = (await db.execute(stmt)).scalar_one_or_none()
+    effective_idempotency = idempotency_key or f"url:{safe_url}:{param_hash}"
+    existing_job = await find_existing_job(db, req.namespace, effective_idempotency)
     if existing_job:
         response.status_code = status.HTTP_200_OK
         return JobAcceptedResponse(
             job_id=existing_job.id,
             status=existing_job.status,
             status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
-            created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
-            if existing_job.created_at.tzinfo is None
-            else existing_job.created_at,
+            created_at=format_utc_datetime(existing_job.created_at),
         )
 
     job_id = str(uuid.uuid4())
     call_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    call_created_at_dt = None
-    if meta.get("call_created_at"):
-        try:
-            call_created_at_dt = datetime.fromisoformat(
-                str(meta["call_created_at"]).replace("Z", "+00:00")
-            ).replace(tzinfo=None)
-        except Exception:
-            call_created_at_dt = None
-
     call = Call(
         id=call_id,
         namespace=req.namespace,
         external_id=meta.get("external_id"),
         direction=meta.get("direction", "inbound"),
-        call_created_at=call_created_at_dt or now,
+        call_created_at=parse_call_created_at(meta.get("call_created_at")) or now,
         manager_id=meta.get("manager_id"),
         client_id=meta.get("client_id"),
         created_at=now,
         expires_at=now + timedelta(days=settings.retention_text_days),
     )
-    db.add(call)
-
     job = Job(
         id=job_id,
         namespace=req.namespace,
@@ -405,24 +373,22 @@ async def create_job_by_url(
         callback_url=req.callback_url,
         created_at=now,
     )
-    db.add(job)
 
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        existing_job = (await db.execute(stmt)).scalar_one_or_none()
-        if existing_job:
-            response.status_code = status.HTTP_200_OK
-            return JobAcceptedResponse(
-                job_id=existing_job.id,
-                status=existing_job.status,
-                status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
-                created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
-                if existing_job.created_at.tzinfo is None
-                else existing_job.created_at,
-            )
-        raise
+    existing_job = await commit_job_records(
+        db,
+        call=call,
+        job=job,
+        namespace=req.namespace,
+        idempotency_key=effective_idempotency,
+        response=response,
+    )
+    if existing_job:
+        return JobAcceptedResponse(
+            job_id=existing_job.id,
+            status=existing_job.status,
+            status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
+            created_at=format_utc_datetime(existing_job.created_at),
+        )
 
     # B9: скачивание — в фоне после немедленного 202 (файл может быть большим,
     # клиент не ждёт). Worker-long без egress получает готовый s3_key.
@@ -478,7 +444,7 @@ async def create_job_by_s3(
 
     bucket = req.s3_bucket or settings.s3_bucket_audio
     storage = get_storage()
-    obj_meta = storage.head_object(bucket, req.s3_key)
+    obj_meta = await asyncio.to_thread(storage.head_object, bucket, req.s3_key)
     if not obj_meta:
         raise AppError(
             "s3_object_not_found",
@@ -489,55 +455,38 @@ async def create_job_by_s3(
     file_size = obj_meta.get("ContentLength", 0)
     meta = req.metadata or {}
     options = req.options or {}
-    param_fingerprint = (
-        f"{req.language or 'ru'}:"
-        f"{options.get('channel_manager') or meta.get('channel_manager')}:"
-        f"{options.get('vocabulary_hints') or meta.get('vocabulary_hints')}"
+    param_hash = compute_param_hash(
+        req.language,
+        options.get("channel_manager") or meta.get("channel_manager"),
+        options.get("vocabulary_hints") or meta.get("vocabulary_hints"),
     )
-    param_hash = hashlib.sha256(param_fingerprint.encode()).hexdigest()[:8]
     effective_idempotency = idempotency_key or f"s3:{bucket}:{req.s3_key}:{param_hash}"
 
-    stmt = select(Job).where(
-        Job.namespace == req.namespace, Job.idempotency_key == effective_idempotency
-    )
-    existing_job = (await db.execute(stmt)).scalar_one_or_none()
+    existing_job = await find_existing_job(db, req.namespace, effective_idempotency)
     if existing_job:
         response.status_code = status.HTTP_200_OK
         return JobAcceptedResponse(
             job_id=existing_job.id,
             status=existing_job.status,
             status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
-            created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
-            if existing_job.created_at.tzinfo is None
-            else existing_job.created_at,
+            created_at=format_utc_datetime(existing_job.created_at),
         )
 
     job_id = str(uuid.uuid4())
     call_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    call_created_at_dt = None
-    if meta.get("call_created_at"):
-        try:
-            call_created_at_dt = datetime.fromisoformat(
-                str(meta["call_created_at"]).replace("Z", "+00:00")
-            ).replace(tzinfo=None)
-        except Exception:
-            call_created_at_dt = None
-
     call = Call(
         id=call_id,
         namespace=req.namespace,
         external_id=meta.get("external_id"),
         direction=meta.get("direction", "inbound"),
-        call_created_at=call_created_at_dt or now,
+        call_created_at=parse_call_created_at(meta.get("call_created_at")) or now,
         manager_id=meta.get("manager_id"),
         client_id=meta.get("client_id"),
         created_at=now,
         expires_at=now + timedelta(days=settings.retention_text_days),
     )
-    db.add(call)
-
     audio_obj = AudioObject(
         call_id=call_id,
         namespace=req.namespace,
@@ -548,8 +497,6 @@ async def create_job_by_s3(
         created_at=now,
         expires_at=now + timedelta(days=settings.retention_audio_days),
     )
-    db.add(audio_obj)
-
     job = Job(
         id=job_id,
         namespace=req.namespace,
@@ -561,24 +508,23 @@ async def create_job_by_s3(
         callback_url=req.callback_url,
         created_at=now,
     )
-    db.add(job)
 
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        existing_job = (await db.execute(stmt)).scalar_one_or_none()
-        if existing_job:
-            response.status_code = status.HTTP_200_OK
-            return JobAcceptedResponse(
-                job_id=existing_job.id,
-                status=existing_job.status,
-                status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
-                created_at=existing_job.created_at.replace(tzinfo=timezone.utc)
-                if existing_job.created_at.tzinfo is None
-                else existing_job.created_at,
-            )
-        raise
+    existing_job = await commit_job_records(
+        db,
+        call=call,
+        job=job,
+        audio_obj=audio_obj,
+        namespace=req.namespace,
+        idempotency_key=effective_idempotency,
+        response=response,
+    )
+    if existing_job:
+        return JobAcceptedResponse(
+            job_id=existing_job.id,
+            status=existing_job.status,
+            status_url=f"/v1/jobs/{existing_job.id}?namespace={req.namespace}",
+            created_at=format_utc_datetime(existing_job.created_at),
+        )
 
     queue = get_queue()
     payload = {
