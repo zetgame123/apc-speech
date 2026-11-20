@@ -137,35 +137,84 @@ async def dispatch_callback(job_id: str, callback_url: str, payload: dict):
     return False
 
 
+async def _handle_callback_item(
+    queue,
+    sem: asyncio.Semaphore,
+    msg_id: str,
+    job_id: str,
+    payload: dict,
+) -> None:
+    try:
+        callback_url = payload.get("callback_url")
+        callback_data = payload.get("payload") or payload
+
+        if isinstance(callback_data, dict) and callback_data.get("type") == "bitrix24_timeline":
+            from app.integrations.bitrix24 import post_to_crm_timeline
+
+            try:
+                await post_to_crm_timeline(
+                    webhook_url=callback_data.get("webhook_url") or callback_url or "",
+                    entity_type=callback_data.get("entity_type") or "deal",
+                    entity_id=callback_data["entity_id"],
+                    comment=callback_data.get("comment") or "",
+                )
+            except Exception as b24_err:
+                logger.error("bitrix24_timeline_post_error", job_id=job_id, error=str(b24_err))
+        elif callback_url:
+            await dispatch_callback(job_id, callback_url, callback_data)
+    finally:
+        try:
+            await queue.ack_job(STREAM_CALLBACKS, GROUP_CALLBACKS, msg_id)
+        except Exception as ack_err:
+            logger.error("callback_ack_error", job_id=job_id, error=str(ack_err))
+        sem.release()
+
+
 async def main():
     enforce_production_callback_policy(get_settings())
     queue = get_queue()
     await queue.ensure_groups()
     logger.info("callback_dispatcher_started", group=GROUP_CALLBACKS)
 
+    # Concurrency limit prevents one slow/failing webhook (up to 21m retry backoff)
+    # from head-of-line blocking all other callbacks.
+    sem = asyncio.Semaphore(16)
+    active_tasks: set[asyncio.Task] = set()
+    # Must exceed sum(RETRY_DELAYS_SEC) (~21m) so XAUTOCLAIM does not duplicate active retries.
+    claim_idle_ms = 1_800_000
+
     while is_running:
+        acquired = False
         try:
+            await sem.acquire()
+            acquired = True
             job_item = await queue.read_next_job(
                 stream=STREAM_CALLBACKS,
                 group=GROUP_CALLBACKS,
                 consumer=f"cb_worker_{os.getpid()}",
                 block_ms=3000,
+                claim_min_idle_ms=claim_idle_ms,
             )
             if not job_item:
+                sem.release()
+                acquired = False
                 continue
 
             msg_id, job_id, payload = job_item
-            callback_url = payload.get("callback_url")
-            callback_data = payload.get("payload") or payload
-
-            if callback_url:
-                await dispatch_callback(job_id, callback_url, callback_data)
-
-            await queue.ack_job(STREAM_CALLBACKS, GROUP_CALLBACKS, msg_id)
+            task = asyncio.create_task(_handle_callback_item(queue, sem, msg_id, job_id, payload))
+            acquired = False  # ownership transferred to _handle_callback_item
+            active_tasks.add(task)
+            task.add_done_callback(active_tasks.discard)
 
         except Exception as loop_err:
+            if acquired:
+                sem.release()
             logger.error("callback_loop_error", error=str(loop_err))
             await asyncio.sleep(1)
+
+    if active_tasks:
+        logger.info("callback_dispatcher_draining_tasks", count=len(active_tasks))
+        await asyncio.gather(*active_tasks, return_exceptions=True)
 
 
 if __name__ == "__main__":

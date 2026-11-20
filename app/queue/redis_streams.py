@@ -74,7 +74,31 @@ class RedisQueue:
         return await client.xadd(
             STREAM_FAST_JOBS,
             {"job_id": request_id, "data": json.dumps(data, ensure_ascii=False)},
+            maxlen=1000,
+            approximate=True,
         )
+
+    async def store_fast_audio(self, request_id: str, audio_b64: str, ttl_sec: int = 15) -> str:
+        """Stores temporary base64 audio outside the Redis Stream with a short TTL."""
+        client = await self.get_client()
+        key = f"voice:audio:{request_id}"
+        await client.set(key, audio_b64, ex=max(5, ttl_sec))
+        return key
+
+    async def pop_fast_audio(self, key: str) -> str | None:
+        """Fetches and immediately deletes temporary fast-voice audio to reclaim Redis RAM."""
+        client = await self.get_client()
+        raw = await client.get(key)
+        if raw is not None:
+            await client.delete(key)
+        return raw
+
+    async def delete_fast_audio(self, key: str) -> None:
+        try:
+            client = await self.get_client()
+            await client.delete(key)
+        except Exception:
+            pass
 
     async def wait_fast_result(self, request_id: str, timeout_sec: float) -> dict[str, Any] | None:
         client = await self.get_client()
@@ -223,6 +247,20 @@ class RedisQueue:
             return await client.get(f"worker:ready:{name}") is not None
         except Exception:
             return False
+
+    async def get_stream_lengths(self) -> dict[str, int]:
+        """Returns current message counts for all Redis Streams (for Prometheus QUEUE_SIZE)."""
+        lengths: dict[str, int] = {}
+        try:
+            client = await self.get_client()
+            for stream in (STREAM_LONG_JOBS, STREAM_FAST_JOBS, STREAM_CALLBACKS, STREAM_DLQ):
+                try:
+                    lengths[stream] = int(await client.xlen(stream))
+                except Exception:
+                    lengths[stream] = 0
+        except Exception:
+            pass
+        return lengths
 
 
 _queue_instance: RedisQueue | None = None

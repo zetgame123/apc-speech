@@ -1,5 +1,6 @@
+import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -108,19 +109,19 @@ async def delete_data(
         query = query.where(Call.client_id == client_id)
     if manager_id:
         query = query.where(Call.manager_id == manager_id)
-    # created_at в БД naive: aware-даты из запроса приводим, иначе Postgres
-    # падает (нельзя сравнивать offset-naive и offset-aware).
+    # created_at в БД naive UTC: aware-даты из запроса приводим к UTC, иначе Postgres
+    # падает или сдвигает фильтр на смещение таймзоны.
     if date_from:
         if date_from.tzinfo is not None:
-            date_from = date_from.replace(tzinfo=None)
+            date_from = date_from.astimezone(timezone.utc).replace(tzinfo=None)
         query = query.where(Call.created_at >= date_from)
     if date_to:
         if date_to.tzinfo is not None:
-            date_to = date_to.replace(tzinfo=None)
+            date_to = date_to.astimezone(timezone.utc).replace(tzinfo=None)
         query = query.where(Call.created_at <= date_to)
     if date_before:
         if date_before.tzinfo is not None:
-            date_before = date_before.replace(tzinfo=None)
+            date_before = date_before.astimezone(timezone.utc).replace(tzinfo=None)
         query = query.where(Call.created_at <= date_before)
 
     calls = (await db.execute(query)).scalars().all()
@@ -192,7 +193,7 @@ async def delete_data(
 
     deleted_files_count = 0
     for a in audio_objs:
-        if storage.delete_object(a.s3_bucket, a.s3_key):
+        if await asyncio.to_thread(storage.delete_object, a.s3_bucket, a.s3_key):
             deleted_files_count += 1
 
     # Cascade delete calls from DB

@@ -1,6 +1,8 @@
+import asyncio
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Header, Query, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,29 +10,29 @@ from app.core.errors import AppError
 from app.core.security import AuthContext, verify_auth
 from app.db.models import Analysis, AudioObject, Call, TranscriptSegment
 from app.db.session import get_db
-from app.pii.masker import PiiMasker
+from app.pii.masker import get_pii_masker
 from app.storage.s3 import get_storage
 
 router = APIRouter(prefix="/v1/calls", tags=["calls"])
-_pii_masker = PiiMasker()
 
 
 def _naive(dt: datetime | None) -> datetime | None:
-    # E6 (2026-10-14): Call.created_at в БД naive; aware-даты из запроса
-    # роняли Postgres (см. чинку в app/api/analytics.py).
+    # Call.created_at хранится в БД как naive UTC; aware-даты сначала приводим к UTC,
+    # иначе запросы с ненулевым смещением (например +03:00) сдвигают фильтр.
     if dt is not None and dt.tzinfo is not None:
-        return dt.replace(tzinfo=None)
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
 
 
 def _sanitize_words(words: list[dict] | None) -> list[dict] | None:
     if not words:
         return words
+    masker = get_pii_masker()
     sanitized = []
     for w in words:
         w_copy = dict(w)
         raw_word = str(w_copy.get("word", ""))
-        masked_word = _pii_masker.mask_text(raw_word)
+        masked_word = masker.mask_text(raw_word)
         if masked_word != raw_word:
             w_copy["word"] = masked_word
         else:
@@ -180,6 +182,7 @@ async def get_call_audio(
     expires_in: int = Query(
         3600, ge=60, le=86400, description="Срок жизни presigned URL в секундах"
     ),
+    range_header: str | None = Header(None, alias="Range"),
     auth: AuthContext = Depends(verify_auth),
     db: AsyncSession = Depends(get_db),
 ):
@@ -196,10 +199,11 @@ async def get_call_audio(
     storage = get_storage()
 
     if presigned:
-        url = storage.generate_presigned_url(
+        url = await asyncio.to_thread(
+            storage.generate_presigned_url,
             audio_obj.s3_bucket,
             audio_obj.s3_key,
-            expires_in_sec=expires_in,
+            expires_in,
         )
         return {
             "call_id": call_id,
@@ -208,13 +212,54 @@ async def get_call_audio(
             "mime_type": audio_obj.mime_type or "audio/wav",
         }
 
+    media_type = audio_obj.mime_type or "audio/wav"
+
+    # Stream audio from S3 in chunks (with HTTP Range support) to avoid OOM in the API container.
+    if hasattr(storage, "get_object_stream"):
+        try:
+            stream_info = await asyncio.to_thread(
+                storage.get_object_stream,
+                audio_obj.s3_bucket,
+                audio_obj.s3_key,
+                range_header,
+            )
+        except Exception as e:
+            raise AppError("audio_fetch_failed", f"Не удалось получить аудиофайл: {str(e)}", 500)
+
+        body = stream_info["body"]
+        resp_headers = {"Accept-Ranges": "bytes"}
+        if stream_info.get("content_length") is not None:
+            resp_headers["Content-Length"] = str(stream_info["content_length"])
+        if stream_info.get("content_range"):
+            resp_headers["Content-Range"] = str(stream_info["content_range"])
+
+        def _iter_s3_chunks():
+            try:
+                for chunk in body.iter_chunks(chunk_size=65536):
+                    if chunk:
+                        yield chunk
+            finally:
+                try:
+                    body.close()
+                except Exception:
+                    pass
+
+        return StreamingResponse(
+            _iter_s3_chunks(),
+            status_code=stream_info.get("status_code", 200),
+            media_type=media_type,
+            headers=resp_headers,
+        )
+
+    # Fallback for simplified mock storages in unit tests
     try:
-        data = storage.download_bytes(audio_obj.s3_bucket, audio_obj.s3_key)
+        data = await asyncio.to_thread(
+            storage.download_bytes, audio_obj.s3_bucket, audio_obj.s3_key
+        )
     except Exception as e:
         raise AppError("audio_fetch_failed", f"Не удалось получить аудиофайл: {str(e)}", 500)
 
-    media_type = audio_obj.mime_type or "audio/wav"
-    return Response(content=data, media_type=media_type)
+    return Response(content=data, media_type=media_type, headers={"Accept-Ranges": "bytes"})
 
 
 @router.get("")
@@ -223,6 +268,7 @@ async def list_calls(
     q: str | None = Query(None, description="Полнотекстовый поиск"),
     manager_id: str | None = Query(None),
     inquiry_type: str | None = Query(None),
+    category: str | None = Query(None, description="Фильтр по категории товара"),
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     cursor: str | None = Query(None),
@@ -246,15 +292,28 @@ async def list_calls(
     if q:
         matching_call_ids = (
             select(TranscriptSegment.call_id)
-            .where(TranscriptSegment.text_masked.ilike(f"%{q}%"))
+            .where(
+                TranscriptSegment.namespace == namespace,
+                TranscriptSegment.text_masked.ilike(f"%{q}%"),
+            )
             .distinct()
         )
         query = query.where(Call.id.in_(matching_call_ids))
 
     # Filter by inquiry type via Analysis table
     if inquiry_type:
-        calls_with_type = select(Analysis.call_id).where(Analysis.inquiry_type == inquiry_type)
+        calls_with_type = select(Analysis.call_id).where(
+            Analysis.namespace == namespace, Analysis.inquiry_type == inquiry_type
+        )
         query = query.where(Call.id.in_(calls_with_type))
+
+    # Filter by product category via Analysis.entities['product_category']
+    if category:
+        calls_with_cat = select(Analysis.call_id).where(
+            Analysis.namespace == namespace,
+            Analysis.entities["product_category"].as_string() == category,
+        )
+        query = query.where(Call.id.in_(calls_with_cat))
 
     if cursor:
         try:

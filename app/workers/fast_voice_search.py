@@ -1,7 +1,9 @@
 import asyncio
+import base64
 import io
 import os
 import signal
+import time
 
 from app.api.voice import VOICE_SEARCH_HOTWORDS, VOICE_SEARCH_INITIAL_PROMPT, is_16k_mono_pcm_wav
 from app.asr.engine import get_voice_search_engine
@@ -61,8 +63,16 @@ def prewarm():
     logger.info("voice_search_engine_prewarmed_ready")
 
 
+def _decode_audio_bytes(payload: dict) -> bytes:
+    if "audio_b64" in payload and payload["audio_b64"]:
+        return base64.b64decode(payload["audio_b64"])
+    if "audio_hex" in payload and payload["audio_hex"]:
+        return bytes.fromhex(payload["audio_hex"])
+    raise ValueError("Missing audio payload in fast voice search job")
+
+
 def transcribe(payload: dict) -> tuple[list[dict], dict]:
-    raw_bytes = bytes.fromhex(payload["audio_hex"])
+    raw_bytes = _decode_audio_bytes(payload)
     cfg = get_settings()
     if cfg.voice_search_engine == "tone":
         from app.asr.tone_engine import get_tone_engine
@@ -128,6 +138,20 @@ async def main():
 
         msg_id, request_id, payload = item
         try:
+            expires_at = payload.get("expires_at")
+            if expires_at is not None and time.time() > float(expires_at):
+                if payload.get("audio_key"):
+                    await queue.delete_fast_audio(payload["audio_key"])
+                logger.info("fast_voice_search_skipped_expired", request_id=request_id)
+                continue
+
+            if payload.get("audio_key") and not payload.get("audio_b64"):
+                audio_b64 = await queue.pop_fast_audio(payload["audio_key"])
+                if not audio_b64:
+                    logger.info("fast_voice_search_audio_expired", request_id=request_id)
+                    continue
+                payload["audio_b64"] = audio_b64
+
             segments, metadata = await asyncio.to_thread(transcribe, payload)
             await queue.publish_fast_result(
                 request_id,

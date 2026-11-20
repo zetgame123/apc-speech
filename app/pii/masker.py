@@ -441,3 +441,13 @@ class PiiMasker:
         if has_unmasked_person_name(text):
             raise ValueError("PII Leak detected: Unmasked person name found in text!")
         return True
+
+
+def get_pii_masker() -> PiiMasker:
+    """Returns a fresh per-request/per-call PiiMasker.
+
+    PiiMasker holds per-call phone/name numbering caches (`phone_cache`, `name_state`),
+    so it must NOT be shared as a global singleton across unrelated requests or tenants.
+    Regexes and Natasha NER are already cached at module level.
+    """
+    return PiiMasker()

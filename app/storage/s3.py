@@ -53,6 +53,20 @@ class S3Storage:
         response = self.s3_client.get_object(Bucket=bucket, Key=key)
         return response["Body"].read()
 
+    def get_object_stream(self, bucket: str, key: str, range_header: str | None = None) -> dict:
+        """Returns S3 StreamingBody and metadata for chunked streaming & HTTP Range support."""
+        kwargs: dict = {"Bucket": bucket, "Key": key}
+        if range_header:
+            kwargs["Range"] = range_header
+        response = self.s3_client.get_object(**kwargs)
+        return {
+            "body": response["Body"],
+            "content_length": response.get("ContentLength"),
+            "content_range": response.get("ContentRange"),
+            "content_type": response.get("ContentType"),
+            "status_code": 206 if range_header and response.get("ContentRange") else 200,
+        }
+
     def download_to_file(self, bucket: str, key: str, local_path: str):
         self.s3_client.download_file(Bucket=bucket, Key=key, Filename=local_path)
 

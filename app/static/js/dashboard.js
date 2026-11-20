@@ -1,5 +1,7 @@
   let currentCallId = null;
   let activeBubble = null;
+  let activeWordSpan = null;
+  let indexedWords = [];
   // Player — общий WebAudio-плеер, см. /static/js/player.js.
   // Лимит аудио для браузерного плеера: blob большего размера роняет вкладку.
   const MAX_BROWSER_AUDIO_BYTES = 300 * 1024 * 1024;
@@ -10,24 +12,41 @@
 
   // getHeaders/getNamespace — общие, см. /static/js/api.js.
 
+  function findActiveWordEntry(currentTime) {
+    // Binary search over indexedWords sorted by start time: O(log N) per playback tick.
+    let lo = 0;
+    let hi = indexedWords.length - 1;
+    let candidate = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (indexedWords[mid].start <= currentTime) {
+        candidate = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (candidate >= 0 && currentTime <= indexedWords[candidate].end) {
+      return indexedWords[candidate];
+    }
+    return null;
+  }
+
   // =========================================================================
   // PLAYER: WebAudio (Player) + подсветка реплик/слов на его тике
   // =========================================================================
   function initPlayer() {
     Player.onTimeUpdate = (currentTime, totalDur) => {
-      // Подсветка текущего слова и текущей реплики.
-      const allWords = document.querySelectorAll('.word-span');
-      let currentBubble = null;
-      allWords.forEach(span => {
-        const s = parseFloat(span.dataset.start);
-        const e = parseFloat(span.dataset.end);
-        if (currentTime >= s && currentTime <= e) {
-          span.classList.add('word-active');
-          currentBubble = span.parentNode ? span.parentNode.parentNode : null;
-        } else {
-          span.classList.remove('word-active');
-        }
-      });
+      // Подсветка текущего слова и текущей реплики без querySelectorAll на каждый тик.
+      const entry = findActiveWordEntry(currentTime);
+      const nextWordSpan = entry ? entry.span : null;
+      const currentBubble = entry ? entry.bubble : null;
+
+      if (nextWordSpan !== activeWordSpan) {
+        if (activeWordSpan) activeWordSpan.classList.remove('word-active');
+        if (nextWordSpan) nextWordSpan.classList.add('word-active');
+        activeWordSpan = nextWordSpan;
+      }
       if (currentBubble !== activeBubble) {
         if (activeBubble) activeBubble.classList.remove('replica-active');
         if (currentBubble && currentBubble.classList) currentBubble.classList.add('replica-active');
@@ -395,6 +414,9 @@
 
   function renderChat(segments) {
     chatBox.innerHTML = '';
+    indexedWords = [];
+    activeWordSpan = null;
+    activeBubble = null;
     renderSpeakerTimeline(segments);
     if (!segments || segments.length === 0) {
       chatBox.innerHTML = '<div class="text-muted text-center mt-5">Пустая расшифровка (речь не обнаружена)</div>';
@@ -447,6 +469,12 @@
             Player.play();
           });
           textContainer.appendChild(span);
+          indexedWords.push({
+            start: Number(w.start),
+            end: Number(w.end),
+            span,
+            bubble,
+          });
         });
       } else {
         textContainer.innerText = seg.text;
@@ -455,6 +483,7 @@
       bubble.appendChild(textContainer);
       chatBox.appendChild(bubble);
     });
+    indexedWords.sort((a, b) => a.start - b.start);
 
     const total = managerTime + clientTime;
     if (total > 0) {

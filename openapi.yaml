@@ -599,6 +599,11 @@ paths:
           schema:
             type: string
         - in: query
+          name: category
+          description: Фильтр по категории товара (entities.product_category)
+          schema:
+            type: string
+        - in: query
           name: date_from
           schema:
             type: string

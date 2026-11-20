@@ -57,9 +57,28 @@ async def verify_integration_auth(
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
-    from app.core.security import authenticate_token
+    from app.core.security import authenticate_token, hash_token, revoke_token
+    from app.queue.redis_streams import get_queue
 
-    return authenticate_token(provided_token)
+    auth_ctx = authenticate_token(provided_token)
+
+    # Enforce shared Redis token revocation just like verify_auth()
+    token_hash = hash_token(provided_token)
+    try:
+        client = await get_queue().get_client()
+        if await client.sismember("revoked_tokens", token_hash):
+            revoke_token(token_hash)
+            raise AppError(
+                error="token_revoked",
+                message="Токен был отозван",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+            )
+    except AppError:
+        raise
+    except Exception:
+        pass
+
+    return auth_ctx
 
 
 @router.post(

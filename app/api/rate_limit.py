@@ -1,15 +1,24 @@
 import hashlib
 import time
 
+import redis.asyncio as aioredis
 from fastapi import Request
 
 from app.core.errors import AppError
 from app.queue.redis_streams import get_queue
 
+_ATOMIC_INCR_EXPIRE_LUA = """
+local current = redis.call('INCR', KEYS[1])
+if current == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return current
+"""
+
 
 async def rate_limit(request: Request):
     """
-    Simple Redis-based rate limiting dependency.
+    Redis-based rate limiting dependency.
     Limits requests per window (default: 5 requests per 10 seconds per IP or token).
     Can be adjusted via RATE_LIMIT_REQUESTS_PER_WINDOW and RATE_LIMIT_WINDOW_SEC.
     Token is hashed to avoid leaking credentials into Redis keys.
@@ -36,9 +45,12 @@ async def rate_limit(request: Request):
     client = await queue.get_client()
 
     try:
-        count = await client.incr(redis_key)
-        if count == 1:
-            await client.expire(redis_key, window_sec * 2)
+        if isinstance(client, aioredis.Redis):
+            count = int(await client.eval(_ATOMIC_INCR_EXPIRE_LUA, 1, redis_key, window_sec * 2))
+        else:
+            count = await client.incr(redis_key)
+            if count == 1:
+                await client.expire(redis_key, window_sec * 2)
 
         if count > max_requests:
             raise AppError(

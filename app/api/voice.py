@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import io
 import json
 import os
@@ -21,13 +22,13 @@ from pydantic import BaseModel
 
 from app.api.rate_limit import rate_limit
 from app.asr.engine import get_voice_search_engine
-from app.asr.normalizer import RussianTextNormalizer
+from app.asr.normalizer import get_normalizer
 from app.asr.preprocessor import AudioPreprocessor
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.logging import get_logger
 from app.core.security import AuthContext, verify_auth
-from app.pii.masker import PiiMasker
+from app.pii.masker import get_pii_masker
 from app.queue.redis_streams import get_queue
 
 router = APIRouter(prefix="/v1/voice", tags=["voice"])
@@ -104,7 +105,7 @@ async def _save_voice_history(
     try:
         queue = get_queue()
         client = await queue.get_client()
-        masked_history_text = PiiMasker().mask_text(full_text)
+        masked_history_text = get_pii_masker().mask_text(full_text)
         history_item = {
             "id": str(uuid.uuid4()),
             "text": masked_history_text,
@@ -226,15 +227,33 @@ async def voice_search(
     if settings.voice_search_use_worker:
         queue = get_queue()
         fast_request_id = str(uuid.uuid4())
+        timeout_sec = settings.voice_search_result_timeout_sec
+        expires_at = time.time() + timeout_sec + 0.5
+        audio_key: str | None = None
         try:
-            await queue.enqueue_fast_job(
-                fast_request_id,
-                {"audio_hex": audio_bytes.hex(), "language": language},
-            )
-            worker_result = await queue.wait_fast_result(
-                fast_request_id, settings.voice_search_result_timeout_sec
-            )
+            audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+            if hasattr(queue, "store_fast_audio"):
+                audio_key = await queue.store_fast_audio(
+                    fast_request_id,
+                    audio_b64,
+                    ttl_sec=max(10, int(timeout_sec) + 5),
+                )
+                fast_payload = {
+                    "audio_key": audio_key,
+                    "language": language,
+                    "expires_at": expires_at,
+                }
+            else:
+                fast_payload = {
+                    "audio_b64": audio_b64,
+                    "language": language,
+                    "expires_at": expires_at,
+                }
+            await queue.enqueue_fast_job(fast_request_id, fast_payload)
+            worker_result = await queue.wait_fast_result(fast_request_id, timeout_sec)
         except Exception as exc:
+            if audio_key and hasattr(queue, "delete_fast_audio"):
+                await queue.delete_fast_audio(audio_key)
             logger.error("voice_search_queue_error", error=type(exc).__name__)
             raise AppError(
                 error="voice_search_unavailable",
@@ -243,6 +262,8 @@ async def voice_search(
                 headers={"Retry-After": "1"},
             ) from exc
         if worker_result is None:
+            if audio_key and hasattr(queue, "delete_fast_audio"):
+                await queue.delete_fast_audio(audio_key)
             raise AppError(
                 error="voice_search_timeout",
                 message="Голосовой поиск не успел обработать запрос в установленный срок",
@@ -303,7 +324,7 @@ async def voice_search(
         )
 
     raw_text = " ".join(s["text"] for s in segments).strip()
-    full_text = RussianTextNormalizer().normalize(raw_text)
+    full_text = get_normalizer().normalize(raw_text)
     avg_conf = sum(s.get("confidence", 0.0) for s in segments) / len(segments) if segments else 0.0
 
     elapsed_sec = time.time() - start_time

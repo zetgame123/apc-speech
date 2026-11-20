@@ -178,28 +178,35 @@ def _sanitize_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, 
 @app.middleware("http")
 async def request_id_and_logging_middleware(request: Request, call_next):
     req_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
+    structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(request_id=req_id)
 
     start_time = time.time()
-    response = await call_next(request)
-    duration = time.time() - start_time
-    response.headers["X-Request-Id"] = req_id
+    try:
+        response = await call_next(request)
+        duration = time.time() - start_time
+        response.headers["X-Request-Id"] = req_id
 
-    # Record Prometheus metrics
-    endpoint = request.url.path
-    HTTP_REQUESTS_TOTAL.labels(
-        method=request.method, endpoint=endpoint, status=response.status_code
-    ).inc()
-    HTTP_REQUEST_DURATION_SECONDS.labels(method=request.method, endpoint=endpoint).observe(duration)
-    logger.info(
-        "request_completed",
-        method=request.method,
-        path=endpoint,
-        status_code=response.status_code,
-        duration_ms=round(duration * 1000, 2),
-    )
+        # Use matched route template to prevent unbounded Prometheus label cardinality from UUIDs
+        route = request.scope.get("route")
+        metric_endpoint = getattr(route, "path", None) or "unmatched"
+        HTTP_REQUESTS_TOTAL.labels(
+            method=request.method, endpoint=metric_endpoint, status=response.status_code
+        ).inc()
+        HTTP_REQUEST_DURATION_SECONDS.labels(
+            method=request.method, endpoint=metric_endpoint
+        ).observe(duration)
+        logger.info(
+            "request_completed",
+            method=request.method,
+            path=metric_endpoint,
+            status_code=response.status_code,
+            duration_ms=round(duration * 1000, 2),
+        )
 
-    return response
+        return response
+    finally:
+        structlog.contextvars.clear_contextvars()
 
 
 @app.exception_handler(AppError)

@@ -6,6 +6,7 @@ from app.core.config import get_settings
 from app.core.cpu import has_avx2
 from app.core.logging import get_logger
 from app.db.session import engine
+from app.metrics.prometheus import QUEUE_SIZE
 from app.queue.redis_streams import get_queue
 from app.storage.s3 import get_storage
 
@@ -99,6 +100,12 @@ async def readiness_check(response: Response):
 
 @router.get("/metrics")
 async def get_metrics():
+    try:
+        lengths = await get_queue().get_stream_lengths()
+        for queue_name, depth in lengths.items():
+            QUEUE_SIZE.labels(queue_name=queue_name).set(depth)
+    except Exception:
+        pass
     return Response(
         content=generate_latest(),
         media_type=CONTENT_TYPE_LATEST,
