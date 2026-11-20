@@ -16,7 +16,7 @@
 8. [Лицензии третьих сторон](#лицензии-третьих-сторон)
 9. [Тесты и проверки](#тесты-и-проверки)
 
-Архитектура и устройство пайплайна — в [`docs/architecture.md`](docs/architecture.md), детали алгоритмов — в коде (`app/asr/`, `app/diarization/`, `app/llm/`, `app/pii/`).
+Архитектура и устройство пайплайна — в [`docs/architecture.md`](docs/architecture.md), правила разработки и инварианты — в [`AGENTS.md`](AGENTS.md), детали алгоритмов — в коде (`app/asr/`, `app/diarization/`, `app/llm/`, `app/pii/`, `app/services/`).
 
 ---
 
@@ -162,19 +162,19 @@ curl -s -X POST "$BASE/v1/voice/search?namespace=outdoor_msk&language=ru" \
 | `GET /v1/jobs/{job_id}` | `read` | Статус (`queued`→`running`→`succeeded`/`failed`), прогресс, `result_url` |
 | `GET /v1/calls/{call_id}/transcript` | `read` (`masked=false` — `admin`) | `json`/`text`/`srt`/`vtt`, `masked=true` по умолчанию |
 | `GET /v1/calls/{call_id}/analysis` | `read` | Разбор по JSON-схеме (версии схемы и промпта в ответе) |
-| `GET /v1/calls/{call_id}/audio` | `read` | Оригинальное аудио |
-| `GET /v1/calls` | `read` | Поиск (`q`, фильтры) + курсорная пагинация (`cursor`/`next_cursor`, кап 100) |
-| `POST /v1/voice/search` | `write` | Синхронный голосовой поиск; аудио только в памяти, не сохраняется |
+| `GET /v1/calls/{call_id}/audio` | `read` | Потоковая отдача аудио (HTTP `Range`/`206`) или `presigned=true` |
+| `GET /v1/calls` | `read` | Поиск (`q`, `category`, `manager_id`, `inquiry_type`, период) + курсорная пагинация (`cursor`/`next_cursor`, кап 100) |
+| `POST /v1/voice/search` | `write` | Синхронный голосовой поиск; аудио в памяти/временном TTL-ключе Redis, не сохраняется |
 | `GET /v1/voice/history` | `read` | История запросов namespace (маскированный текст) |
 | `DELETE /v1/voice/history` | `write` | Очистка истории (`{"status":"cleared",...}`) |
 | `GET /v1/voice/sample-audio` | — | Синтетический wav для проверки тракта |
-| `GET /v1/analytics/summary` | `read` | Сводка: темы, топ сущностей, чек-лист, тренды по неделям |
-| `POST /v1/texts/analyze` | `write` | Кластеризация пачки текстов (TF-IDF + HDBSCAN/KMeans) |
-| `GET /v1/analytics/export_csv` (`/v1/analytics/export.csv`) | `read` | Экспорт CSV |
+| `GET /v1/analytics/summary` | `read` | Сводка (SQL-агрегация + потоковое чтение): темы, топ сущностей, чек-лист, тренды по неделям |
+| `POST /v1/texts/analyze` | `write` | Кластеризация пачки маскированных текстов (TF-IDF + HDBSCAN/KMeans) |
+| `GET /v1/analytics/export_csv` (`/v1/analytics/export.csv`) | `read` | Потоковый экспорт CSV (`StreamingResponse`) |
 | `DELETE /v1/data/delete` | `admin` | Удаление одной ручкой: `call_id` / `participant_id` / период |
-| `POST /v1/integrations/bitrix24/webhook` | `write` | Вебхук телефонии Битрикс24 |
+| `POST /v1/integrations/bitrix24/webhook` | `write` | Вебхук телефонии Битрикс24 (с проверкой отзыва токена в Redis) |
 | `POST /v1/admin/tokens/revoke` / `GET /v1/admin/tokens/revoked` | `admin` | Горячий отзыв токенов через Redis |
-| `GET /health` / `/ready` / `/metrics` | — | Живость / готовность (БД, Redis, S3, прогрев воркеров) / Prometheus |
+| `GET /health` / `/ready` / `/metrics` | — | Живость / готовность (БД, Redis, S3, прогрев воркеров) / Prometheus (включая `apc_queue_size` и шаблоны маршрутов) |
 | `GET /dashboard` | — | Страница звонков: список с фильтрами, плеер, расшифровка, разбор (вход по токену, см. «Дашборд») |
 | `GET /voice` | — | Страница голосового поиска: запрос, история, кластеры, сводка (вход по токену) |
 
@@ -182,7 +182,7 @@ curl -s -X POST "$BASE/v1/voice/search?namespace=outdoor_msk&language=ru" \
 
 Аутентификация: `Authorization: Bearer <токен>`. При `APP_ENV != production` токен сверяется с `DEV_TOKEN` как есть (полный доступ, без namespace). При `APP_ENV=production` — только `API_TOKENS_HASHED`, запись `sha256:scope1+scope2:namespace` (namespace можно опустить), через запятую; чужой namespace — `403`. Выпуск: `TOKEN=$(python3 -c "import secrets; print(secrets.token_hex(32))")`, в `.env` — его sha256, клиенту — исходный токен. Отзыв — ручкой revoke без перезапуска.
 
-Callback: при `callback_url` результат уходит `POST` с заголовками `X-Apc-Timestamp` (unix-секунды) и `X-Apc-Signature: sha256=HMAC("<timestamp>.<body>", CALLBACK_SIGNING_SECRET)`; приёмник старше 5 минут отклоняет; повторы — 5 попыток с задержками 5/15/60/300/900 с, лог — в `callback_logs`; редиректы и приватные сети для доставки блокируются.
+Callback: при `callback_url` результат уходит `POST` с заголовками `X-Apc-Timestamp` (unix-секунды) и `X-Apc-Signature: sha256=HMAC("<timestamp>.<body>", CALLBACK_SIGNING_SECRET)`; приёмник старше 5 минут отклоняет; повторы — 5 попыток с задержками 5/15/60/300/900 с выполняются конкурентно (без блокировки остальных доставок), лог — в `callback_logs`; редиректы и приватные сети для доставки блокируются. Через `worker-callback` также уходит публикация комментариев в таймлайн Битрикс24 (поскольку `worker-long` не имеет выхода в интернет).
 
 ---
 
@@ -219,9 +219,11 @@ Callback: при `callback_url` результат уходит `POST` с заг
   `decodeAudioData`, waveform на canvas, клик — перемотка), пословная подсветка
   и подсветка текущей реплики, клик по реплике перематывает плеер, говорящие и роли;
   длинные записи (дольше 10 мин или больше 32 МБ) воспроизводятся через
-  MEDIA-элемент с blob-URL без декодирования в память — файл при этом
-  загружается целиком в blob (лимит 300 МБ), Range-запросы без изменения API
-  невозможны; подсветка и seek те же;
+  MEDIA-элемент с blob-URL без декодирования в память — на бэкенде
+  `GET /v1/calls/{id}/audio` уже поддерживает потоковую отдачу и HTTP `Range` (`206`),
+  но в браузере `<audio>` не передаёт `Authorization: Bearer`, поэтому вкладка грузит
+  аудио через `fetch` в blob (лимит 300 МБ); пословная подсветка работает за `O(log N)`
+  по предсобранному индексу таймингов без обхода всего DOM на каждый тик;
   разбор по схеме (тип, результат, сущности, договорённости, чек-лист, метрики речи,
   эмоции, версии схемы и промпта).
 - `/voice` — голосовой поиск (запись до 60 с / файл; запись с микрофона
@@ -245,18 +247,18 @@ Callback: при `callback_url` результат уходит `POST` с заг
 `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`.
 
 Ограничения (честно): аудио больше 300 МБ во вкладку не грузится (показываются
-расшифровка и разбор + подсказка забрать файл через API); голосовой поиск на CPU без
-прогретого `worker-fast` отвечает `503` (см. `known-issues` п.6) — страница показывает
-«временно недоступен, повторите через N с» с `Retry-After`, а не ошибку распознавания;
-фильтр по категории товара отсутствует — для него нужен необязательный параметр
-`category` у `GET /v1/calls` (обратно совместимое расширение API, в этом проходе
-не делалось: API frozen).
+расшифровка и разбор + подсказка забрать файл через API, где поддерживаются
+потоковая отдача и `Range`); голосовой поиск на CPU без прогретого `worker-fast`
+отвечает `503` (см. `known-issues` п.6) — страница показывает «временно недоступен,
+повторите через N с» с `Retry-After`, а не ошибку распознавания; фильтр по категории
+товара поддержан в API (`GET /v1/calls?category=...`), но селект в UI дашборда
+пока не выведен.
 
 | Ограничение | Суть | Статус / обход |
 |---|---|---|
-| Фильтр по категории товара | нужен необязательный параметр `category` у `GET /v1/calls` (расширение API + `openapi.yaml`) | не делалось, API frozen |
+| Фильтр по категории товара в UI | параметр `category` добавлен в `GET /v1/calls` и `openapi.yaml` | доступен через API; селект в дашборде не выведен |
 | Микрофон | запись с микрофона (`getUserMedia`) работает только на localhost/HTTPS | вне localhost/HTTPS — только загрузка файла |
-| Проигрывание больше 300 МБ | файл грузится целиком в blob, Range-запросы без изменения API невозможны | остаются расшифровка и разбор + подсказка забрать файл через API |
+| Проигрывание больше 300 МБ в браузере | бэкенд отдаёт `Range`/`206`, но `<audio>` не умеет `Authorization: Bearer`, поэтому вкладка качает в blob | остаются расшифровка и разбор + прямая загрузка через API / `presigned=true` |
 | Safari / Firefox / мобильные | проверен только Chromium desktop; Safari/Firefox и мобильные вьюпорты после изменений не проверены | внутренний инструмент, Chromium — целевой |
 | Звук «ушами» | headless без аудиовыхода: проверены часы/подсветка/DOM по CDP, звук и реальный микрофон — нет | — |
 | `make live-check` | живой CDP-прогон, не входит в `make check` и CI (нужен стенд с моделями и браузер) | без сервера/браузера/токена — SKIP, не провал |
@@ -282,11 +284,11 @@ DASHBOARD_TOKEN=<токен с read+write+admin> make live-check
 
 ## Безопасность и данные
 
-- PII: телефоны, e-mail, карты, паспорта маскируются до сохранения транскрипта, до истории голосового поиска и до отправки во внешний провайдер (перед отправкой — `assert_no_leaked_pii`); в логи и метрики расшифровки и ПДн не пишутся (guard в `make check`).
-- Ретеншн: аудио в MinIO — `RETENTION_AUDIO_DAYS` (14), тексты в Postgres — `RETENTION_TEXT_DAYS` (365); чистит `cleanup-retention`; срочное удаление — `DELETE /v1/data/delete`.
-- Изоляция: всё режется по `namespace`; скоуп-токены чужого namespace получают `403`.
+- PII: телефоны, e-mail, карты, паспорта и ФИО маскируются изолированным на запрос `PiiMasker` до сохранения транскрипта, до истории голосового поиска и до отправки во внешний провайдер (`app/llm/factory.py`, выключен по умолчанию, перед отправкой — `assert_no_leaked_pii`); в логи и метрики расшифровки и ПДн не пишутся (guard в `make check` и CI).
+- Ретеншн и БД: аудио в MinIO — `RETENTION_AUDIO_DAYS` (14), тексты в Postgres — `RETENTION_TEXT_DAYS` (365); чистит `cleanup-retention`; срочное удаление — `DELETE /v1/data/delete`; схема и индексы (включая `pg_trgm` GIN для поиска по стенограммам, миграция `002`) управляются через Alembic.
+- Изоляция и защита: всё режется по `namespace`; скоуп-токены чужого namespace получают `403`; отзыв токенов в Redis проверяется во всех ручках (включая интеграционные вебхуки); rate limiter атомарен (Lua-скрипт в Redis).
 - SSRF: загрузка по ссылке и доставка callback блокируют приватные/loopback/link-local/metadata-адреса, лимиты редиректов и размера, таймауты; входные файлы считаются враждебными (ffprobe-валидация, лимиты, ffmpeg только массивом аргументов).
-- Сети compose: `worker-long`/`worker-fast`/`llm-runtime` — в isolated `backend` без egress (проверено тестом); скачивание по URL делает `api`.
+- Сети compose: `worker-long`/`worker-fast`/`llm-runtime` — в isolated `backend` без egress (проверено тестом); скачивание по URL делает `api`, исходящие callback'и и отправку в таймлайн Битрикс24 — `worker-callback`.
 - Ротация без простоя: токены — перекрытием + мгновенный отзыв; секрет callback — двойным приёмом на платформе; пароли БД/MinIO — с простоем. Процедура — в [`docs/token-rotation.md`](docs/token-rotation.md).
 
 ---
@@ -329,4 +331,4 @@ WaveSurfer.js 7.12.12 (BSD-3-Clause) удалён из вендора 2026-10-15
 make check   # линтер + форматтер + guard-скрипты + проверка OpenAPI + тесты + gitleaks
 ```
 
-`make check` включает: `ruff check`/`format --check`, guard-скрипты (запрет внешних ASR, PII в логах, shell-вызовы, сети воркеров, пины образов), сверку `openapi.yaml` с кодом, полный `pytest` (актуальное число — вывод команды и CI; счётчик здесь не дублируется) и `gitleaks` по истории. Оценочный стенд: `evaluation/` + `scripts/eval_*.py`, `scripts/bench_*.py`, `scripts/sweep_long.py` — отчёт в `docs/eval-report.md`, сырые цифры в `reports/`. Проверка чистой машины: `bash scripts/clean_machine_check.sh` — требует чистое git-дерево, ≥ 15 ГБ на диске, свободный порт (`CLEAN_CHECK_HOST_PORT`, дефолт 8001); клонирует HEAD во временную папку, ставит только по README + `.env.example`, гоняет приёмку и пишет отчёт в `reports/clean_machine_<дата>.md`.
+`make check` и GitHub Actions CI (`.github/workflows/ci.yml`, доступен ручной запуск `workflow_dispatch`) включают: `ruff check`/`format --check`, guard-скрипты (`no_external_asr.py`, `no_pii_in_logs.py`, проверка сетей воркеров и пинов образов), валидацию `openapi.yaml` и JSON Schema, полный `pytest`, оценочный прогон (`evaluation.run`) и `gitleaks` по истории. Оценочный стенд: `evaluation/` + `scripts/eval_*.py`, `scripts/bench_*.py`, `scripts/sweep_long.py` — отчёт в `docs/eval-report.md`, сырые цифры в `reports/`. Проверка чистой машины: `bash scripts/clean_machine_check.sh` — требует чистое git-дерево, ≥ 15 ГБ на диске, свободный порт (`CLEAN_CHECK_HOST_PORT`, дефолт 8001); клонирует HEAD во временную папку, ставит только по README + `.env.example`, гоняет приёмку и пишет отчёт в `reports/clean_machine_<дата>.md`.
