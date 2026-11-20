@@ -73,6 +73,27 @@ def split_segment_into_turns(
     return out
 
 
+_CAMPPLUS_SESSION_CACHE: dict[str, Any] = {}
+
+
+def _get_cached_campplus_session(model_path: str) -> Any | None:
+    """Returns a cached ONNX Runtime InferenceSession for CAM++ with bounded CPU threads."""
+    abs_path = os.path.abspath(model_path)
+    if abs_path in _CAMPPLUS_SESSION_CACHE:
+        return _CAMPPLUS_SESSION_CACHE[abs_path]
+    if ort is None:
+        return None
+    sess_opts = ort.SessionOptions()
+    sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    sess_opts.intra_op_num_threads = 2
+    sess_opts.inter_op_num_threads = 1
+    session = ort.InferenceSession(
+        abs_path, sess_options=sess_opts, providers=["CPUExecutionProvider"]
+    )
+    _CAMPPLUS_SESSION_CACHE[abs_path] = session
+    return session
+
+
 class MonoDiarizer:
     def __init__(
         self,
@@ -94,10 +115,10 @@ class MonoDiarizer:
             for p in candidates:
                 if os.path.exists(p):
                     try:
-                        self.campplus_session = ort.InferenceSession(
-                            p, providers=["CPUExecutionProvider"]
-                        )
-                        logger.info("campplus_model_loaded", path=p)
+                        was_cached = os.path.abspath(p) in _CAMPPLUS_SESSION_CACHE
+                        self.campplus_session = _get_cached_campplus_session(p)
+                        if not was_cached:
+                            logger.info("campplus_model_loaded", path=p)
                         break
                     except Exception as e:
                         logger.warning("campplus_load_failed", path=p, error=str(e))
@@ -376,14 +397,87 @@ class MonoDiarizer:
 
         return best
 
+    def _split_long_turn_on_voice_change(
+        self,
+        turn: dict[str, Any],
+        y: np.ndarray,
+        sr: int = 16000,
+    ) -> list[dict[str, Any]]:
+        """Detects mid-turn speaker changes (interruptions without pause) in long turns (>=6s)
+        using a 1.5s sliding CAM++ window and splits at the nearest word boundary."""
+        words = turn.get("words") or []
+        dur = float(turn.get("end", 0.0)) - float(turn.get("start", 0.0))
+        if self.campplus_session is None or dur < 6.0 or len(words) < 6:
+            return [turn]
+
+        win_sec = 1.5
+        step_sec = 0.75
+        t_start = float(turn["start"])
+        t_end = float(turn["end"])
+
+        win_centers: list[float] = []
+        win_embs: list[np.ndarray] = []
+        cur = t_start
+        while cur + win_sec <= t_end + 0.05:
+            s_idx = max(0, int(cur * sr))
+            e_idx = min(len(y), int((cur + win_sec) * sr))
+            emb = self._extract_campplus(y[s_idx:e_idx], sr)
+            if emb is not None:
+                win_centers.append(cur + win_sec * 0.5)
+                win_embs.append(emb)
+            cur += step_sec
+
+        if len(win_embs) < 3:
+            return [turn]
+
+        change_thresh = max(0.35, self.min_speaker_distance * 1.8)
+        split_times: list[float] = []
+        for idx in range(len(win_embs) - 1):
+            cos_dist = 1.0 - float(np.dot(win_embs[idx], win_embs[idx + 1]))
+            if cos_dist >= change_thresh:
+                cp = 0.5 * (win_centers[idx] + win_centers[idx + 1])
+                if not split_times or (cp - split_times[-1]) >= 2.0:
+                    split_times.append(cp)
+
+        if not split_times:
+            return [turn]
+
+        # Partition words at the split timestamps
+        buckets: list[list[dict[str, Any]]] = [[] for _ in range(len(split_times) + 1)]
+        for w in words:
+            w_mid = 0.5 * (float(w["start"]) + float(w["end"]))
+            b_idx = 0
+            while b_idx < len(split_times) and w_mid >= split_times[b_idx]:
+                b_idx += 1
+            buckets[b_idx].append(w)
+
+        sub_turns: list[dict[str, Any]] = []
+        for grp in buckets:
+            if not grp:
+                continue
+            sub_text = " ".join(w["word"].strip() for w in grp if w["word"].strip())
+            if not sub_text:
+                continue
+            sub_turns.append(
+                {
+                    "start": grp[0]["start"],
+                    "end": grp[-1]["end"],
+                    "text": sub_text,
+                    "words": grp,
+                    "confidence": float(np.mean([w.get("confidence", 0.9) for w in grp])),
+                }
+            )
+        return sub_turns if len(sub_turns) >= 2 else [turn]
+
     def diarize(self, audio_path: str, segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Diarizes mono audio:
-        1. Splits merged Whisper segments into dialogue turns using word pause gaps.
-        2. Extracts neural CAM++ embeddings (or acoustic features fallback).
-        3. Identifies anchor centroids from longest turns.
-        4. Smooths turn assignments via Markov / HMM Viterbi decoding.
-        5. Assigns 'speaker_label' (SPEAKER_0, SPEAKER_1).
+        1. Splits merged ASR segments into dialogue turns using word pause gaps.
+        2. Splits long uninterrupted turns (>=6s) on CAM++ sliding-window voice changes.
+        3. Extracts neural CAM++ embeddings (lazy acoustic fallback only if CAM++ unavailable).
+        4. Identifies anchor centroids from longest turns.
+        5. Smooths turn assignments via Markov / HMM Viterbi decoding.
+        6. Assigns 'speaker_label' (SPEAKER_0, SPEAKER_1).
         """
         if not segments:
             return segments
@@ -400,10 +494,18 @@ class MonoDiarizer:
                 s["speaker_label"] = f"SPEAKER_{i % 2}"
             return turns
 
-        cam_embs = []
-        acoustics = []
-        valid_indices = []
-        min_dur_samples = int(sr * 0.8)
+        # 2. Split long uninterrupted turns (>=6s) if voice changes mid-turn
+        if self.campplus_session is not None:
+            refined_turns: list[dict[str, Any]] = []
+            for t in turns:
+                refined_turns.extend(self._split_long_turn_on_voice_change(t, y, sr))
+            turns = refined_turns
+
+        cam_embs: list[np.ndarray | None] = []
+        valid_chunks: list[np.ndarray] = []
+        valid_indices: list[int] = []
+        min_cam_dur_samples = int(sr * 0.4)
+        min_pad_samples = int(sr * 0.8)
 
         for i, t in enumerate(turns):
             start_sample = max(0, min(int(t["start"] * sr), len(y) - 1))
@@ -412,23 +514,25 @@ class MonoDiarizer:
             if end_sample <= start_sample:
                 continue
 
-            # Context padding for short utterances to ensure robust CAM++ embedding
-            dur_samples = end_sample - start_sample
-            if dur_samples < min_dur_samples:
-                pad_needed = min_dur_samples - dur_samples
-                pad_left = pad_needed // 2
-                pad_right = pad_needed - pad_left
-                chunk_start = max(0, start_sample - pad_left)
-                chunk_end = min(len(y), end_sample + pad_right)
-                chunk = y[chunk_start:chunk_end]
-            else:
-                chunk = y[start_sample:end_sample]
+            raw_chunk = y[start_sample:end_sample]
+            dur_samples = len(raw_chunk)
 
-            c_emb = self._extract_campplus(chunk, sr)
-            a_feat = self._extract_segment_features(chunk, sr)
+            # Avoid bleeding into neighboring speaker's audio on short turns (<0.8s):
+            # - turns <0.4s skip CAM++ and inherit label from neighbors/Viterbi;
+            # - turns 0.4s..0.8s are zero-padded rather than grabbing neighbor speech.
+            if self.campplus_session is not None and dur_samples >= min_cam_dur_samples:
+                if dur_samples < min_pad_samples:
+                    pad_needed = min_pad_samples - dur_samples
+                    pad_left = pad_needed // 2
+                    cam_chunk = np.pad(raw_chunk, (pad_left, pad_needed - pad_left))
+                else:
+                    cam_chunk = raw_chunk
+                c_emb = self._extract_campplus(cam_chunk, sr)
+            else:
+                c_emb = None
 
             cam_embs.append(c_emb)
-            acoustics.append(a_feat)
+            valid_chunks.append(raw_chunk)
             valid_indices.append(i)
 
         if not valid_indices:
@@ -440,6 +544,11 @@ class MonoDiarizer:
         valid_cam_positions = [pos for pos, e in enumerate(cam_embs) if e is not None]
         use_cam = len(valid_cam_positions) >= 2 and (
             len(valid_cam_positions) / len(cam_embs) >= 0.5
+        )
+
+        # Compute heavy librosa/pitch acoustic features LAZILY only when CAM++ is unavailable
+        acoustics = (
+            [] if use_cam else [self._extract_segment_features(chunk, sr) for chunk in valid_chunks]
         )
 
         if use_cam:
