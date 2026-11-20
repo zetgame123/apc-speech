@@ -10,6 +10,7 @@ egress), с той же SSRF-защитой (`download_file_ssrf_safe`). Вор�
 (`pending_download` -> `downloaded`, при обрыве — `failed` + callback).
 """
 
+import asyncio
 import os
 import tempfile
 from datetime import datetime, timedelta, timezone
@@ -58,20 +59,25 @@ async def fetch_url_to_s3(
         size_bytes = os.path.getsize(tmp_path)
         storage = get_storage()
         if hasattr(storage, "upload_file"):
-            storage.upload_file(
-                local_path=tmp_path,
-                bucket=settings.s3_bucket_audio,
-                key=s3_key,
-                content_type="application/octet-stream",
+            await asyncio.to_thread(
+                storage.upload_file,
+                tmp_path,
+                settings.s3_bucket_audio,
+                s3_key,
+                "application/octet-stream",
             )
         else:  # pragma: no cover — запасной путь для несовместимых стореджей
-            with open(tmp_path, "rb") as f:
-                storage.upload_bytes(
-                    bucket=settings.s3_bucket_audio,
-                    key=s3_key,
-                    data=f.read(),
-                    content_type="application/octet-stream",
-                )
+
+            def _upload_bytes():
+                with open(tmp_path, "rb") as f:
+                    storage.upload_bytes(
+                        bucket=settings.s3_bucket_audio,
+                        key=s3_key,
+                        data=f.read(),
+                        content_type="application/octet-stream",
+                    )
+
+            await asyncio.to_thread(_upload_bytes)
         return s3_key, file_hash, size_bytes
     finally:
         if os.path.exists(tmp_path):

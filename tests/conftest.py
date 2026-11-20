@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -20,6 +22,19 @@ TestingSessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind
 async def override_get_db():
     async with TestingSessionLocal() as session:
         yield session
+
+
+@pytest.fixture(autouse=True)
+def default_fast_redis_mock(monkeypatch):
+    """Prevents unit tests from stalling on TCP connect timeouts to localhost:6379 in verify_auth."""
+    fake_redis = MagicMock()
+    fake_redis.sismember = AsyncMock(return_value=False)
+    fake_redis.xlen = AsyncMock(return_value=0)
+    mock_queue = MagicMock()
+    mock_queue.get_client = AsyncMock(return_value=fake_redis)
+    mock_queue.get_stream_lengths = AsyncMock(return_value={})
+    monkeypatch.setattr("app.core.security.get_queue", lambda: mock_queue)
+    monkeypatch.setattr("app.api.health.get_queue", lambda: mock_queue)
 
 
 @pytest.fixture(autouse=True)

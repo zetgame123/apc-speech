@@ -3,9 +3,10 @@ import io
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics.clustering import TopicClusteringEngine
@@ -14,17 +15,16 @@ from app.core.errors import AppError
 from app.core.security import AuthContext, verify_auth
 from app.db.models import Analysis, Call
 from app.db.session import get_db
+from app.pii.masker import get_pii_masker
 
 router = APIRouter(prefix="/v1", tags=["analytics"])
 clustering_engine = TopicClusteringEngine()
 
 
 def _naive(dt: datetime | None) -> datetime | None:
-    # E6 (2026-10-14): Call.created_at в БД naive; aware-даты из запроса
-    # (с Z) роняли Postgres «can't subtract offset-naive and offset-aware»
-    # (500 на summary/export_csv). Та же чинка, что в DELETE /v1/data/delete.
+    # Call.created_at хранится в БД как naive UTC; aware-даты сначала приводим к UTC.
     if dt is not None and dt.tzinfo is not None:
-        return dt.replace(tzinfo=None)
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
 
 
@@ -46,30 +46,51 @@ async def get_analytics_summary(
     auth.require_scope("read")
     auth.verify_namespace(namespace)
 
-    # Base query for calls in namespace. Filtering by inquiry type requires
-    # joining the structured analysis produced for each call.
-    call_query = select(Call).where(Call.namespace == namespace)
-    if inquiry_type:
-        call_query = call_query.join(Analysis, Analysis.call_id == Call.id).where(
-            Analysis.inquiry_type == inquiry_type
-        )
+    filters = [Call.namespace == namespace]
     if manager_id:
-        call_query = call_query.where(Call.manager_id == manager_id)
+        filters.append(Call.manager_id == manager_id)
     if date_from:
-        call_query = call_query.where(Call.created_at >= _naive(date_from))
+        filters.append(Call.created_at >= _naive(date_from))
     if date_to:
-        call_query = call_query.where(Call.created_at <= _naive(date_to))
+        filters.append(Call.created_at <= _naive(date_to))
 
-    calls = (await db.execute(call_query)).scalars().all()
-    total_calls = len(calls)
-    call_ids = [c.id for c in calls]
+    use_inner_join = bool(inquiry_type)
+    if inquiry_type:
+        filters.append(Analysis.inquiry_type == inquiry_type)
 
-    inquiry_dist: dict[str, int] = {}
-    checklist_scores: list[int] = []
+    # 1. SQL COUNT for total_calls (no ORM hydration)
+    count_q = select(func.count(Call.id)).select_from(Call)
+    if use_inner_join:
+        count_q = count_q.join(Analysis, Analysis.call_id == Call.id)
+    total_calls = int((await db.execute(count_q.where(*filters))).scalar_one())
 
-    cities_counter = defaultdict(int)
-    formats_counter = defaultdict(int)
+    # 2. SQL GROUP BY for inquiry_distribution
+    dist_q = (
+        select(
+            func.coalesce(Analysis.inquiry_type, "other").label("itype"),
+            func.count(Analysis.id),
+        )
+        .select_from(Call)
+        .join(Analysis, Analysis.call_id == Call.id)
+        .where(*filters)
+        .group_by("itype")
+    )
+    inquiry_dist: dict[str, int] = {row[0]: int(row[1]) for row in (await db.execute(dist_q)).all()}
 
+    # 3. Single lightweight column-projection query with LEFT/INNER JOIN + yield_per
+    # Avoids loading full Call/Analysis ORM rows and avoids IN (call_ids) parameter limits.
+    proj_q = (
+        select(Call.created_at, Analysis.entities, Analysis.manager_checklist)
+        .select_from(Call)
+        .join(Analysis, Analysis.call_id == Call.id, isouter=not use_inner_join)
+        .where(*filters)
+        .execution_options(yield_per=1000)
+    )
+
+    checklist_score_sum = 0.0
+    checklist_score_count = 0
+    cities_counter: dict[str, int] = defaultdict(int)
+    formats_counter: dict[str, int] = defaultdict(int)
     chk_metrics = {
         "greeting": 0,
         "need_identification": 0,
@@ -78,37 +99,32 @@ async def get_analytics_summary(
         "contacts_taken": 0,
     }
     chk_count = 0
+    weekly_trends_dict: dict[str, int] = defaultdict(int)
 
-    weekly_trends_dict = defaultdict(int)
+    result_stream = await db.stream(proj_q)
+    async for created_at, entities, checklist in result_stream:
+        if created_at:
+            iso = created_at.isocalendar()
+            weekly_trends_dict[f"{iso[0]}-W{iso[1]:02d}"] += 1
 
-    for c in calls:
-        if c.created_at:
-            week_str = f"{c.created_at.isocalendar()[0]}-W{c.created_at.isocalendar()[1]:02d}"
-            weekly_trends_dict[week_str] += 1
+        if entities:
+            for city in entities.get("cities", []):
+                cities_counter[city] += 1
+            for fmt in entities.get("formats", []):
+                formats_counter[fmt] += 1
 
-    if call_ids:
-        analysis_stmt = select(Analysis).where(Analysis.call_id.in_(call_ids))
-        analyses = (await db.execute(analysis_stmt)).scalars().all()
+        if checklist:
+            chk_count += 1
+            if "score" in checklist and checklist["score"] is not None:
+                checklist_score_sum += checklist["score"]
+                checklist_score_count += 1
+            for key in chk_metrics:
+                if checklist.get(key, False):
+                    chk_metrics[key] += 1
 
-        for a in analyses:
-            itype = a.inquiry_type or "other"
-            inquiry_dist[itype] = inquiry_dist.get(itype, 0) + 1
-
-            if a.entities:
-                for city in a.entities.get("cities", []):
-                    cities_counter[city] += 1
-                for fmt in a.entities.get("formats", []):
-                    formats_counter[fmt] += 1
-
-            if a.manager_checklist:
-                chk_count += 1
-                if "score" in a.manager_checklist:
-                    checklist_scores.append(a.manager_checklist["score"])
-                for key in chk_metrics:
-                    if a.manager_checklist.get(key, False):
-                        chk_metrics[key] += 1
-
-    avg_score = round(sum(checklist_scores) / len(checklist_scores), 2) if checklist_scores else 0.0
+    avg_score = (
+        round(checklist_score_sum / checklist_score_count, 2) if checklist_score_count else 0.0
+    )
 
     top_cities = [
         {"name": k, "count": v}
@@ -179,14 +195,10 @@ async def analyze_texts(
                 status_code=413,
             )
 
-    labels, cluster_names, _ = clustering_engine.fit_transform_texts(req.texts)
-
     # C7: кластеризация и весь ответ — только по маскированным текстам.
     # Иначе сырые ПД утекают в подписи кластеров (топ-термы вроде "1111")
     # и в представителей, даже если представители маскировать отдельно.
-    from app.pii.masker import PiiMasker
-
-    masker = PiiMasker()
+    masker = get_pii_masker()
     masked_texts = [masker.mask_text(t) for t in req.texts]
     labels, cluster_names, _ = clustering_engine.fit_transform_texts(masked_texts)
 
@@ -230,7 +242,20 @@ async def export_analytics_csv(
     auth.verify_namespace(namespace)
 
     call_query = (
-        select(Call, Analysis)
+        select(
+            Call.id,
+            Call.external_id,
+            Call.manager_id,
+            Call.client_id,
+            Call.created_at,
+            Call.duration_sec,
+            Call.is_answering_machine,
+            Analysis.inquiry_type,
+            Analysis.call_result,
+            Analysis.summary,
+            Analysis.manager_checklist,
+        )
+        .select_from(Call)
         .join(Analysis, Call.id == Analysis.call_id, isouter=True)
         .where(Call.namespace == namespace)
     )
@@ -243,50 +268,67 @@ async def export_analytics_csv(
     if date_to:
         call_query = call_query.where(Call.created_at <= _naive(date_to))
 
-    results = (await db.execute(call_query)).all()
+    call_query = call_query.execution_options(yield_per=1000)
 
-    output = io.StringIO()
-    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
-    writer.writerow(
-        [
-            "call_id",
-            "external_id",
-            "manager_id",
-            "client_id",
-            "created_at",
-            "duration_sec",
-            "is_answering_machine",
-            "inquiry_type",
-            "call_result",
-            "summary",
-            "checklist_score",
-        ]
-    )
-
-    for call, analysis in results:
-        created_str = (
-            call.created_at.replace(tzinfo=timezone.utc).isoformat() if call.created_at else ""
-        )
+    async def _csv_stream():
+        buf = io.StringIO()
+        writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
         writer.writerow(
             [
-                call.id,
-                call.external_id or "",
-                call.manager_id or "",
-                call.client_id or "",
-                created_str,
-                call.duration_sec or 0,
-                "Yes" if call.is_answering_machine else "No",
-                analysis.inquiry_type if analysis else "",
-                analysis.call_result if analysis else "",
-                analysis.summary if analysis else "",
-                analysis.manager_checklist.get("score", "")
-                if analysis and analysis.manager_checklist
-                else "",
+                "call_id",
+                "external_id",
+                "manager_id",
+                "client_id",
+                "created_at",
+                "duration_sec",
+                "is_answering_machine",
+                "inquiry_type",
+                "call_result",
+                "summary",
+                "checklist_score",
             ]
         )
+        yield buf.getvalue()
+        buf.seek(0)
+        buf.truncate(0)
 
-    return Response(
-        content=output.getvalue(),
+        stream = await db.stream(call_query)
+        async for row in stream:
+            (
+                call_id,
+                external_id,
+                mgr_id,
+                cli_id,
+                created_at,
+                duration_sec,
+                is_am,
+                a_inquiry,
+                a_result,
+                a_summary,
+                a_checklist,
+            ) = row
+            created_str = created_at.replace(tzinfo=timezone.utc).isoformat() if created_at else ""
+            writer.writerow(
+                [
+                    call_id,
+                    external_id or "",
+                    mgr_id or "",
+                    cli_id or "",
+                    created_str,
+                    duration_sec or 0,
+                    "Yes" if is_am else "No",
+                    a_inquiry or "",
+                    a_result or "",
+                    a_summary or "",
+                    a_checklist.get("score", "") if a_checklist else "",
+                ]
+            )
+            yield buf.getvalue()
+            buf.seek(0)
+            buf.truncate(0)
+
+    return StreamingResponse(
+        _csv_stream(),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="export.csv"'},
     )

@@ -99,7 +99,10 @@ class TranscriptSegment(Base):
 
     call = relationship("Call", back_populates="segments")
 
-    __table_args__ = (Index("idx_segments_call_order", "call_id", "segment_order"),)
+    __table_args__ = (
+        Index("idx_segments_call_order", "call_id", "segment_order"),
+        Index("idx_segments_ns_call", "namespace", "call_id"),
+    )
 
 
 class Analysis(Base):
@@ -128,6 +131,8 @@ class Analysis(Base):
 
     call = relationship("Call", back_populates="analysis")
 
+    __table_args__ = (Index("idx_analyses_ns_inquiry", "namespace", "inquiry_type"),)
+
 
 class Job(Base):
     __tablename__ = "jobs"
@@ -149,6 +154,7 @@ class Job(Base):
 
     __table_args__ = (
         Index("idx_jobs_ns_idempotency", "namespace", "idempotency_key", unique=True),
+        Index("idx_jobs_status_step_created", "status", "step", "created_at"),
     )
 
 

@@ -1,4 +1,5 @@
 import re
+from functools import lru_cache
 
 # Word to digit mapping for Russian numbers
 NUMBER_WORDS = {
@@ -188,6 +189,22 @@ class RussianTextNormalizer:
             (
                 re.compile(r"\bсупер\s*[-]?\s*сайт(ы|ов|а|ам|ами|ах)?\b", re.IGNORECASE),
                 lambda m: "суперсайт" + (m.group(1) or ""),
+            ),
+            # Contextual acoustic fixes for T-one/Whisper domain confusions («считы/счета» -> «щиты»
+            # strictly next to outdoor-ad anchors so billing phrases like «оплатить счёт» are untouched).
+            (
+                re.compile(
+                    r"\b(рекламн\w+|свободн\w+)\s+сч[иеё]т(ы|ов|ам|ами|ах|а|у|ом|е)?\b",
+                    re.IGNORECASE,
+                ),
+                lambda m: f"{m.group(1)} щит{m.group(2) or ''}",
+            ),
+            (
+                re.compile(
+                    r"\bсч[иеё]т(ы|ов|ам|ами|ах|а)?(\s+(?:3×6|6×3|5×12|3×12|4×12))\b",
+                    re.IGNORECASE,
+                ),
+                lambda m: f"щит{m.group(1) or ''}{m.group(2)}",
             ),
             (
                 re.compile(r"\bмедиа\s*[-]?\s*фасад(ы|ов|а|ам|ами|ах)?\b", re.IGNORECASE),
@@ -1094,3 +1111,9 @@ class RussianTextNormalizer:
         res = re.sub(r"\s+", " ", res).strip()
 
         return res
+
+
+@lru_cache(maxsize=1)
+def get_normalizer() -> RussianTextNormalizer:
+    """Returns a cached singleton RussianTextNormalizer to avoid recompiling ~900 regexes per call."""
+    return RussianTextNormalizer()

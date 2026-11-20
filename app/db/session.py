@@ -1,6 +1,5 @@
 from collections.abc import AsyncGenerator
 
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
 
@@ -39,16 +38,11 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db():
-    async with engine.begin() as conn:
-        # Create pgvector extension if available
-        try:
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-        except Exception:
-            pass
-        await conn.run_sync(Base.metadata.create_all)
-        try:
-            await conn.execute(
-                text("ALTER TABLE calls ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;")
-            )
-        except Exception:
-            pass
+    """Initializes schema for local SQLite runs.
+
+    PostgreSQL schema and indexes are managed exclusively by Alembic migrations
+    (`alembic upgrade head`).
+    """
+    if engine.dialect.name == "sqlite":
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
