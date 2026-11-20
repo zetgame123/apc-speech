@@ -56,7 +56,7 @@ MANAGER_SPEECH_PATTERNS = [
     re.compile(r"\bподготовлю\s+расчет\b", re.IGNORECASE),
     re.compile(r"\bназовите\s+почту\b", re.IGNORECASE),
     re.compile(r"\bсвободна\s+сторона\b", re.IGNORECASE),
-    re.compile(r"\bстоимость\s+.*?рубл", re.IGNORECASE),
+    re.compile(r"\bстоимость\s+.*?руб(?:л|\.)", re.IGNORECASE),
     # Closing & thanks
     re.compile(r"\bвы\s+успешно\s+зарегистрированы\b", re.IGNORECASE),
     re.compile(r"\bспасибо\s+за\s+(уделенное|предоставленное)\s+время\b", re.IGNORECASE),
@@ -68,7 +68,8 @@ CLIENT_PATTERNS = [
         r"\b(сколько\s+стоит|какая\s+стоимость|какие\s+цены|какова\s+цена)\b", re.IGNORECASE
     ),
     re.compile(
-        r"\bподскажите\s+(пожалуйста\s+)?(стоимость|цену|цены|прайс|тариф)\b", re.IGNORECASE
+        r"\bподскажите[\s,]+(?:пожалуйста[\s,]+)?(стоимость|цену|цены|прайс|тариф)\b",
+        re.IGNORECASE,
     ),
     re.compile(r"\bподскажите\s+по\s+ценам\b", re.IGNORECASE),
     re.compile(r"\bнас\s+интересует\b", re.IGNORECASE),
