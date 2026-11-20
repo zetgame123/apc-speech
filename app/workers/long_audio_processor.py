@@ -524,6 +524,20 @@ async def prewarm(queue=None):
             word_timestamps=False,
         )
         logger.info("long_asr_warmup_run_completed")
+        # Прогреваем CAM++ (диаризация) и PII-маскер до выставления /ready,
+        # чтобы самый первый звонок не тратил 10-50 с на холодную загрузку весов и словарей.
+        try:
+            from app.diarization.mono_diarizer import MonoDiarizer
+
+            MonoDiarizer()
+            logger.info("diarizer_warmup_completed")
+        except Exception as diar_err:
+            logger.warning("diarizer_warmup_skipped", error=str(diar_err))
+        try:
+            get_pii_masker().mask_text("Тест прогрева")
+            logger.info("pii_masker_warmup_completed")
+        except Exception as pii_err:
+            logger.warning("pii_masker_warmup_skipped", error=str(pii_err))
         await mark_worker_ready(queue or get_queue(), "long")
     except Exception as e:
         # Без прогрева воркер стартует как раньше (ленивая загрузка в задании),

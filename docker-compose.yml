@@ -19,8 +19,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.3'
-          memory: 160M
+          cpus: '0.15'
+          memory: 256M
 
   redis:
     image: redis:7.2-alpine
@@ -39,7 +39,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.2'
+          cpus: '0.05'
           memory: 160M
 
   minio:
@@ -68,7 +68,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.2'
+          cpus: '0.1'
           memory: 272M
 
   alembic-migrate:
@@ -209,8 +209,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.4'
-          memory: 384M
+          cpus: '0.3'
+          memory: 512M
 
   worker-long:
     build:
@@ -244,7 +244,7 @@ services:
       - ASR_COMPUTE_TYPE=int8
       - GIGAAM_MODEL_DIR=${GIGAAM_MODEL_DIR:-./models/gigaam-v3-e2e-ctc}
       - GIGAAM_QUANTIZATION=${GIGAAM_QUANTIZATION:-int8}
-      - GIGAAM_THREADS=${GIGAAM_THREADS:-2}
+      - GIGAAM_THREADS=${GIGAAM_THREADS:-1}
       - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-qwen3-4b}
       # BLAS-потоки поджаты под CPU-квоту контейнера (numpy/librosa/onnxruntime
       # иначе плодят потоки на все ядра хоста). Потоки самого CTranslate2
@@ -270,8 +270,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.6'
-          memory: 2112M
+          cpus: '0.8'
+          memory: 1280M
 
   worker-callback:
     build:
@@ -308,7 +308,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.2'
+          cpus: '0.05'
           memory: 128M
 
   worker-fast:
@@ -358,8 +358,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 576M
+          cpus: '1.0'
+          memory: 640M
 
   cleanup-retention:
     build:
@@ -392,8 +392,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.1'
-          memory: 80M
+          cpus: '0.05'
+          memory: 160M
 
   # Активируется только для профиля local-full: docker compose --profile local-full up
   # Профиль по brief.md: 8 vCPU / 32 ГБ RAM или GPU >= 12 ГБ.
@@ -421,7 +421,7 @@ services:
     volumes:
       - ./models:/models:ro
     ports:
-      - "8080:8080"
+      - "${LLM_HOST_PORT:-8081}:8080"
     # Только backend (internal): к LLM обращаются api/worker-long из backend. См. B9.
     networks:
       - backend

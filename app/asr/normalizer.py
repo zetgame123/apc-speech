@@ -1118,6 +1118,84 @@ class RussianTextNormalizer:
 
         return res
 
+    @staticmethod
+    def _edit_distance(a: str, b: str, max_dist: int = 2) -> int:
+        if abs(len(a) - len(b)) > max_dist:
+            return max_dist + 1
+        prev = list(range(len(b) + 1))
+        for i, ca in enumerate(a, 1):
+            cur = [i] + [0] * len(b)
+            row_min = i
+            for j, cb in enumerate(b, 1):
+                cost = 0 if ca == cb else 1
+                val = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+                cur[j] = val
+                if val < row_min:
+                    row_min = val
+            if row_min > max_dist:
+                return max_dist + 1
+            prev = cur
+        return prev[-1]
+
+    def apply_vocabulary_hints(
+        self, text: str, hints: str | list[str] | tuple[str, ...] | None
+    ) -> str:
+        """Post-ASR fuzzy glossary correction for CTC engines without decoder hotwords.
+
+        Replaces words that closely match a client-provided domain term (same first letter,
+        length >= 5, Levenshtein distance <= 1 for len 5..7 or <= 2 for len >= 8) while
+        preserving punctuation and capitalization.
+        """
+        if not text or not hints:
+            return text
+
+        raw_terms = (
+            re.split(r"[,;\n]+", hints) if isinstance(hints, str) else [str(h) for h in hints]
+        )
+        terms: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for t in raw_terms:
+            clean = t.strip()
+            if not clean or " " in clean or len(clean) < 5:
+                continue
+            low = clean.lower().replace("ё", "е")
+            if low not in seen:
+                seen.add(low)
+                terms.append((low, clean))
+
+        if not terms:
+            return text
+
+        word_re = re.compile(r"[А-Яа-яЁёA-Za-z0-9-]+")
+
+        def _replace(match: re.Match[str]) -> str:
+            token = match.group(0)
+            if len(token) < 5:
+                return token
+            low = token.lower().replace("ё", "е")
+            if low in seen:
+                return token
+            best_term: str | None = None
+            best_dist = 99
+            for t_low, t_orig in terms:
+                if low[0] != t_low[0]:
+                    continue
+                max_d = 1 if len(t_low) < 8 else 2
+                d = self._edit_distance(low, t_low, max_dist=max_d)
+                if d <= max_d and d < best_dist:
+                    # Guard against replacing common short/unrelated words
+                    sim = 1.0 - d / max(len(low), len(t_low))
+                    if sim >= 0.78:
+                        best_dist = d
+                        best_term = t_orig
+            if best_term is None:
+                return token
+            if token[0].isupper() and not best_term[0].isupper():
+                return best_term[0].upper() + best_term[1:]
+            return best_term
+
+        return word_re.sub(_replace, text)
+
 
 @lru_cache(maxsize=1)
 def get_normalizer() -> RussianTextNormalizer:

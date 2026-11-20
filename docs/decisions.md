@@ -408,3 +408,21 @@
   стало старт ~0,4 с и **+13 МБ**; перемотка и подсветка работают в обоих путях.
   В CSP возвращён `blob:` **только** в `media-src` (blob создаёт сама страница
   из аудио с авторизацией; чужой подсунуть нельзя — blob-URLs привязаны к origin).
+
+## ADR-026: Переход на GigaAM-v3 E2E CTC INT8, Qwen3-4B Q4_K_M, апгрейд MonoDiarizer и ребаланс `small` (2026-11-20)
+
+* **Статус**: Принято
+* **Контекст**:
+  1. Связка `whisper-podlodka-turbo` (длинное аудио, ~2 ГБ RAM, RTF ~0.95) + `T-one` (голосовой поиск, p95 ~2.0 с) + `Qwen2.5-7B-Instruct` (~5.2 ГБ RAM) упиралась в бюджеты CPU/RAM профиля `small` (2 vCPU / 4 ГБ) и давала слабый запас по скорости.
+  2. `MonoDiarizer` пересоздавал ONNX-сессию `campplus.onnx` на каждый звонок и безусловно вычислял акустические признаки даже при успешном CAM++ (23.5 с на диаризацию 70-секундного диалога).
+  3. При первичном замере в Docker выявились 3 проблемы: `worker-fast` на `0.5 CPU` отдавал 80% `503` на 10-секундных фразах; `GIGAAM_THREADS=2` на квоте `≤ 1.0 CPU` давал +27–39% тормозов из-за thread contention; `cleanup-retention` сидел на 94% лимита (`75 / 80 MiB`).
+* **Решение**:
+  1. **Единый локальный ASR — `GigaAM-v3 E2E CTC INT8 ONNX`** (SaluteDevices, лицензия **MIT**; рантайм `onnx-asr` **MIT** + `onnxruntime` **MIT**, вес ~215 МБ): встроенные пунктуация, регистр и ITN; разбиение длинного аудио по паузам (RMS VAD); пословные таймкоды из SentencePiece; пост-корректор терминов `apply_vocabulary_hints` для `vocabulary_hints` (`brief.md` п.2). Прежние движки `whisper` и `tone` сохранены за env-переключателями `ASR_ENGINE` / `VOICE_SEARCH_ENGINE`.
+  2. **Локальная LLM для `local-full` — `Qwen3-4B-Q4_K_M.gguf`** (Alibaba Qwen, лицензия **Apache 2.0**, вес ~2.5 ГБ, non-thinking режим `enable_thinking: False` + санитизация `<think>`): укладывается в **24–28 с** на CPU (`llama.cpp`, 6 потоков, SLA ≤ 30 с) при **2.47 GiB RAM** и 100% валидном JSON по схеме. Совместимость с классом 7–14B (`qwen2.5-7b-instruct` / `qwen3-8b`) полностью сохранена через `LOCAL_LLM_MODEL` и автодетект файла в `docker-compose.yml`.
+  3. **Апгрейд `MonoDiarizer`**: модульный кэш ONNX-сессии CAM++ (`_get_campplus_session`), ограниченные потоки, ленивый акустический fallback (не вызывается, когда CAM++ отработал), zero-padding вместо захвата соседнего спикера на коротких репликах (0.4–0.8 с) и sliding-window сплит длинных сегментов (≥ 6 с). Прогрев CAM++ и `PiiMasker` вынесен в `worker-long.prewarm()`.
+  4. **Ребаланс `small` в `docker-compose.yml`** (сумма RAM `3408 MiB ≤ 4096 MiB`, `GIGAAM_THREADS=1` на обоих воркерах): `worker-fast` `1.0 CPU / 640M`, `worker-long` `0.8 CPU / 1280M`, `api` `0.3 CPU / 512M`, `cleanup-retention` `0.05 CPU / 160M`, `postgres` `0.15 CPU / 256M`, `minio` `0.1 CPU / 272M`, `redis` `0.05 CPU / 160M`, `worker-callback` `0.05 CPU / 128M`. Порт хоста `llm-runtime` параметризован (`${LLM_HOST_PORT:-8081}:8080`).
+* **Последствия** (подтверждено замерами на `AMD Ryzen 7 8845HS`, AVX2, Docker Desktop):
+  - `POST /v1/voice/search` (10 с): **962 мс** med / **1085 мс** p95 (`10/10 200 OK`, 0% `503`).
+  - `worker-long` E2E (5.1 мин, 0.8 CPU): **41.7 с** (RTF **0.136** — в ~7× быстрее `podlodka-turbo`, в 9.9× быстрее `faster-whisper small` на том же контейнере).
+  - `MonoDiarizer` (warm): **7.8–9.0×** ускорение (`5.2 с → 0.58 с` на 11 с; `23.5 с → 3.0 с` на 70 с).
+  - RAM всего стека `small` под нагрузкой: **1.62 GiB** (было ~3.0+ GiB), ни один контейнер не превышает 60% лимита.

@@ -105,3 +105,17 @@ def test_qwen3_non_thinking_kwargs_and_tag_stripping():
 
     raw = '<think>\nreasoning here\n</think>\n{"inquiry_type": "pricing"}'
     assert _strip_think_tags(raw) == '{"inquiry_type": "pricing"}'
+
+
+def test_apply_vocabulary_hints():
+    from app.asr.normalizer import get_normalizer
+
+    norm = get_normalizer()
+    hints = "суперсайт, ситиборд, призматрон, медиафасад, Балашиха"
+    text = "Нужен суперсайк и презматрон в Балашихе, также ситиборт."
+    fixed = norm.apply_vocabulary_hints(text, hints)
+    assert "суперсайт" in fixed
+    assert "призматрон" in fixed
+    assert "ситиборд" in fixed
+    # Unrelated words must remain untouched
+    assert "Нужен" in fixed and "также" in fixed

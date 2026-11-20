@@ -346,6 +346,7 @@ class GigaamEngine:
             split_on_silence=word_timestamps,
         )
         normalizer = get_normalizer()
+        hints = kwargs.get("hotwords") or kwargs.get("initial_prompt")
         segments: list[dict[str, Any]] = []
 
         for chunk_start, chunk_end, chunk_wav in chunks:
@@ -357,6 +358,8 @@ class GigaamEngine:
                 continue
 
             clean_text = normalizer.normalize(raw_text)
+            if hints:
+                clean_text = normalizer.apply_vocabulary_hints(clean_text, hints)
             words, conf = _tokens_to_words(
                 res.tokens,
                 res.timestamps,

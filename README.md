@@ -49,11 +49,11 @@ CALLBACK_SIGNING_SECRET=<минимум-32-символа>  # HMAC-подпис�
 ```bash
 # small (без LLM):
 APP_PROFILE=small docker compose up -d --build
-# local-full (с Qwen 2.5 7B через llama.cpp):
+# local-full (с Qwen3-4B через llama.cpp):
 APP_PROFILE=local-full docker compose --profile local-full up -d --build
 ```
 
-Модели качаются сами одноразовыми джобами `model-downloader` (~2,8 ГБ) и `model-downloader-llm` (~4,4 ГБ, только `local-full`); повторные запуски ничего не перекачивают. После правок `.env` контейнеры надо пересоздать (`up -d --force-recreate ...`), простой `restart` переменные не подхватит. Не используйте `down -v` на рабочем стеке — удалит volumes с БД, очередями и аудио.
+Модели качаются сами одноразовыми джобами `model-downloader` (~245 МБ: GigaAM-v3 INT8 + CAM++) и `model-downloader-llm` (~2,5 ГБ: Qwen3-4B-Q4_K_M, только `local-full`); повторные запуски ничего не перекачивают. После правок `.env` контейнеры надо пересоздать (`up -d --force-recreate ...`), простой `restart` переменные не подхватит. Не используйте `down -v` на рабочем стеке — удалит volumes с БД, очередями и аудио.
 
 ### Проверка и первый запрос
 
@@ -95,8 +95,8 @@ curl -s -X POST "$BASE/v1/voice/search?namespace=outdoor_msk&language=ru" \
 | Параметр | `small` (дефолт) | `local-full` |
 |---|---|---|
 | Железо | 2 vCPU / 4 ГБ, без GPU | 8 vCPU / 32 ГБ или GPU от 12 ГБ |
-| ASR / диаризация | faster-whisper int8 + CAM++ локально | то же |
-| Разбор звонка и роли | rule-based адаптер (YAML-таксономия) | Qwen 2.5 7B через `llm-runtime` |
+| ASR / диаризация | GigaAM-v3 E2E CTC INT8 (ONNX) + CAM++ локально | то же |
+| Разбор звонка и роли | rule-based адаптер (YAML-таксономия) | Qwen3-4B-Q4_K_M (или Qwen 2.5 7B) через `llm-runtime` |
 | Запуск | `APP_PROFILE=small docker compose up -d --build` | `APP_PROFILE=local-full docker compose --profile local-full up -d --build` |
 
 Переменные окружения (дефолты — из [`.env.example`](.env.example), они же действуют в compose-стеке):
@@ -118,15 +118,15 @@ curl -s -X POST "$BASE/v1/voice/search?namespace=outdoor_msk&language=ru" \
 | `S3_ENDPOINT_URL` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `http://minio:9000` / `""` / `""` (= `minio_admin` / `minio_secret_pass`) | S3-хранилище; ключи должны совпадать с `MINIO_ROOT_*` |
 | `S3_BUCKET_AUDIO` / `S3_BUCKET_EXPORTS` / `S3_REGION` | `raw-audio` / `exports` / `us-east-1` | Бакеты аудио и экспортов |
 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` / `MINIO_IMAGE` | `""` / `""` / `""` | Root MinIO (= S3-ключи); переопределение образа для закрытого registry |
-| `ASR_ENGINE` / `GIGAAM_MODEL_DIR` / `GIGAAM_QUANTIZATION` / `GIGAAM_THREADS` | `gigaam` / `./models/gigaam-v3-e2e-ctc` / `int8` / `2` | Движок ASR (`gigaam` — GigaAM-v3 E2E CTC INT8 ONNX, или `whisper`) |
+| `ASR_ENGINE` / `GIGAAM_MODEL_DIR` / `GIGAAM_QUANTIZATION` / `GIGAAM_THREADS` | `gigaam` / `./models/gigaam-v3-e2e-ctc` / `int8` / `1` | Движок ASR (`gigaam` — GigaAM-v3 E2E CTC INT8 ONNX, или `whisper`) |
 | `ASR_MODEL_NAME` / `ASR_COMPUTE_TYPE` / `ASR_DEVICE` / `ASR_THREADS` | `./models/whisper-podlodka-turbo-ct2` / `int8` / `cpu` / `2` | Длинный ASR-путь (для `ASR_ENGINE=whisper`) |
 | `VAD_THRESHOLD` | `0.5` | Порог VAD |
 | `MAX_AUDIO_DURATION_HOURS` / `MAX_UPLOAD_SIZE_MB` | `3` / `500` | Жёсткие лимиты входа |
 | `MAX_PENDING_JOBS` | `100` | Сверх лимита `queued`/`running` — `429` + `Retry-After` |
 | `PENDING_DOWNLOAD_TIMEOUT_SEC` | `600` | Зависшие `pending_download` уходят в `failed` с callback |
 | `VOICE_SEARCH_MAX_DURATION_SEC` | `60` | Максимум синхронного запроса |
-| `VOICE_SEARCH_MODEL_NAME` / `VOICE_SEARCH_BEAM_SIZE` | `./models/whisper-small` / `1` | Локальный путь whisper small (качает model-downloader); compose уважает `.env`, без него — тот же пин³ |
-| `VOICE_SEARCH_ENGINE` | `tone` | `tone` (дефолт, T-one) или `whisper` |
+| `VOICE_SEARCH_MODEL_NAME` / `VOICE_SEARCH_BEAM_SIZE` | `./models/whisper-small` / `1` | Локальный путь whisper small (для `VOICE_SEARCH_ENGINE=whisper`)³ |
+| `VOICE_SEARCH_ENGINE` | `gigaam` | `gigaam` (дефолт, GigaAM-v3), `tone` или `whisper` |
 | `VOICE_SEARCH_MAX_CONCURRENCY` / `VOICE_SEARCH_QUEUE_WAIT_SEC` | `1` / `0.1` | Переполнение — `503` + `Retry-After` |
 | `VOICE_SEARCH_USE_WORKER` / `VOICE_SEARCH_RESULT_TIMEOUT_SEC` | `true` / `2.5` | Отдельная очередь `worker-fast`; ожидание ответа⁴ |
 | `VOICE_SEARCH_BEAM_MIN` | `2` | Нижняя граница beam (диагностика, не менять) |
@@ -137,8 +137,8 @@ curl -s -X POST "$BASE/v1/voice/search?namespace=outdoor_msk&language=ru" \
 | `TONE_FUZZY_OOV_ONLY` | `false` | Нечёткая замена только для слов вне словаря (в паре с порогом выше) |
 | `TONE_DECODE` / `TONE_BEAM_WIDTH` / `TONE_HOTWORD_WEIGHT` | `greedy` / `10` / `3.0` | Декодер T-one (дефолт greedy) |
 | `DIARIZATION_MIN_SPEAKER_DISTANCE` | `0.18` | Порог разделения спикеров |
-| `LOCAL_LLM_URL` / `LOCAL_LLM_MODEL` | `http://llm-runtime:8080/v1` / `qwen2.5-7b-instruct` | Локальный LLM-рантайм (`local-full`) |
-| `LLAMA_THREADS` | `4` | Потоки llama.cpp; на 8+ физических ядрах можно 6 |
+| `LOCAL_LLM_URL` / `LOCAL_LLM_MODEL` | `http://llm-runtime:8080/v1` / `qwen3-4b` | Локальный LLM-рантайм (`local-full`: `qwen3-4b` или `qwen2.5-7b-instruct`) |
+| `LLAMA_THREADS` / `LLM_HOST_PORT` | `4` / `8081` | Потоки llama.cpp (на 8+ физических ядрах можно `6`) и порт публикации `llm-runtime` на хосте |
 | `LOCAL_LLM_JSON_MODE` | `json_schema` | Режим constrained decoding (`json_object` — слабее, только для замеров) |
 | `LLM_EXTERNAL_PROVIDER_ENABLED` / `_URL` / `_API_KEY` / `_MODEL` | `false` / `""` / `""` / `gpt-4o-mini` | Внешний разбор только маскированного текста; по умолчанию выключен |
 | `RETENTION_AUDIO_DAYS` / `RETENTION_TEXT_DAYS` | `14` / `365` | Аудио в MinIO / тексты в Postgres |
