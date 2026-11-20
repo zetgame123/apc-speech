@@ -580,8 +580,10 @@ class MonoDiarizer:
 
         embs: list[np.ndarray] = []
         emb_keys: list[tuple[int, int]] = []
+        chunks_with_multi_spk = 0
         for c_idx in range(num_chunks):
             chunk_wav = chunks[c_idx]
+            chunk_embs_found = 0
             for s_idx in range(num_local_spk):
                 active_frames = np.where(clean_labels[c_idx, :, s_idx] > 0.5)[0]
                 if len(active_frames) < 15:
@@ -605,6 +607,9 @@ class MonoDiarizer:
                     if norm > 1e-8:
                         embs.append(emb / norm)
                         emb_keys.append((c_idx, s_idx))
+                        chunk_embs_found += 1
+            if chunk_embs_found >= 2:
+                chunks_with_multi_spk += 1
 
         if not embs:
             return None
@@ -628,7 +633,15 @@ class MonoDiarizer:
                 centroid_dist = (
                     1.0 - float(np.dot(c0 / n0, c1 / n1)) if n0 > 1e-8 and n1 > 1e-8 else 0.0
                 )
-                if centroid_dist < self.min_speaker_distance:
+                # When pyannote-segmentation itself detects >=2 speakers inside multiple 10s
+                # windows, lower the monologue guard so similar-timbre voices on 8kHz telephony
+                # do not collapse into a single speaker.
+                effective_min_dist = (
+                    min(self.min_speaker_distance, 0.08)
+                    if chunks_with_multi_spk >= 2
+                    else self.min_speaker_distance
+                )
+                if centroid_dist < effective_min_dist:
                     cluster_ids = [0] * len(embs)
                 else:
                     cluster_ids = raw_ids.tolist()

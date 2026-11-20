@@ -171,6 +171,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
       - APP_PROFILE=${APP_PROFILE:-small}
+      - LOCAL_LLM_URL=${LOCAL_LLM_URL:-http://llm-runtime:8080/v1}
+      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-t-lite-2.1}
       - APP_ENV=${APP_ENV:-development}
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
       - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
@@ -236,6 +238,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - S3_ENDPOINT_URL=http://minio:9000
       - APP_PROFILE=${APP_PROFILE:-small}
+      - LOCAL_LLM_URL=${LOCAL_LLM_URL:-http://llm-runtime:8080/v1}
+      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-t-lite-2.1}
       - APP_ENV=${APP_ENV:-development}
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
       - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
@@ -245,7 +249,6 @@ services:
       - GIGAAM_MODEL_DIR=${GIGAAM_MODEL_DIR:-./models/gigaam-v3-e2e-ctc}
       - GIGAAM_QUANTIZATION=${GIGAAM_QUANTIZATION:-int8}
       - GIGAAM_THREADS=${GIGAAM_THREADS:-1}
-      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-t-lite-2.1}
       # BLAS-потоки поджаты под CPU-квоту контейнера (numpy/librosa/onnxruntime
       # иначе плодят потоки на все ядра хоста). Потоки самого CTranslate2
       # (ASR_THREADS, по умолчанию 2) не трогаем: замер B1 показал, что 1 поток
@@ -294,6 +297,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
       - REDIS_URL=redis://redis:6379/0
       - APP_PROFILE=${APP_PROFILE:-small}
+      - LOCAL_LLM_URL=${LOCAL_LLM_URL:-http://llm-runtime:8080/v1}
+      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-t-lite-2.1}
       - APP_ENV=${APP_ENV:-development}
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
       - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
@@ -329,6 +334,8 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - APP_PROFILE=${APP_PROFILE:-small}
+      - LOCAL_LLM_URL=${LOCAL_LLM_URL:-http://llm-runtime:8080/v1}
+      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-t-lite-2.1}
       - APP_ENV=${APP_ENV:-development}
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
       - VOICE_SEARCH_ENGINE=${VOICE_SEARCH_ENGINE:-gigaam}
@@ -380,6 +387,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${DB_USER:-apc_user}:${DB_PASSWORD:-secure_pass}@postgres:5432/apc_speech
       - S3_ENDPOINT_URL=http://minio:9000
       - APP_PROFILE=${APP_PROFILE:-small}
+      - LOCAL_LLM_URL=${LOCAL_LLM_URL:-http://llm-runtime:8080/v1}
+      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-t-lite-2.1}
       - APP_ENV=${APP_ENV:-development}
     volumes:
       - ./app:/app/app:ro
