@@ -23,6 +23,11 @@ CAMPPLUS_URLS = [
 ]
 CAMPPLUS_PATH = os.path.join(MODELS_DIR, "campplus.onnx")
 
+TLITE_URL = (
+    "https://huggingface.co/t-tech/T-lite-it-2.1-GGUF/resolve/main/T-lite-it-2.1-Q4_K_M.gguf"
+)
+TLITE_GGUF_PATH = os.path.join(MODELS_DIR, "T-lite-it-2.1-Q4_K_M.gguf")
+
 QWEN3_URL = "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf"
 QWEN3_GGUF_PATH = os.path.join(MODELS_DIR, "Qwen3-4B-Q4_K_M.gguf")
 
@@ -271,15 +276,15 @@ def download_gigaam():
 
 
 def download_qwen():
-    """Скачивает Qwen3-4B Q4_K_M GGUF (~2.5 ГБ, Apache 2.0) для профиля local-full."""
+    """Скачивает T-lite-it-2.1 Q4_K_M GGUF (~4.7 GiB, Apache 2.0, 8.2B Qwen3) для профиля local-full."""
     os.makedirs(MODELS_DIR, exist_ok=True)
-    if os.path.exists(QWEN3_GGUF_PATH) and os.path.getsize(QWEN3_GGUF_PATH) > 1_000_000_000:
-        print(f"[OK] Qwen3-4B GGUF already present at {QWEN3_GGUF_PATH}")
+    if os.path.exists(TLITE_GGUF_PATH) and os.path.getsize(TLITE_GGUF_PATH) > 3_500_000_000:
+        print(f"[OK] T-lite-it-2.1 GGUF already present at {TLITE_GGUF_PATH}")
         return
 
-    print("Downloading Qwen3-4B-Q4_K_M.gguf (~2.5 GB, Apache 2.0)...")
-    download_file(QWEN3_URL, QWEN3_GGUF_PATH, expected_min_size=1_000_000_000, timeout=120)
-    print(f"[OK] Downloaded Qwen3-4B GGUF to {QWEN3_GGUF_PATH}")
+    print("Downloading T-lite-it-2.1-Q4_K_M.gguf (~4.7 GiB, Apache 2.0)...")
+    download_file(TLITE_URL, TLITE_GGUF_PATH, expected_min_size=3_500_000_000, timeout=120)
+    print(f"[OK] Downloaded T-lite-it-2.1 GGUF to {TLITE_GGUF_PATH}")
 
 
 def main():

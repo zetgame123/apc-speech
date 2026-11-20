@@ -60,8 +60,9 @@ def _strip_think_tags(content: str) -> str:
 
 
 def _llm_extra_kwargs(model_name: str) -> dict[str, Any]:
-    """Disables Qwen3 chain-of-thought thinking mode for fast, strict JSON extraction."""
-    if "qwen3" in (model_name or "").lower():
+    """Disables Qwen3/T-lite-2.1 chain-of-thought thinking mode for fast, strict JSON extraction."""
+    low = (model_name or "").lower()
+    if "qwen3" in low or "t-lite" in low:
         return {"chat_template_kwargs": {"enable_thinking": False}}
     return {}
 

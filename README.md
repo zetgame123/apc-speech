@@ -49,11 +49,11 @@ CALLBACK_SIGNING_SECRET=<минимум-32-символа>  # HMAC-подпис�
 ```bash
 # small (без LLM):
 APP_PROFILE=small docker compose up -d --build
-# local-full (с Qwen3-4B через llama.cpp):
+# local-full (с T-lite-it-2.1 8.2B через llama.cpp):
 APP_PROFILE=local-full docker compose --profile local-full up -d --build
 ```
 
-Модели качаются сами одноразовыми джобами `model-downloader` (~245 МБ: GigaAM-v3 INT8 + CAM++) и `model-downloader-llm` (~2,5 ГБ: Qwen3-4B-Q4_K_M, только `local-full`); повторные запуски ничего не перекачивают. После правок `.env` контейнеры надо пересоздать (`up -d --force-recreate ...`), простой `restart` переменные не подхватит. Не используйте `down -v` на рабочем стеке — удалит volumes с БД, очередями и аудио.
+Модели качаются сами одноразовыми джобами `model-downloader` (~245 МБ: GigaAM-v3 INT8 + CAM++) и `model-downloader-llm` (~4,7 ГБ: T-lite-it-2.1 Q4_K_M, только `local-full`); повторные запуски ничего не перекачивают. После правок `.env` контейнеры надо пересоздать (`up -d --force-recreate ...`), простой `restart` переменные не подхватит. Не используйте `down -v` на рабочем стеке — удалит volumes с БД, очередями и аудио.
 
 ### Проверка и первый запрос
 
@@ -96,7 +96,7 @@ curl -s -X POST "$BASE/v1/voice/search?namespace=outdoor_msk&language=ru" \
 |---|---|---|
 | Железо | 2 vCPU / 4 ГБ, без GPU | 8 vCPU / 32 ГБ или GPU от 12 ГБ |
 | ASR / диаризация | GigaAM-v3 E2E CTC INT8 (ONNX) + CAM++ локально | то же |
-| Разбор звонка и роли | rule-based адаптер (YAML-таксономия) | Qwen3-4B-Q4_K_M (или Qwen 2.5 7B) через `llm-runtime` |
+| Разбор звонка и роли | rule-based адаптер (YAML-таксономия) | T-lite-it-2.1 (8.2B, Apache 2.0) через `llm-runtime` |
 | Запуск | `APP_PROFILE=small docker compose up -d --build` | `APP_PROFILE=local-full docker compose --profile local-full up -d --build` |
 
 Переменные окружения (дефолты — из [`.env.example`](.env.example), они же действуют в compose-стеке):
@@ -137,7 +137,7 @@ curl -s -X POST "$BASE/v1/voice/search?namespace=outdoor_msk&language=ru" \
 | `TONE_FUZZY_OOV_ONLY` | `false` | Нечёткая замена только для слов вне словаря (в паре с порогом выше) |
 | `TONE_DECODE` / `TONE_BEAM_WIDTH` / `TONE_HOTWORD_WEIGHT` | `greedy` / `10` / `3.0` | Декодер T-one (дефолт greedy) |
 | `DIARIZATION_MIN_SPEAKER_DISTANCE` | `0.18` | Порог разделения спикеров |
-| `LOCAL_LLM_URL` / `LOCAL_LLM_MODEL` | `http://llm-runtime:8080/v1` / `qwen3-4b` | Локальный LLM-рантайм (`local-full`: `qwen3-4b` или `qwen2.5-7b-instruct`) |
+| `LOCAL_LLM_URL` / `LOCAL_LLM_MODEL` | `http://llm-runtime:8080/v1` / `t-lite-2.1` | Локальный LLM-рантайм (`local-full`: `t-lite-2.1`, `qwen2.5-7b-instruct` или `qwen3-4b`) |
 | `LLAMA_THREADS` / `LLM_HOST_PORT` | `4` / `8081` | Потоки llama.cpp (на 8+ физических ядрах можно `6`) и порт публикации `llm-runtime` на хосте |
 | `LOCAL_LLM_JSON_MODE` | `json_schema` | Режим constrained decoding (`json_object` — слабее, только для замеров) |
 | `LLM_EXTERNAL_PROVIDER_ENABLED` / `_URL` / `_API_KEY` / `_MODEL` | `false` / `""` / `""` / `gpt-4o-mini` | Внешний разбор только маскированного текста; по умолчанию выключен |

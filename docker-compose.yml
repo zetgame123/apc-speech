@@ -245,7 +245,7 @@ services:
       - GIGAAM_MODEL_DIR=${GIGAAM_MODEL_DIR:-./models/gigaam-v3-e2e-ctc}
       - GIGAAM_QUANTIZATION=${GIGAAM_QUANTIZATION:-int8}
       - GIGAAM_THREADS=${GIGAAM_THREADS:-1}
-      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-qwen3-4b}
+      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-t-lite-2.1}
       # BLAS-потоки поджаты под CPU-квоту контейнера (numpy/librosa/onnxruntime
       # иначе плодят потоки на все ядра хоста). Потоки самого CTranslate2
       # (ASR_THREADS, по умолчанию 2) не трогаем: замер B1 показал, что 1 поток
@@ -407,7 +407,10 @@ services:
       model-downloader-llm: { condition: service_completed_successfully }
     entrypoint: ["/bin/sh", "-c"]
     command: >
-      "if [ -f /models/Qwen3-4B-Q4_K_M.gguf ]; then
+      "if [ -f /models/T-lite-it-2.1-Q4_K_M.gguf ]; then
+         MODEL=/models/T-lite-it-2.1-Q4_K_M.gguf;
+         ALIAS=t-lite-2.1;
+       elif [ -f /models/Qwen3-4B-Q4_K_M.gguf ]; then
          MODEL=/models/Qwen3-4B-Q4_K_M.gguf;
          ALIAS=qwen3-4b;
        elif [ -f /models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf ]; then

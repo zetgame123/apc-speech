@@ -100,6 +100,7 @@ def test_gigaam_engine_transcribe_normalizes_and_formats_segments():
 
 
 def test_qwen3_non_thinking_kwargs_and_tag_stripping():
+    assert _llm_extra_kwargs("t-lite-2.1") == {"chat_template_kwargs": {"enable_thinking": False}}
     assert _llm_extra_kwargs("qwen3-4b") == {"chat_template_kwargs": {"enable_thinking": False}}
     assert _llm_extra_kwargs("qwen2.5-7b-instruct") == {}
 
