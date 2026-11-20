@@ -110,14 +110,15 @@ def mock_rate_limit_deps(monkeypatch):
     mock_engine.load_model.return_value = None
     monkeypatch.setattr("app.api.voice.get_voice_search_engine", lambda: mock_engine)
 
-    # Mock T-one engine: тесты проверяют лимитер, а не ASR, поэтому
-    # transcribe мокается и на дефолтном tone-пути (весов в CI нет).
-    mock_tone_engine = MagicMock()
-    mock_tone_engine.transcribe.return_value = (
+    # Mock T-one & GigaAM engines: тесты проверяют лимитер, а не ASR, поэтому
+    # transcribe мокается на дефолтных ONNX-путях (весов в CI нет).
+    mock_onnx_engine = MagicMock()
+    mock_onnx_engine.transcribe.return_value = (
         [{"text": "test", "start": 0.0, "end": 1.0, "confidence": 0.99, "words": []}],
         {"language": "ru", "language_probability": 0.99, "duration": 1.0},
     )
-    monkeypatch.setattr("app.asr.tone_engine.get_tone_engine", lambda: mock_tone_engine)
+    monkeypatch.setattr("app.asr.tone_engine.get_tone_engine", lambda: mock_onnx_engine)
+    monkeypatch.setattr("app.asr.gigaam_engine.get_gigaam_engine", lambda: mock_onnx_engine)
 
     # Mock preprocessor
     mock_preprocessor = MagicMock()

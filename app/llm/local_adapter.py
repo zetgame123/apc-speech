@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import Any
 
 import httpx
@@ -49,6 +50,20 @@ __all__ = [
     "extract_quantity",
     "normalize_analysis_dict",
 ]
+
+
+_THINK_TAG_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+
+
+def _strip_think_tags(content: str) -> str:
+    return _THINK_TAG_RE.sub("", content).strip()
+
+
+def _llm_extra_kwargs(model_name: str) -> dict[str, Any]:
+    """Disables Qwen3 chain-of-thought thinking mode for fast, strict JSON extraction."""
+    if "qwen3" in (model_name or "").lower():
+        return {"chat_template_kwargs": {"enable_thinking": False}}
+    return {}
 
 
 def _response_format(schema: dict) -> dict:
@@ -214,11 +229,12 @@ class LocalLlamaCppAdapter(AnalysisModelPort):
                             # фиксированный seed (повтор B 3 раза — разброс 0).
                             "temperature": 0.0,
                             "seed": 42,
+                            **_llm_extra_kwargs(self.model_name),
                         },
                     )
                     resp.raise_for_status()
                     data = resp.json()
-                    content = data["choices"][0]["message"]["content"]
+                    content = _strip_think_tags(data["choices"][0]["message"]["content"])
                     parsed = json.loads(content)
 
                     parsed = normalize_analysis_dict(parsed, trimmed_transcript)

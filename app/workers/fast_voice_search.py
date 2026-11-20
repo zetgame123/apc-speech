@@ -31,6 +31,19 @@ signal.signal(signal.SIGINT, handle_sigterm)
 
 
 def prewarm():
+    if settings.voice_search_engine == "gigaam":
+        logger.info("prewarming_gigaam_engine", model_dir=settings.gigaam_model_dir)
+        from app.asr.gigaam_engine import get_gigaam_engine
+
+        engine = get_gigaam_engine()
+        try:
+            engine.load_model()
+            engine.transcribe(synthetic_warmup_wav(), language="ru", word_timestamps=False)
+            logger.info("voice_search_warmup_run_completed")
+        except Exception as e:
+            logger.warning("voice_search_warmup_run_failed", error=str(e))
+        logger.info("voice_search_engine_prewarmed_ready")
+        return
     # При выбранном T-one whisper-small не грузим вообще (память, время старта).
     if settings.voice_search_engine == "tone":
         logger.info("prewarming_tone_engine")
@@ -74,10 +87,15 @@ def _decode_audio_bytes(payload: dict) -> bytes:
 def transcribe(payload: dict) -> tuple[list[dict], dict]:
     raw_bytes = _decode_audio_bytes(payload)
     cfg = get_settings()
+    lang = payload.get("language", "ru")
+    if cfg.voice_search_engine == "gigaam" and lang in ("ru", "auto", ""):
+        from app.asr.gigaam_engine import get_gigaam_engine
+
+        return get_gigaam_engine().transcribe(raw_bytes, language=lang, word_timestamps=False)
     if cfg.voice_search_engine == "tone":
         from app.asr.tone_engine import get_tone_engine
 
-        return get_tone_engine().transcribe(raw_bytes, language=payload.get("language", "ru"))
+        return get_tone_engine().transcribe(raw_bytes, language=lang)
     if is_16k_mono_pcm_wav(raw_bytes):
         clean_bytes = raw_bytes
     else:

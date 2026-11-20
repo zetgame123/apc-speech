@@ -118,7 +118,8 @@ curl -s -X POST "$BASE/v1/voice/search?namespace=outdoor_msk&language=ru" \
 | `S3_ENDPOINT_URL` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `http://minio:9000` / `""` / `""` (= `minio_admin` / `minio_secret_pass`) | S3-хранилище; ключи должны совпадать с `MINIO_ROOT_*` |
 | `S3_BUCKET_AUDIO` / `S3_BUCKET_EXPORTS` / `S3_REGION` | `raw-audio` / `exports` / `us-east-1` | Бакеты аудио и экспортов |
 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` / `MINIO_IMAGE` | `""` / `""` / `""` | Root MinIO (= S3-ключи); переопределение образа для закрытого registry |
-| `ASR_MODEL_NAME` / `ASR_COMPUTE_TYPE` / `ASR_DEVICE` / `ASR_THREADS` | `./models/whisper-podlodka-turbo-ct2` / `int8` / `cpu` / `2` | Длинный ASR-путь |
+| `ASR_ENGINE` / `GIGAAM_MODEL_DIR` / `GIGAAM_QUANTIZATION` / `GIGAAM_THREADS` | `gigaam` / `./models/gigaam-v3-e2e-ctc` / `int8` / `2` | Движок ASR (`gigaam` — GigaAM-v3 E2E CTC INT8 ONNX, или `whisper`) |
+| `ASR_MODEL_NAME` / `ASR_COMPUTE_TYPE` / `ASR_DEVICE` / `ASR_THREADS` | `./models/whisper-podlodka-turbo-ct2` / `int8` / `cpu` / `2` | Длинный ASR-путь (для `ASR_ENGINE=whisper`) |
 | `VAD_THRESHOLD` | `0.5` | Порог VAD |
 | `MAX_AUDIO_DURATION_HOURS` / `MAX_UPLOAD_SIZE_MB` | `3` / `500` | Жёсткие лимиты входа |
 | `MAX_PENDING_JOBS` | `100` | Сверх лимита `queued`/`running` — `429` + `Retry-After` |

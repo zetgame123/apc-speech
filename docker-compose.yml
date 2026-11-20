@@ -174,7 +174,11 @@ services:
       - APP_ENV=${APP_ENV:-development}
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
       - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
+      - ASR_ENGINE=${ASR_ENGINE:-gigaam}
       - ASR_MODEL_NAME=${ASR_MODEL_NAME:-./models/whisper-podlodka-turbo-ct2}
+      - GIGAAM_MODEL_DIR=${GIGAAM_MODEL_DIR:-./models/gigaam-v3-e2e-ctc}
+      - GIGAAM_QUANTIZATION=${GIGAAM_QUANTIZATION:-int8}
+      - VOICE_SEARCH_ENGINE=${VOICE_SEARCH_ENGINE:-gigaam}
       - VOICE_SEARCH_MODEL_NAME=${VOICE_SEARCH_MODEL_NAME:-./models/whisper-small}
       - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-2}
       - VOICE_SEARCH_USE_WORKER=true
@@ -235,8 +239,13 @@ services:
       - APP_ENV=${APP_ENV:-development}
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
       - CALLBACK_SIGNING_SECRET=${CALLBACK_SIGNING_SECRET:-dev-secret-change-me-in-production-32chars!!}
+      - ASR_ENGINE=${ASR_ENGINE:-gigaam}
       - ASR_MODEL_NAME=${ASR_MODEL_NAME:-./models/whisper-podlodka-turbo-ct2}
       - ASR_COMPUTE_TYPE=int8
+      - GIGAAM_MODEL_DIR=${GIGAAM_MODEL_DIR:-./models/gigaam-v3-e2e-ctc}
+      - GIGAAM_QUANTIZATION=${GIGAAM_QUANTIZATION:-int8}
+      - GIGAAM_THREADS=${GIGAAM_THREADS:-2}
+      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-qwen3-4b}
       # BLAS-потоки поджаты под CPU-квоту контейнера (numpy/librosa/onnxruntime
       # иначе плодят потоки на все ядра хоста). Потоки самого CTranslate2
       # (ASR_THREADS, по умолчанию 2) не трогаем: замер B1 показал, что 1 поток
@@ -322,8 +331,12 @@ services:
       - APP_PROFILE=${APP_PROFILE:-small}
       - APP_ENV=${APP_ENV:-development}
       - DEV_TOKEN=${DEV_TOKEN:-dev-token}
+      - VOICE_SEARCH_ENGINE=${VOICE_SEARCH_ENGINE:-gigaam}
       - VOICE_SEARCH_MODEL_NAME=${VOICE_SEARCH_MODEL_NAME:-./models/whisper-small}
       - VOICE_SEARCH_BEAM_SIZE=${VOICE_SEARCH_BEAM_SIZE:-2}
+      - GIGAAM_MODEL_DIR=${GIGAAM_MODEL_DIR:-./models/gigaam-v3-e2e-ctc}
+      - GIGAAM_QUANTIZATION=${GIGAAM_QUANTIZATION:-int8}
+      - GIGAAM_THREADS=1
       # BLAS-потоки поджаты под CPU-квоту 0.5 (см. комментарий у worker-long).
       - OMP_NUM_THREADS=1
       - OPENBLAS_NUM_THREADS=1
@@ -394,12 +407,17 @@ services:
       model-downloader-llm: { condition: service_completed_successfully }
     entrypoint: ["/bin/sh", "-c"]
     command: >
-      "if [ -f /models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf ]; then
+      "if [ -f /models/Qwen3-4B-Q4_K_M.gguf ]; then
+         MODEL=/models/Qwen3-4B-Q4_K_M.gguf;
+         ALIAS=qwen3-4b;
+       elif [ -f /models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf ]; then
          MODEL=/models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf;
+         ALIAS=qwen2.5-7b-instruct;
        else
          MODEL=/models/qwen2.5-7b-instruct-q4_k_m.gguf;
+         ALIAS=qwen2.5-7b-instruct;
        fi;
-       exec /app/llama-server -m $$MODEL --alias qwen2.5-7b-instruct --host 0.0.0.0 --port 8080 -c 4096 --n-gpu-layers 0 -t ${LLAMA_THREADS:-4} --threads-batch ${LLAMA_THREADS:-4}"
+       exec /app/llama-server -m $$MODEL --alias $$ALIAS --host 0.0.0.0 --port 8080 -c 4096 --n-gpu-layers 0 -t ${LLAMA_THREADS:-4} --threads-batch ${LLAMA_THREADS:-4}"
     volumes:
       - ./models:/models:ro
     ports:

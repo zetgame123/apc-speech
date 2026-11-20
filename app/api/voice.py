@@ -187,6 +187,10 @@ async def voice_search(
     # Preprocess and transcribe in background worker thread to prevent event loop blocking
     def _sync_process(raw_bytes: bytes, lang: str):
         cfg = get_settings()
+        if cfg.voice_search_engine == "gigaam" and lang in ("ru", "auto", ""):
+            from app.asr.gigaam_engine import get_gigaam_engine
+
+            return get_gigaam_engine().transcribe(raw_bytes, language=lang, word_timestamps=False)
         if cfg.voice_search_engine == "tone":
             from app.asr.tone_engine import get_tone_engine
 

@@ -243,8 +243,13 @@ _asr_engine_instance: AsrEngine | None = None
 _voice_search_engine_instance: AsrEngine | None = None
 
 
-def get_asr_engine() -> AsrEngine:
+def get_asr_engine() -> Any:
     global _asr_engine_instance
+    settings = get_settings()
+    if settings.asr_engine == "gigaam":
+        from app.asr.gigaam_engine import get_gigaam_engine
+
+        return get_gigaam_engine()
     if _asr_engine_instance is None:
         _asr_engine_instance = AsrEngine()
     return _asr_engine_instance

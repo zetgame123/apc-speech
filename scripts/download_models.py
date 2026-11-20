@@ -23,6 +23,9 @@ CAMPPLUS_URLS = [
 ]
 CAMPPLUS_PATH = os.path.join(MODELS_DIR, "campplus.onnx")
 
+QWEN3_URL = "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf"
+QWEN3_GGUF_PATH = os.path.join(MODELS_DIR, "Qwen3-4B-Q4_K_M.gguf")
+
 QWEN_BASE_URL = "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main"
 QWEN_SHARDS = [
     "qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
@@ -31,6 +34,14 @@ QWEN_SHARDS = [
 QWEN_SHARD_URLS = [f"{QWEN_BASE_URL}/{name}" for name in QWEN_SHARDS]
 QWEN_SHARD_PATHS = [os.path.join(MODELS_DIR, name) for name in QWEN_SHARDS]
 QWEN_GGUF_PATH = os.path.join(MODELS_DIR, "qwen2.5-7b-instruct-q4_k_m.gguf")
+
+GIGAAM_DIR = os.path.join(MODELS_DIR, "gigaam-v3-e2e-ctc")
+GIGAAM_BASE_URL = "https://huggingface.co/istupakov/gigaam-v3-onnx/resolve/main"
+GIGAAM_FILES = [
+    ("v3_e2e_ctc.int8.onnx", True, 100_000_000),
+    ("v3_e2e_ctc_vocab.txt", True, 1_000),
+    ("config.json", False, 50),
+]
 
 
 def _reporthook(block_num, block_size, total_size):
@@ -242,37 +253,33 @@ def download_tone():
     print("[OK] Downloaded T-one model.onnx")
 
 
-def download_qwen():
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    mono_path = QWEN_GGUF_PATH
-    if os.path.exists(mono_path) and os.path.getsize(mono_path) > 100_000_000:
-        print(f"[OK] Qwen GGUF model already present at {mono_path}")
-        return
-
-    if all(
-        os.path.exists(path) and os.path.getsize(path) > 100_000_000 for path in QWEN_SHARD_PATHS
-    ):
-        print(f"[OK] Qwen GGUF shards already present in {MODELS_DIR}")
-        return
-
-    print("Downloading Qwen2.5-7B-Instruct GGUF shards (~4.4 GB total)...")
-    for url, path in zip(QWEN_SHARD_URLS, QWEN_SHARD_PATHS, strict=True):
-        if os.path.exists(path) and os.path.getsize(path) > 100_000_000:
-            print(f"[OK] Qwen shard already present at {path}")
+def download_gigaam():
+    """Скачивает GigaAM-v3 E2E CTC INT8 ONNX (~240 МБ, MIT) для worker-long и worker-fast."""
+    os.makedirs(GIGAAM_DIR, exist_ok=True)
+    for filename, required, min_size in GIGAAM_FILES:
+        dest = os.path.join(GIGAAM_DIR, filename)
+        if os.path.exists(dest) and os.path.getsize(dest) >= min_size:
+            print(f"[OK] GigaAM {filename} already present ({os.path.getsize(dest)} bytes)")
             continue
-        try:
-            urllib.request.urlretrieve(url, path, reporthook=_reporthook)
-            if os.path.getsize(path) <= 100_000_000:
-                raise RuntimeError(f"downloaded file is unexpectedly small: {path}")
-            print(f"\n[OK] Downloaded Qwen shard {os.path.basename(path)}")
-        except Exception as e:
-            try:
-                if os.path.exists(path):
-                    os.remove(path)
-            except OSError:
-                pass
-            print(f"\n[ERROR] Failed to download Qwen shard {path}: {e}")
-            raise RuntimeError(f"Failed to download Qwen shard {path}: {e}") from e
+        url = f"{GIGAAM_BASE_URL}/{filename}"
+        print(f"Downloading GigaAM-v3 {filename}...")
+        download_file(url, dest, expected_min_size=min_size, optional=not required)
+    model_path = os.path.join(GIGAAM_DIR, "v3_e2e_ctc.int8.onnx")
+    if not os.path.exists(model_path) or os.path.getsize(model_path) < 100_000_000:
+        raise RuntimeError(f"Failed to download GigaAM-v3 ONNX model: {model_path} missing/invalid")
+    print(f"[OK] GigaAM-v3 E2E CTC INT8 ready in {GIGAAM_DIR}")
+
+
+def download_qwen():
+    """Скачивает Qwen3-4B Q4_K_M GGUF (~2.5 ГБ, Apache 2.0) для профиля local-full."""
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    if os.path.exists(QWEN3_GGUF_PATH) and os.path.getsize(QWEN3_GGUF_PATH) > 1_000_000_000:
+        print(f"[OK] Qwen3-4B GGUF already present at {QWEN3_GGUF_PATH}")
+        return
+
+    print("Downloading Qwen3-4B-Q4_K_M.gguf (~2.5 GB, Apache 2.0)...")
+    download_file(QWEN3_URL, QWEN3_GGUF_PATH, expected_min_size=1_000_000_000, timeout=120)
+    print(f"[OK] Downloaded Qwen3-4B GGUF to {QWEN3_GGUF_PATH}")
 
 
 def main():
@@ -283,23 +290,28 @@ def main():
         default="small",
         help="Profile to download models for (default: small).",
     )
+    parser.add_argument(
+        "--with-legacy",
+        action="store_true",
+        help="Also download legacy Whisper and T-one models for A/B benchmarking.",
+    )
     args = parser.parse_args()
 
     print(f"=== APC Speech Model Downloader (profile: {args.profile}) ===")
     try:
         download_campplus()
-        # 1. Voice search model (whisper-small)
-        download_whisper("small")
-        # 1b. Лёгкие модели для матрицы эксперимента C4 (whisper-base/tiny int8)
-        download_whisper("base")
-        download_whisper("tiny")
-        # 1c. T-one для эксперимента быстрого пути (ADR-011, только greedy ONNX)
-        download_tone()
-        # 2. Russian-adapted model for long audio processing (whisper-podlodka-turbo-ct2)
-        download_whisper(
-            "bond005/whisper-podlodka-turbo-ct2",
-            output_name="whisper-podlodka-turbo-ct2",
-        )
+        # Единый быстрый локальный ASR (GigaAM-v3 E2E CTC INT8, MIT, ~240 МБ)
+        download_gigaam()
+
+        if args.with_legacy or args.profile == "all":
+            download_whisper("small")
+            download_whisper("base")
+            download_whisper("tiny")
+            download_tone()
+            download_whisper(
+                "bond005/whisper-podlodka-turbo-ct2",
+                output_name="whisper-podlodka-turbo-ct2",
+            )
 
         if args.profile in ("local-full", "all"):
             download_qwen()

@@ -30,6 +30,7 @@ dependencies = [
     "librosa>=0.10.0",
     "python-multipart>=0.0.9",
     "jsonschema>=4.20.0",
+    "onnx-asr>=0.7.0",
 ]
 
 [project.optional-dependencies]

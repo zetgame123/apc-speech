@@ -58,10 +58,14 @@ class Settings(BaseSettings):
     s3_region: str = Field(default="us-east-1", alias="S3_REGION")
 
     # ASR & Audio
+    asr_engine: str = Field(default="gigaam", alias="ASR_ENGINE")
     asr_model_name: str = Field(default="small", alias="ASR_MODEL_NAME")
     asr_compute_type: str = Field(default="int8", alias="ASR_COMPUTE_TYPE")
     asr_device: str = Field(default="cpu", alias="ASR_DEVICE")
     asr_threads: int = Field(default=2, alias="ASR_THREADS")
+    gigaam_model_dir: str = Field(default="./models/gigaam-v3-e2e-ctc", alias="GIGAAM_MODEL_DIR")
+    gigaam_quantization: str = Field(default="int8", alias="GIGAAM_QUANTIZATION")
+    gigaam_threads: int = Field(default=2, alias="GIGAAM_THREADS")
     vad_threshold: float = Field(default=0.5, alias="VAD_THRESHOLD")
     max_audio_duration_hours: int = Field(default=3, alias="MAX_AUDIO_DURATION_HOURS")
     max_upload_size_mb: int = Field(default=500, alias="MAX_UPLOAD_SIZE_MB")
@@ -93,8 +97,8 @@ class Settings(BaseSettings):
         default=None, alias="VOICE_SEARCH_INITIAL_PROMPT"
     )
     voice_search_hotwords: str | None = Field(default=None, alias="VOICE_SEARCH_HOTWORDS")
-    # Движок быстрого пути: "tone" (дефолт) или "whisper" (через переменную).
-    voice_search_engine: str = Field(default="tone", alias="VOICE_SEARCH_ENGINE")
+    # Движок быстрого пути: "gigaam" (дефолт), "tone" или "whisper".
+    voice_search_engine: str = Field(default="gigaam", alias="VOICE_SEARCH_ENGINE")
     # Каталог весов T-one (model.onnx тянет model-downloader) и потоки ORT
     # (1 — оптимум под 2 ядра cpuset; больше — только с ростом ядер, см. README).
     tone_model_dir: str = Field(default="./models/t-one", alias="TONE_MODEL_DIR")
@@ -126,7 +130,7 @@ class Settings(BaseSettings):
 
     # LLM
     local_llm_url: str = Field(default="http://localhost:8080/v1", alias="LOCAL_LLM_URL")
-    local_llm_model: str = Field(default="qwen2.5-7b-instruct", alias="LOCAL_LLM_MODEL")
+    local_llm_model: str = Field(default="qwen3-4b", alias="LOCAL_LLM_MODEL")
     # Режим constrained decoding llama.cpp: json_schema (дефолт, текущий факт)
     # или json_object (слабее, только для замеров). Сырой grammar-GBNF не
     # выведен: json_schema и так компилируется сервером в грамматику.
