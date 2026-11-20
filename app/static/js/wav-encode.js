@@ -1,7 +1,7 @@
 /* Конвертация микрофонной записи в WAV PCM16 16 кГц моно для /v1/voice/search.
  *
  * Причина: MediaRecorder в Chromium отдаёт webm/opus, а быстрый путь
- * распознавания (T-one в worker-fast) принимает только PCM WAV («file does
+ * распознавания (GigaAM-v3 / T-one в worker-fast) принимает PCM WAV («file does
  * not start with RIFF id» → 500 «Ошибка распознавания голосового запроса»,
  * проверено живьём 2026-10-15). WAV 16 кГц моно идёт и быстрым путём без
  * серверного ffmpeg — в плюс к SLA ≤ 2,5 с.

@@ -243,7 +243,7 @@
         if (!badge) return;
         if (data.profile === 'local-full') {
           badge.className = 'badge bg-info bg-opacity-25 text-info border border-info border-opacity-50 px-3 py-1 ms-2';
-          badge.innerHTML = '<i class="bi bi-stars me-1 text-warning"></i> Профиль: Local-Full (Qwen 2.5 7B LLM)';
+          badge.innerHTML = '<i class="bi bi-stars me-1 text-warning"></i> Профиль: Local-Full (T-lite 2.1 8B LLM)';
         } else {
           badge.className = 'badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 px-3 py-1 ms-2';
           badge.innerHTML = '<i class="bi bi-cpu me-1"></i> Профиль: Small (2 vCPU / 4 ГБ, офлайн)';
