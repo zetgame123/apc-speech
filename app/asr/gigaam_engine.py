@@ -256,6 +256,63 @@ def _tokens_to_words(
     return words, overall_conf
 
 
+def _split_words_into_segments(
+    words: list[dict[str, Any]],
+    fallback_text: str,
+    chunk_start: float,
+    chunk_end: float,
+    overall_conf: float,
+    normalizer: Any,
+    word_timestamps: bool,
+) -> list[dict[str, Any]]:
+    """Splits a chunk's words into turn-level segments on pauses or sentence boundaries.
+
+    Critical for mono diarization (CAM++): ensures multi-speaker dialogues shorter than
+    MAX_UTTERANCE_SEC are not collapsed into a single segment.
+    """
+    if not words:
+        clean_text = normalizer.normalize(fallback_text)
+        return [
+            {
+                "start": round(chunk_start, 2),
+                "end": round(chunk_end, 2),
+                "text": clean_text,
+                "confidence": overall_conf,
+                "no_speech_prob": 0.0,
+                "words": [],
+            }
+        ]
+
+    groups: list[list[dict[str, Any]]] = [[words[0]]]
+    for w in words[1:]:
+        prev = groups[-1][-1]
+        gap = float(w["start"]) - float(prev["end"])
+        prev_ends_sentence = str(prev["word"]).rstrip().endswith((".", "?", "!"))
+        if gap >= 0.40 or (prev_ends_sentence and gap >= 0.12):
+            groups.append([w])
+        else:
+            groups[-1].append(w)
+
+    out: list[dict[str, Any]] = []
+    for grp in groups:
+        raw_grp_text = " ".join(str(w["word"]) for w in grp).strip()
+        clean_text = normalizer.normalize(raw_grp_text)
+        if not clean_text:
+            continue
+        grp_conf = round(sum(float(w.get("confidence", overall_conf)) for w in grp) / len(grp), 3)
+        out.append(
+            {
+                "start": round(float(grp[0]["start"]), 2),
+                "end": round(float(grp[-1]["end"]), 2),
+                "text": clean_text,
+                "confidence": grp_conf,
+                "no_speech_prob": 0.0,
+                "words": grp if word_timestamps else [],
+            }
+        )
+    return out
+
+
 class GigaamEngine:
     """Fast local Russian ASR engine powered by GigaAM-v3 E2E CTC INT8 ONNX."""
 
@@ -342,7 +399,6 @@ class GigaamEngine:
             if not raw_text:
                 continue
 
-            clean_text = normalizer.normalize(raw_text)
             words, conf = _tokens_to_words(
                 res.tokens,
                 res.timestamps,
@@ -350,19 +406,32 @@ class GigaamEngine:
                 offset_sec=chunk_start,
                 chunk_end_sec=chunk_end,
             )
-            seg_start = words[0]["start"] if words else round(chunk_start, 2)
-            seg_end = words[-1]["end"] if words else round(chunk_end, 2)
-
-            segments.append(
-                {
-                    "start": seg_start,
-                    "end": seg_end,
-                    "text": clean_text,
-                    "confidence": conf,
-                    "no_speech_prob": 0.0,
-                    "words": words if word_timestamps else [],
-                }
-            )
+            if word_timestamps:
+                segments.extend(
+                    _split_words_into_segments(
+                        words=words,
+                        fallback_text=raw_text,
+                        chunk_start=chunk_start,
+                        chunk_end=chunk_end,
+                        overall_conf=conf,
+                        normalizer=normalizer,
+                        word_timestamps=True,
+                    )
+                )
+            else:
+                clean_text = normalizer.normalize(raw_text)
+                seg_start = words[0]["start"] if words else round(chunk_start, 2)
+                seg_end = words[-1]["end"] if words else round(chunk_end, 2)
+                segments.append(
+                    {
+                        "start": seg_start,
+                        "end": seg_end,
+                        "text": clean_text,
+                        "confidence": conf,
+                        "no_speech_prob": 0.0,
+                        "words": [],
+                    }
+                )
 
         meta_info = {
             "language": "ru",

@@ -157,6 +157,8 @@ class RussianTextNormalizer:
         self.dimension_patterns = [
             (re.compile(r"\bтри\s+на\s+шесть\b", re.IGNORECASE), "3×6"),
             (re.compile(r"\bшесть\s+на\s+три\b", re.IGNORECASE), "6×3"),
+            (re.compile(r"\b3\s+на\s*/?\s*6\b", re.IGNORECASE), "3×6"),
+            (re.compile(r"\b6\s+на\s*/?\s*3\b", re.IGNORECASE), "6×3"),
             (re.compile(r"\bтри\s*[xхXХ*]\s*шесть\b", re.IGNORECASE), "3×6"),
             (re.compile(r"\bшесть\s*[xхXХ*]\s*три\b", re.IGNORECASE), "6×3"),
             (re.compile(r"\b3\s*[xхXХ*]\s*6\b"), "3×6"),
@@ -192,6 +194,10 @@ class RussianTextNormalizer:
             ),
             # Contextual acoustic fixes for T-one/Whisper domain confusions («считы/счета» -> «щиты»
             # strictly next to outdoor-ad anchors so billing phrases like «оплатить счёт» are untouched).
+            (
+                re.compile(r"\bсщит(ы|ов|ам|ами|ах|а|у|ом|е)?\b", re.IGNORECASE),
+                lambda m: f"щит{m.group(1) or ''}",
+            ),
             (
                 re.compile(
                     r"\b(рекламн\w+|свободн\w+)\s+сч[иеё]т(ы|ов|ам|ами|ах|а|у|ом|е)?\b",
