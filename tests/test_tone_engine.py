@@ -99,15 +99,15 @@ def test_missing_weights_raise_helpful_error(monkeypatch):
         te.ToneEngine("/nonexistent-dir/model.onnx")
 
 
-def test_default_engine_is_tone(monkeypatch):
-    """Ветка voice-tone-default: дефолт tone (whisper — через переменную)."""
+def test_default_engine_is_gigaam(monkeypatch):
+    """Ветка feat/gigaam-qwen3-speedup: дефолт gigaam (tone/whisper — через переменную)."""
     from app.core.config import get_settings
 
     for var in ("VOICE_SEARCH_ENGINE",):
         monkeypatch.delenv(var, raising=False)
     get_settings.cache_clear()
     try:
-        assert get_settings().voice_search_engine == "tone"
+        assert get_settings().voice_search_engine == "gigaam"
     finally:
         get_settings.cache_clear()
 

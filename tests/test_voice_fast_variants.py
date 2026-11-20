@@ -101,14 +101,14 @@ def test_empty_prompt_and_hotwords_disable(mock_engine, clean_settings, monkeypa
     assert kwargs["hotwords"] == ""
 
 
-def test_default_engine_is_tone(monkeypatch):
-    """Ветка voice-tone-default: дефолт tone, whisper — через переменную."""
+def test_default_engine_is_gigaam(monkeypatch):
+    """Ветка feat/gigaam-qwen3-speedup: дефолт gigaam (tone/whisper — через переменную)."""
     from app.core.config import get_settings
 
     monkeypatch.delenv("VOICE_SEARCH_ENGINE", raising=False)
     get_settings.cache_clear()
     try:
-        assert get_settings().voice_search_engine == "tone"
+        assert get_settings().voice_search_engine == "gigaam"
     finally:
         get_settings.cache_clear()
 
