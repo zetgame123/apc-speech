@@ -44,7 +44,7 @@ def split_segment_into_turns(
 
             # Split on noticeable inter-word pause OR sentence punctuation with a small pause
             if pause >= min_pause_sec or (has_sentence_end and pause >= 0.20):
-                turn_text = "".join(w["word"] for w in cur_words).strip()
+                turn_text = " ".join(w["word"].strip() for w in cur_words if w["word"].strip())
                 out.append(
                     {
                         "start": cur_words[0]["start"],
@@ -59,7 +59,7 @@ def split_segment_into_turns(
                 cur_words.append(w_next)
 
         if cur_words:
-            turn_text = "".join(w["word"] for w in cur_words).strip()
+            turn_text = " ".join(w["word"].strip() for w in cur_words if w["word"].strip())
             out.append(
                 {
                     "start": cur_words[0]["start"],

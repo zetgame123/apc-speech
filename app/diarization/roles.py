@@ -56,7 +56,7 @@ MANAGER_SPEECH_PATTERNS = [
     re.compile(r"\bподготовлю\s+расчет\b", re.IGNORECASE),
     re.compile(r"\bназовите\s+почту\b", re.IGNORECASE),
     re.compile(r"\bсвободна\s+сторона\b", re.IGNORECASE),
-    re.compile(r"\bстоимость\s+.*?руб(?:л|\.)", re.IGNORECASE),
+    re.compile(r"\bстоимость\s+.*?(?:руб(?:л|\.)|₽)", re.IGNORECASE),
     # Closing & thanks
     re.compile(r"\bвы\s+успешно\s+зарегистрированы\b", re.IGNORECASE),
     re.compile(r"\bспасибо\s+за\s+(уделенное|предоставленное)\s+время\b", re.IGNORECASE),
