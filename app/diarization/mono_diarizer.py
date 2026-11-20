@@ -74,6 +74,7 @@ def split_segment_into_turns(
 
 
 _CAMPPLUS_SESSION_CACHE: dict[str, Any] = {}
+_PYANNOTE_SEG_SESSION_CACHE: dict[str, Any] = {}
 
 
 def _get_cached_campplus_session(model_path: str) -> Any | None:
@@ -85,7 +86,7 @@ def _get_cached_campplus_session(model_path: str) -> Any | None:
         return None
     sess_opts = ort.SessionOptions()
     sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    sess_opts.intra_op_num_threads = 2
+    sess_opts.intra_op_num_threads = 1
     sess_opts.inter_op_num_threads = 1
     session = ort.InferenceSession(
         abs_path, sess_options=sess_opts, providers=["CPUExecutionProvider"]
@@ -94,16 +95,53 @@ def _get_cached_campplus_session(model_path: str) -> Any | None:
     return session
 
 
+def _get_cached_pyannote_seg_session(model_path: str) -> Any | None:
+    """Returns a cached ONNX Runtime InferenceSession for pyannote-segmentation-3.0 (MIT, 6 MB)."""
+    abs_path = os.path.abspath(model_path)
+    if abs_path in _PYANNOTE_SEG_SESSION_CACHE:
+        return _PYANNOTE_SEG_SESSION_CACHE[abs_path]
+    if ort is None:
+        return None
+    sess_opts = ort.SessionOptions()
+    sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    sess_opts.intra_op_num_threads = 1
+    sess_opts.inter_op_num_threads = 1
+    session = ort.InferenceSession(
+        abs_path, sess_options=sess_opts, providers=["CPUExecutionProvider"]
+    )
+    _PYANNOTE_SEG_SESSION_CACHE[abs_path] = session
+    return session
+
+
+def _build_powerset_mapping(num_classes: int, num_speakers: int) -> np.ndarray:
+    """Maps pyannote 7-class powerset output to multi-label (num_classes, num_speakers) matrix."""
+    mapping = np.zeros((num_classes, num_speakers), dtype=np.float32)
+    k = 1
+    for j in range(num_speakers):
+        if k < num_classes:
+            mapping[k, j] = 1.0
+            k += 1
+    for j in range(num_speakers):
+        for m in range(j + 1, num_speakers):
+            if k < num_classes:
+                mapping[k, j] = 1.0
+                mapping[k, m] = 1.0
+                k += 1
+    return mapping
+
+
 class MonoDiarizer:
     def __init__(
         self,
         num_speakers: int = 2,
         min_speaker_distance: float = 0.18,
         campplus_path: str = "models/campplus.onnx",
+        seg_model_path: str = "models/pyannote-segmentation-3.0.onnx",
     ):
         self.num_speakers = num_speakers
         self.min_speaker_distance = min_speaker_distance
         self.campplus_session = None
+        self.seg_session = None
 
         # Check candidate locations for CAM++ ONNX model
         candidates = [
@@ -122,6 +160,24 @@ class MonoDiarizer:
                         break
                     except Exception as e:
                         logger.warning("campplus_load_failed", path=p, error=str(e))
+
+            seg_candidates = [
+                seg_model_path,
+                os.path.join(
+                    os.path.dirname(__file__), "../../models/pyannote-segmentation-3.0.onnx"
+                ),
+                "/app/models/pyannote-segmentation-3.0.onnx",
+            ]
+            for p in seg_candidates:
+                if os.path.exists(p):
+                    try:
+                        was_cached = os.path.abspath(p) in _PYANNOTE_SEG_SESSION_CACHE
+                        self.seg_session = _get_cached_pyannote_seg_session(p)
+                        if not was_cached:
+                            logger.info("pyannote_seg_model_loaded", path=p)
+                        break
+                    except Exception as e:
+                        logger.warning("pyannote_seg_load_failed", path=p, error=str(e))
 
     def _load_audio_mono(self, audio_path: str, target_sr: int = 16000) -> np.ndarray:
         if not os.path.exists(audio_path):
@@ -469,30 +525,237 @@ class MonoDiarizer:
             )
         return sub_turns if len(sub_turns) >= 2 else [turn]
 
+    def _diarize_with_pyannote_seg(
+        self,
+        y: np.ndarray,
+        sr: int,
+        segments: list[dict[str, Any]],
+    ) -> list[dict[str, Any]] | None:
+        """Neural segmentation (pyannote-segmentation-3.0 ONNX, MIT) + CAM++ clustering.
+
+        Handles zero-gap speaker turns and overlapped speech cleanly without PyTorch.
+        Returns None on empty/degenerate input so `diarize()` can fall back safely.
+        """
+        if self.seg_session is None or self.campplus_session is None or len(y) == 0:
+            return None
+
+        from scipy.cluster.hierarchy import fcluster, linkage
+        from scipy.spatial.distance import pdist
+
+        meta = self.seg_session.get_modelmeta().custom_metadata_map or {}
+        window_size = int(meta.get("window_size", 160000))
+        rf_shift = int(meta.get("receptive_field_shift", 270))
+        num_local_spk = int(meta.get("num_speakers", 3))
+        num_classes = int(meta.get("num_classes", 7))
+        window_shift = max(1, window_size // 2)  # 5s hop for 10s window
+
+        mapping = _build_powerset_mapping(num_classes, num_local_spk)
+        seg_in = self.seg_session.get_inputs()[0].name
+        seg_out = self.seg_session.get_outputs()[0].name
+
+        total_samples = len(y)
+        if total_samples <= window_size:
+            pad_len = window_size
+        else:
+            n_hops = (total_samples - window_size + window_shift - 1) // window_shift
+            pad_len = n_hops * window_shift + window_size
+        padded = np.pad(y, (0, pad_len - total_samples)).astype(np.float32, copy=False)
+
+        starts = list(range(0, len(padded) - window_size + 1, window_shift))
+        chunks = np.stack([padded[s : s + window_size] for s in starts], axis=0)
+
+        outs = []
+        for i in range(0, len(chunks), 4):
+            batch = chunks[i : i + 4, np.newaxis, :]
+            (out_y,) = self.seg_session.run([seg_out], {seg_in: batch})
+            outs.append(out_y)
+        y_all = np.concatenate(outs, axis=0)
+        num_chunks, num_frames, _ = y_all.shape
+
+        cls = np.argmax(y_all, axis=-1)
+        labels = mapping[cls.reshape(-1)].reshape(num_chunks, num_frames, num_local_spk)
+
+        # Extract CAM++ embeddings only on non-overlapping speech frames
+        clean_labels = labels * (labels.sum(axis=-1, keepdims=True) < 1.5)
+        samples_per_frame = window_size / float(num_frames)
+        min_cam_samples = int(0.4 * sr)
+        min_pad_samples = int(0.8 * sr)
+
+        embs: list[np.ndarray] = []
+        emb_keys: list[tuple[int, int]] = []
+        for c_idx in range(num_chunks):
+            chunk_wav = chunks[c_idx]
+            for s_idx in range(num_local_spk):
+                active_frames = np.where(clean_labels[c_idx, :, s_idx] > 0.5)[0]
+                if len(active_frames) < 15:
+                    continue
+                pieces = [
+                    chunk_wav[
+                        int(f * samples_per_frame) : min(
+                            window_size, int((f + 1) * samples_per_frame)
+                        )
+                    ]
+                    for f in active_frames
+                ]
+                spk_wav = np.concatenate(pieces)
+                if len(spk_wav) < min_cam_samples:
+                    continue
+                if len(spk_wav) < min_pad_samples:
+                    spk_wav = np.pad(spk_wav, (0, min_pad_samples - len(spk_wav)))
+                emb = self._extract_campplus(spk_wav, sr)
+                if emb is not None:
+                    norm = float(np.linalg.norm(emb))
+                    if norm > 1e-8:
+                        embs.append(emb / norm)
+                        emb_keys.append((c_idx, s_idx))
+
+        if not embs:
+            return None
+
+        if len(embs) == 1:
+            cluster_ids = [0]
+        else:
+            X = np.stack(embs, axis=0)
+            dists = pdist(X, metric="cosine")
+            if float(np.max(dists)) < self.min_speaker_distance:
+                cluster_ids = [0] * len(embs)
+            else:
+                Z = linkage(dists, method="average")
+                n_clust = min(self.num_speakers, len(embs))
+                cluster_ids = (fcluster(Z, t=n_clust, criterion="maxclust") - 1).tolist()
+
+        key_to_global = dict(zip(emb_keys, cluster_ids, strict=False))
+        n_global = max(cluster_ids) + 1
+
+        total_frames = int(np.ceil(total_samples / float(rf_shift))) + 10
+        global_act = np.zeros((total_frames, n_global), dtype=np.float32)
+        for c_idx, start_samp in enumerate(starts):
+            f0 = int(round(start_samp / float(rf_shift)))
+            f1 = min(total_frames, f0 + num_frames)
+            valid_len = f1 - f0
+            for s_idx in range(num_local_spk):
+                g = key_to_global.get((c_idx, s_idx))
+                if g is not None:
+                    global_act[f0:f1, g] = np.maximum(
+                        global_act[f0:f1, g], labels[c_idx, :valid_len, s_idx]
+                    )
+
+        frame_dur = rf_shift / float(sr)
+
+        def _speaker_for_span(t_start: float, t_end: float, fallback_spk: int) -> int:
+            f0 = max(0, min(total_frames - 1, int(t_start / frame_dur)))
+            f1 = max(f0 + 1, min(total_frames, int(np.ceil(t_end / frame_dur))))
+            scores = global_act[f0:f1].sum(axis=0)
+            if float(np.max(scores)) > 0.0:
+                return int(np.argmax(scores))
+            # Check small neighborhood (+/-0.4s) if word timestamp fell in brief gap
+            pad_f = max(1, int(0.4 / frame_dur))
+            nb = global_act[max(0, f0 - pad_f) : min(total_frames, f1 + pad_f)].sum(axis=0)
+            if float(np.max(nb)) > 0.0:
+                return int(np.argmax(nb))
+            return fallback_spk
+
+        # Align word-level ASR timestamps to neural speaker activity for crisp turn boundaries
+        all_words: list[dict[str, Any]] = []
+        for seg in segments:
+            for w in seg.get("words") or []:
+                if w.get("word") and "start" in w and "end" in w:
+                    all_words.append(w)
+
+        if all_words:
+            all_words.sort(key=lambda w: float(w["start"]))
+            assigned_words: list[tuple[int, dict[str, Any]]] = []
+            prev_spk = 0
+            for w in all_words:
+                spk = _speaker_for_span(float(w["start"]), float(w["end"]), prev_spk)
+                assigned_words.append((spk, w))
+                prev_spk = spk
+
+            # Group contiguous words by speaker (also break on long silence >= 0.8s)
+            out_turns: list[dict[str, Any]] = []
+            cur_spk = assigned_words[0][0]
+            cur_grp: list[dict[str, Any]] = [assigned_words[0][1]]
+            for spk, w in assigned_words[1:]:
+                gap = float(w["start"]) - float(cur_grp[-1]["end"])
+                if spk != cur_spk or gap >= 0.8:
+                    text = " ".join(x["word"].strip() for x in cur_grp if x.get("word")).strip()
+                    if text:
+                        out_turns.append(
+                            {
+                                "start": round(float(cur_grp[0]["start"]), 2),
+                                "end": round(float(cur_grp[-1]["end"]), 2),
+                                "text": text,
+                                "words": cur_grp,
+                                "confidence": float(
+                                    np.mean([x.get("confidence", 0.9) for x in cur_grp])
+                                ),
+                                "speaker_label": f"SPEAKER_{cur_spk}",
+                            }
+                        )
+                    cur_spk = spk
+                    cur_grp = [w]
+                else:
+                    cur_grp.append(w)
+            if cur_grp:
+                text = " ".join(x["word"].strip() for x in cur_grp if x.get("word")).strip()
+                if text:
+                    out_turns.append(
+                        {
+                            "start": round(float(cur_grp[0]["start"]), 2),
+                            "end": round(float(cur_grp[-1]["end"]), 2),
+                            "text": text,
+                            "words": cur_grp,
+                            "confidence": float(
+                                np.mean([x.get("confidence", 0.9) for x in cur_grp])
+                            ),
+                            "speaker_label": f"SPEAKER_{cur_spk}",
+                        }
+                    )
+            return out_turns if out_turns else None
+
+        # Fallback when segments have no word-level timestamps
+        out_segs: list[dict[str, Any]] = []
+        prev_spk = 0
+        for seg in segments:
+            s_copy = dict(seg)
+            spk = _speaker_for_span(float(seg["start"]), float(seg["end"]), prev_spk)
+            s_copy["speaker_label"] = f"SPEAKER_{spk}"
+            prev_spk = spk
+            out_segs.append(s_copy)
+        return out_segs
+
     def diarize(self, audio_path: str, segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Diarizes mono audio:
-        1. Splits merged ASR segments into dialogue turns using word pause gaps.
-        2. Splits long uninterrupted turns (>=6s) on CAM++ sliding-window voice changes.
-        3. Extracts neural CAM++ embeddings (lazy acoustic fallback only if CAM++ unavailable).
-        4. Identifies anchor centroids from longest turns.
-        5. Smooths turn assignments via Markov / HMM Viterbi decoding.
-        6. Assigns 'speaker_label' (SPEAKER_0, SPEAKER_1).
+        0. Primary path: pyannote-segmentation-3.0 ONNX (MIT) + CAM++ clustering (handles
+           zero-gap turns and overlaps cleanly).
+        1. Fallback path (if segmentation model absent): pause splitting + CAM++ sliding-window
+           + anchor centroids + Viterbi smoothing.
         """
         if not segments:
             return segments
-
-        # 1. Turn splitting
-        turns = split_segment_into_turns(segments)
 
         try:
             y = self._load_audio_mono(audio_path, target_sr=16000)
             sr = 16000
         except Exception as e:
             logger.error("audio_load_failed", error=str(e))
+            turns = split_segment_into_turns(segments)
             for i, s in enumerate(turns):
                 s["speaker_label"] = f"SPEAKER_{i % 2}"
             return turns
+
+        # 0. Primary path: neural pyannote-segmentation-3.0 + CAM++
+        if self.seg_session is not None and self.campplus_session is not None:
+            try:
+                seg_result = self._diarize_with_pyannote_seg(y, sr, segments)
+                if seg_result:
+                    return seg_result
+            except Exception as e:
+                logger.warning("pyannote_seg_diarization_fallback", error=str(e))
+
+        # 1. Fallback path: Turn splitting + CAM++
+        turns = split_segment_into_turns(segments)
 
         # 2. Split long uninterrupted turns (>=6s) if voice changes mid-turn
         if self.campplus_session is not None:

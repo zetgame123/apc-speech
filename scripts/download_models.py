@@ -23,6 +23,12 @@ CAMPPLUS_URLS = [
 ]
 CAMPPLUS_PATH = os.path.join(MODELS_DIR, "campplus.onnx")
 
+PYANNOTE_SEG_TAR_URL = (
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
+    "speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2"
+)
+PYANNOTE_SEG_PATH = os.path.join(MODELS_DIR, "pyannote-segmentation-3.0.onnx")
+
 TLITE_URL = (
     "https://huggingface.co/t-tech/T-lite-it-2.1-GGUF/resolve/main/T-lite-it-2.1-Q4_K_M.gguf"
 )
@@ -275,6 +281,38 @@ def download_gigaam():
     print(f"[OK] GigaAM-v3 E2E CTC INT8 ready in {GIGAAM_DIR}")
 
 
+def download_pyannote_segmentation():
+    """Скачивает pyannote-segmentation-3.0 ONNX FP32 (~6 МБ, MIT) из k2-fsa/sherpa-onnx."""
+    import tarfile
+
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    if os.path.exists(PYANNOTE_SEG_PATH) and os.path.getsize(PYANNOTE_SEG_PATH) > 4_000_000:
+        print(f"[OK] pyannote-segmentation-3.0 already present at {PYANNOTE_SEG_PATH}")
+        return
+
+    tar_tmp = os.path.join(MODELS_DIR, "pyannote-segmentation-3.0.tar.bz2")
+    print("Downloading pyannote-segmentation-3.0 ONNX (~6 MB, MIT)...")
+    download_file(PYANNOTE_SEG_TAR_URL, tar_tmp, expected_min_size=1_000_000, timeout=60)
+    try:
+        with tarfile.open(tar_tmp, "r:bz2") as tf:
+            member = next(
+                (m for m in tf.getmembers() if m.name.endswith("/model.onnx")),
+                None,
+            )
+            if member is None:
+                raise RuntimeError("model.onnx not found in pyannote segmentation archive")
+            src = tf.extractfile(member)
+            if src is None:
+                raise RuntimeError("Failed to read model.onnx from archive")
+            with open(PYANNOTE_SEG_PATH + ".tmp", "wb") as dst:
+                dst.write(src.read())
+        os.replace(PYANNOTE_SEG_PATH + ".tmp", PYANNOTE_SEG_PATH)
+    finally:
+        if os.path.exists(tar_tmp):
+            os.remove(tar_tmp)
+    print(f"[OK] Downloaded pyannote-segmentation-3.0 to {PYANNOTE_SEG_PATH}")
+
+
 def download_qwen():
     """Скачивает T-lite-it-2.1 Q4_K_M GGUF (~4.7 GiB, Apache 2.0, 8.2B Qwen3) для профиля local-full."""
     os.makedirs(MODELS_DIR, exist_ok=True)
@@ -305,6 +343,7 @@ def main():
     print(f"=== APC Speech Model Downloader (profile: {args.profile}) ===")
     try:
         download_campplus()
+        download_pyannote_segmentation()
         # Единый быстрый локальный ASR (GigaAM-v3 E2E CTC INT8, MIT, ~240 МБ)
         download_gigaam()
 

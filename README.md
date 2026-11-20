@@ -95,7 +95,7 @@ curl -s -X POST "$BASE/v1/voice/search?namespace=outdoor_msk&language=ru" \
 | Параметр | `small` (дефолт) | `local-full` |
 |---|---|---|
 | Железо | 2 vCPU / 4 ГБ, без GPU | 8 vCPU / 32 ГБ или GPU от 12 ГБ |
-| ASR / диаризация | GigaAM-v3 E2E CTC INT8 (ONNX) + CAM++ локально | то же |
+| ASR / диаризация | GigaAM-v3 E2E CTC INT8 (ONNX) + pyannote-seg-3.0 + CAM++ локально | то же |
 | Разбор звонка и роли | rule-based адаптер (YAML-таксономия) | T-lite-it-2.1 (8.2B, Apache 2.0) через `llm-runtime` |
 | Запуск | `APP_PROFILE=small docker compose up -d --build` | `APP_PROFILE=local-full docker compose --profile local-full up -d --build` |
 

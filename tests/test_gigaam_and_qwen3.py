@@ -120,3 +120,23 @@ def test_apply_vocabulary_hints():
     assert "ситиборд" in fixed
     # Unrelated words must remain untouched
     assert "Нужен" in fixed and "также" in fixed
+
+
+def test_pyannote_powerset_mapping_and_mono_diarizer_fallback():
+    import numpy as np
+
+    from app.diarization.mono_diarizer import MonoDiarizer, _build_powerset_mapping
+
+    mapping = _build_powerset_mapping(num_classes=7, num_speakers=3)
+    assert mapping.shape == (7, 3)
+    # class 0 = silence, 1..3 = single speakers, 4..6 = pairs (overlaps)
+    assert np.all(mapping[0] == 0)
+    assert np.all(mapping[1:4].sum(axis=1) == 1)
+    assert np.all(mapping[4:7].sum(axis=1) == 2)
+
+    # Missing model path must degrade gracefully without raising
+    diar = MonoDiarizer(
+        campplus_path="/nonexistent/campplus.onnx",
+        seg_model_path="/nonexistent/seg.onnx",
+    )
+    assert diar.diarize("/nonexistent/audio.wav", []) == []
