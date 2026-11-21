@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import io
 from collections import defaultdict
@@ -200,7 +201,9 @@ async def analyze_texts(
     # и в представителей, даже если представители маскировать отдельно.
     masker = get_pii_masker()
     masked_texts = [masker.mask_text(t) for t in req.texts]
-    labels, cluster_names, _ = clustering_engine.fit_transform_texts(masked_texts)
+    labels, cluster_names, _ = await asyncio.to_thread(
+        clustering_engine.fit_transform_texts, masked_texts
+    )
 
     # Group texts by cluster
     grouped: dict[int, list[str]] = {}
@@ -270,6 +273,11 @@ async def export_analytics_csv(
 
     call_query = call_query.execution_options(yield_per=1000)
 
+    def _csv_safe(val: object) -> object:
+        if isinstance(val, str) and val.lstrip().startswith(("=", "+", "-", "@", "\t", "\r")):
+            return "'" + val
+        return val
+
     async def _csv_stream():
         buf = io.StringIO()
         writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
@@ -310,16 +318,16 @@ async def export_analytics_csv(
             created_str = created_at.replace(tzinfo=timezone.utc).isoformat() if created_at else ""
             writer.writerow(
                 [
-                    call_id,
-                    external_id or "",
-                    mgr_id or "",
-                    cli_id or "",
+                    _csv_safe(call_id),
+                    _csv_safe(external_id or ""),
+                    _csv_safe(mgr_id or ""),
+                    _csv_safe(cli_id or ""),
                     created_str,
                     duration_sec or 0,
                     "Yes" if is_am else "No",
-                    a_inquiry or "",
-                    a_result or "",
-                    a_summary or "",
+                    _csv_safe(a_inquiry or ""),
+                    _csv_safe(a_result or ""),
+                    _csv_safe(a_summary or ""),
                     a_checklist.get("score", "") if a_checklist else "",
                 ]
             )

@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
 import os
+import posixpath
+import re
 import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -195,7 +197,9 @@ async def create_job_upload(
 
         # Upload raw audio to MinIO directly from disk (offloaded from event loop)
         storage = get_storage()
-        s3_key = f"{namespace}/{now.strftime('%Y/%m/%d')}/{call_id}/original_{file.filename}"
+        raw_name = os.path.basename(file.filename or "audio")
+        safe_filename = re.sub(r"[^a-zA-Z0-9._-]", "_", raw_name).lstrip(".")[:100] or "audio"
+        s3_key = f"{namespace}/{now.strftime('%Y/%m/%d')}/{call_id}/original_{safe_filename}"
         content_type = file.content_type or "application/octet-stream"
         if hasattr(storage, "upload_file"):
             await asyncio.to_thread(
@@ -442,13 +446,36 @@ async def create_job_by_s3(
             req.callback_url, allow_private_net=settings.callback_allow_private_net
         )
 
+    allowed_buckets = {settings.s3_bucket_audio}
     bucket = req.s3_bucket or settings.s3_bucket_audio
+    if bucket not in allowed_buckets:
+        raise AppError(
+            "forbidden_bucket",
+            "Доступ к указанному S3-бакету запрещён",
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    normalized_key = posixpath.normpath(req.s3_key).lstrip("/")
+    expected_prefix = f"{req.namespace}/"
+    if (
+        not req.s3_key
+        or "\\" in req.s3_key
+        or ".." in req.s3_key
+        or req.s3_key != normalized_key
+        or not normalized_key.startswith(expected_prefix)
+    ):
+        raise AppError(
+            "forbidden_s3_key",
+            "s3_key должен находиться внутри префикса разрешённого namespace",
+            status.HTTP_403_FORBIDDEN,
+        )
+
     storage = get_storage()
-    obj_meta = await asyncio.to_thread(storage.head_object, bucket, req.s3_key)
+    obj_meta = await asyncio.to_thread(storage.head_object, bucket, normalized_key)
     if not obj_meta:
         raise AppError(
             "s3_object_not_found",
-            f"Аудиообъект '{req.s3_key}' не найден в корзине '{bucket}'",
+            f"Аудиообъект '{normalized_key}' не найден в корзине '{bucket}'",
             404,
         )
 

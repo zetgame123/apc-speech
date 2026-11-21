@@ -8,7 +8,12 @@ import httpx
 
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
-from app.core.security import sign_callback_payload
+from app.core.security import (
+    build_ssrf_pinned_transport,
+    is_production_env,
+    resolve_and_validate_ssrf_url,
+    sign_callback_payload,
+)
 from app.core.urls import redact_url_for_log, validate_callback_url
 from app.db.models import CallbackLog
 from app.db.session import AsyncSessionLocal
@@ -42,7 +47,7 @@ def enforce_production_callback_policy(settings) -> None:
 
     Вызывается на старте api (lifespan) и worker-callback (main).
     """
-    if settings.app_env == "production" and settings.callback_allow_private_net:
+    if is_production_env(settings.app_env) and settings.callback_allow_private_net:
         msg = (
             "CRITICAL: CALLBACK_ALLOW_PRIVATE_NET включён в production! "
             "Флаг только для тестового стенда (docker-compose.test.yml)."
@@ -72,9 +77,18 @@ async def dispatch_callback(job_id: str, callback_url: str, payload: dict):
         return False
 
     raw_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    allow_private = get_settings().callback_allow_private_net
 
     for attempt, delay in enumerate(RETRY_DELAYS_SEC, 1):
         try:
+            # Re-validate SSRF on every attempt (prevents DNS rebinding across retry delays)
+            client_kwargs: dict = {"timeout": 15.0, "follow_redirects": False}
+            if not allow_private:
+                _, validated_ips = await asyncio.to_thread(
+                    resolve_and_validate_ssrf_url, callback_url
+                )
+                client_kwargs["transport"] = build_ssrf_pinned_transport(validated_ips[0])
+
             # Recompute timestamp and signature for each attempt to prevent expiration (>300s)
             timestamp, signature = sign_callback_payload(settings.callback_signing_secret, raw_body)
             headers = {
@@ -89,7 +103,7 @@ async def dispatch_callback(job_id: str, callback_url: str, payload: dict):
                 url=redact_url_for_log(callback_url),
                 attempt=attempt,
             )
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 response = await client.post(callback_url, content=raw_body, headers=headers)
 
                 # Log attempt in DB

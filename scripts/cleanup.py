@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from sqlalchemy import delete, select
 
 from app.core.config import get_settings
-from app.db.models import AudioObject, Call
+from app.db.models import AudioObject, Call, CallbackLog
 from app.db.session import AsyncSessionLocal
 from app.storage.s3 import get_storage
 
@@ -39,12 +39,18 @@ async def run_cleanup():
         await db.commit()
         print(f"Deleted {deleted_audio} expired audio files from S3.")
 
-    # 2. Clean up expired DB records (text retention)
+    # 2. Clean up expired DB records (text retention + callback logs)
     async with AsyncSessionLocal() as db:
         stmt = delete(Call).where(Call.expires_at < now.replace(tzinfo=None))
         result = await db.execute(stmt)
+        cb_cutoff = (now - timedelta(days=settings.retention_text_days)).replace(tzinfo=None)
+        cb_stmt = delete(CallbackLog).where(CallbackLog.created_at < cb_cutoff)
+        cb_result = await db.execute(cb_stmt)
         await db.commit()
-        print(f"Deleted {result.rowcount} expired calls from database.")
+        print(
+            f"Deleted {result.rowcount} expired calls and "
+            f"{cb_result.rowcount} expired callback logs from database."
+        )
 
 
 if __name__ == "__main__":

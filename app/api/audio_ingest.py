@@ -193,9 +193,19 @@ async def ingest_url_job(
         )
         await db.commit()
         if res.rowcount != 1:
-            # Уборщик уже перевёл задание в failed: файл в S3 остаётся,
-            # но в очередь воркера задание не ставим, чтобы не воскрешать.
+            # Уборщик уже перевёл задание в failed: удаляем осиротевший файл из S3,
+            # чтобы не нарушать retention, и в очередь воркера задание не ставим.
             logger.warning("url_ingest_downloaded_skipped_race", job_id=job_id)
+            try:
+                await asyncio.to_thread(
+                    get_storage().delete_object, settings.s3_bucket_audio, s3_key
+                )
+            except Exception as del_err:
+                logger.warning(
+                    "url_ingest_orphan_s3_cleanup_failed",
+                    job_id=job_id,
+                    error=type(del_err).__name__,
+                )
             return
 
     payload: dict[str, Any] = {

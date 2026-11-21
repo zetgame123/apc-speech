@@ -5,6 +5,7 @@ import redis.asyncio as aioredis
 from fastapi import Request
 
 from app.core.errors import AppError
+from app.core.security import is_production_env
 from app.queue.redis_streams import get_queue
 
 _ATOMIC_INCR_EXPIRE_LUA = """
@@ -29,7 +30,16 @@ async def rate_limit(request: Request):
     max_requests = settings.rate_limit_requests_per_window
     window_sec = settings.rate_limit_window_sec
 
-    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+    token = ""
+    if request.url.path.startswith("/v1/integrations/"):
+        token = (
+            request.query_params.get("token") or request.query_params.get("auth_token") or ""
+        ).strip()
+    if not token:
+        auth_header = request.headers.get("Authorization", "").strip()
+        parts = auth_header.split(None, 1)
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            token = parts[1].strip()
     client_ip = request.client.host if request.client else "unknown"
     if token:
         token_hash = hashlib.sha256(token.encode()).hexdigest()[:16]
@@ -64,7 +74,7 @@ async def rate_limit(request: Request):
     except Exception as exc:
         # В production дорогие ручки fail-closed; локальная разработка и unit-тесты
         # не должны зависеть от запущенного Redis.
-        if settings.app_env != "production":
+        if not is_production_env(settings.app_env):
             return
         raise AppError(
             error="rate_limiter_unavailable",

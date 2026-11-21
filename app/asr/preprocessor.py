@@ -45,6 +45,8 @@ class AudioPreprocessor:
         """
         cmd = [
             "ffprobe",
+            "-protocol_whitelist",
+            "file",
             "-v",
             "error",
             "-show_entries",
@@ -99,6 +101,8 @@ class AudioPreprocessor:
         # ffmpeg, валидные файлы декодируются с exit 0.
         decode_cmd = [
             "ffmpeg",
+            "-protocol_whitelist",
+            "file",
             "-v",
             "error",
             "-xerror",
@@ -141,6 +145,8 @@ class AudioPreprocessor:
         """
         cmd = [
             "ffmpeg",
+            "-protocol_whitelist",
+            "pipe",
             "-nostdin",
             "-y",
             "-threads",
@@ -182,6 +188,8 @@ class AudioPreprocessor:
         """Converts any audio file to normalized 16kHz 16-bit PCM WAV via FFmpeg."""
         cmd = [
             "ffmpeg",
+            "-protocol_whitelist",
+            "file",
             "-nostdin",
             "-y",
             "-threads",
@@ -224,6 +232,8 @@ class AudioPreprocessor:
 
         cmd = [
             "ffmpeg",
+            "-protocol_whitelist",
+            "file",
             "-nostdin",
             "-y",
             "-threads",

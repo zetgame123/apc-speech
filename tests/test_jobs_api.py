@@ -262,7 +262,7 @@ async def test_create_job_by_s3_returns_202(mock_infra):
         payload = {
             "namespace": "test_s3_ns",
             "s3_bucket": "raw-audio",
-            "s3_key": "recordings/call_123.wav",
+            "s3_key": "test_s3_ns/recordings/call_123.wav",
         }
         response = await ac.post("/v1/jobs/by-s3", json=payload, headers=headers)
         assert response.status_code == 202
@@ -280,7 +280,7 @@ async def test_create_job_by_s3_not_found(mock_infra):
         payload = {
             "namespace": "test_s3_ns",
             "s3_bucket": "raw-audio",
-            "s3_key": "recordings/nonexistent.wav",
+            "s3_key": "test_s3_ns/recordings/nonexistent.wav",
         }
         response = await ac.post("/v1/jobs/by-s3", json=payload, headers=headers)
         assert response.status_code == 404

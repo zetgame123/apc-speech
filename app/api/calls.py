@@ -1,4 +1,5 @@
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -9,8 +10,11 @@ from sqlalchemy import and_, desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics.embeddings import cosine_similarity, get_embedding_engine
+from app.api.jobs import ensure_job_capacity
+from app.api.rate_limit import rate_limit
 from app.core.config import get_settings
 from app.core.errors import AppError
+from app.core.logging import get_logger
 from app.core.security import AuthContext, verify_auth
 from app.db.models import Analysis, AudioObject, Call, Embedding, Job, TranscriptSegment
 from app.db.session import get_db
@@ -19,6 +23,8 @@ from app.services.reprocess import reanalyze_call, reindex_call_embedding, remas
 from app.storage.s3 import get_storage
 
 router = APIRouter(prefix="/v1/calls", tags=["calls"])
+logger = get_logger("calls_api")
+_MAX_SEMANTIC_OFFSET = 1000
 
 
 def _naive(dt: datetime | None) -> datetime | None:
@@ -90,12 +96,14 @@ async def get_transcript(
     )
     segments = (await db.execute(seg_stmt)).scalars().all()
 
+    safe_call_id = re.sub(r"[^a-zA-Z0-9_-]", "_", call_id)[:64] or "call"
+
     if format == "text":
         lines = []
         for s in segments:
             txt = s.text_masked if masked else s.text_original
             lines.append(f"[{s.speaker_role}] {txt}")
-        headers = {"Content-Disposition": f'attachment; filename="transcript_{call_id}.txt"'}
+        headers = {"Content-Disposition": f'attachment; filename="transcript_{safe_call_id}.txt"'}
         return Response(
             content="\n".join(lines), media_type="text/plain; charset=utf-8", headers=headers
         )
@@ -107,7 +115,7 @@ async def get_transcript(
             start = format_srt_timestamp(s.start_time)
             end = format_srt_timestamp(s.end_time)
             srt_entries.append(f"{i}\n{start} --> {end}\n[{s.speaker_role}] {txt}\n")
-        headers = {"Content-Disposition": f'attachment; filename="transcript_{call_id}.srt"'}
+        headers = {"Content-Disposition": f'attachment; filename="transcript_{safe_call_id}.srt"'}
         return Response(
             content="\n".join(srt_entries), media_type="text/plain; charset=utf-8", headers=headers
         )
@@ -119,7 +127,7 @@ async def get_transcript(
             start = format_vtt_timestamp(s.start_time)
             end = format_vtt_timestamp(s.end_time)
             vtt_entries.append(f"{start} --> {end}\n<v {s.speaker_role}>{txt}\n")
-        headers = {"Content-Disposition": f'attachment; filename="transcript_{call_id}.vtt"'}
+        headers = {"Content-Disposition": f'attachment; filename="transcript_{safe_call_id}.vtt"'}
         return Response(
             content="\n".join(vtt_entries), media_type="text/vtt; charset=utf-8", headers=headers
         )
@@ -229,7 +237,8 @@ async def get_call_audio(
                 range_header,
             )
         except Exception as e:
-            raise AppError("audio_fetch_failed", f"Не удалось получить аудиофайл: {str(e)}", 500)
+            logger.error("audio_stream_fetch_failed", call_id=call_id, error=type(e).__name__)
+            raise AppError("audio_fetch_failed", "Не удалось получить аудиофайл из хранилища", 500)
 
         body = stream_info["body"]
         resp_headers = {"Accept-Ranges": "bytes"}
@@ -392,6 +401,12 @@ async def list_calls(
             offset = max(0, int(cursor)) if cursor else 0
         except (TypeError, ValueError):
             offset = 0
+        if offset > _MAX_SEMANTIC_OFFSET:
+            raise AppError(
+                "invalid_cursor",
+                f"Смещение курсора превышает максимальный лимит ({_MAX_SEMANTIC_OFFSET})",
+                400,
+            )
         top_k = max(offset + limit + 1, 100)
 
         engine = get_embedding_engine()
@@ -634,6 +649,7 @@ async def reprocess_call_endpoint(
     body: ReprocessCallRequest,
     namespace: str = Query(...),
     auth: AuthContext = Depends(verify_auth),
+    _=Depends(rate_limit),
     db: AsyncSession = Depends(get_db),
 ):
     auth.require_scope("write")
@@ -654,10 +670,14 @@ async def reprocess_call_endpoint(
     is_slow_analysis = do_analysis and (
         settings.app_profile == "local-full" or settings.llm_external_provider_enabled
     )
+    if body.async_mode is False and is_slow_analysis:
+        auth.require_scope("admin")
     run_async = body.async_mode if body.async_mode is not None else is_slow_analysis
 
     if run_async:
         from app.queue.redis_streams import get_queue
+
+        await ensure_job_capacity(db)
 
         job = Job(
             namespace=namespace,

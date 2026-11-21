@@ -168,3 +168,26 @@ async def test_rate_limit_blocks_excess(mock_rate_limit_deps):
         )
         assert response.status_code == 429
         assert "Retry-After" in response.headers
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_cannot_be_bypassed_by_bearer_case(mock_rate_limit_deps):
+    """Changing 'Bearer' case ('bearer', 'BEARER') must share the same rate-limit bucket."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        wav_data = make_wav_bytes()
+        variants = ["Bearer", "bearer", "BEARER", "BeArEr", "bEaReR"]
+        for scheme in variants:
+            resp = await ac.post(
+                "/v1/voice/search?namespace=test",
+                content=wav_data,
+                headers={"Authorization": f"{scheme} dev-token", "Content-Type": "audio/wav"},
+            )
+            assert resp.status_code == 200
+
+        # 6th request with yet another case variant must be blocked (429)
+        resp_blocked = await ac.post(
+            "/v1/voice/search?namespace=test",
+            content=wav_data,
+            headers={"Authorization": "BEaReR dev-token", "Content-Type": "audio/wav"},
+        )
+        assert resp_blocked.status_code == 429

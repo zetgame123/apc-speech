@@ -421,8 +421,8 @@ async def clear_voice_history(
         await client.delete(f"voice:history:{namespace}")
         return {"status": "cleared", "namespace": namespace}
     except Exception as err:
-        logger.warning("voice_history_clear_failed", error=str(err))
-        return {"status": "error", "error": str(err)}
+        logger.warning("voice_history_clear_failed", error=type(err).__name__)
+        return {"status": "error", "error": "voice_history_clear_failed"}
 
 
 @router.get(

@@ -202,6 +202,10 @@ services:
       - ./data:/app/data:ro
     ports:
       - "8000:8000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -267,6 +271,10 @@ services:
       - ./config:/app/config:ro
       - ./schemas:/app/schemas:ro
       - ./scripts:/app/scripts:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "python", "/app/scripts/worker_healthcheck.py", "long_audio_processor"]
       interval: 10s
@@ -307,6 +315,10 @@ services:
     volumes:
       - ./app:/app/app:ro
       - ./scripts:/app/scripts:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "python", "/app/scripts/worker_healthcheck.py", "callback_dispatcher"]
       interval: 10s
@@ -359,6 +371,10 @@ services:
       - ./models:/app/models:ro
       - ./app:/app/app:ro
       - ./scripts:/app/scripts:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "python", "/app/scripts/worker_healthcheck.py", "fast_voice_search"]
       interval: 10s
@@ -395,6 +411,10 @@ services:
     volumes:
       - ./app:/app/app:ro
       - ./scripts:/app/scripts:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "python", "/app/scripts/worker_healthcheck.py", "retention_loop"]
       interval: 10s
@@ -435,7 +455,11 @@ services:
     volumes:
       - ./models:/models:ro
     ports:
-      - "${LLM_HOST_PORT:-8081}:8080"
+      - "127.0.0.1:${LLM_HOST_PORT:-8081}:8080"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     # Только backend (internal): к LLM обращаются api/worker-long из backend. См. B9.
     networks:
       - backend

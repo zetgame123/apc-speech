@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -15,6 +16,7 @@ from app.core.errors import AppError
 from app.core.logging import get_logger
 from app.core.security import (
     AuthContext,
+    is_production_env,
     validate_ssrf_url,
 )
 from app.core.urls import validate_callback_url
@@ -46,9 +48,10 @@ async def verify_integration_auth(
     provided_token = token or auth_token
 
     if not provided_token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            provided_token = auth_header.replace("Bearer ", "").strip()
+        auth_header = request.headers.get("Authorization", "").strip()
+        parts = auth_header.split(None, 1)
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            provided_token = parts[1].strip()
 
     if not provided_token:
         raise AppError(
@@ -75,8 +78,14 @@ async def verify_integration_auth(
             )
     except AppError:
         raise
-    except Exception:
-        pass
+    except Exception as exc:
+        if is_production_env(get_settings().app_env):
+            raise AppError(
+                error="auth_service_unavailable",
+                message="Сервис проверки отозванных токенов временно недоступен",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                headers={"Retry-After": "5"},
+            ) from exc
 
     return auth_ctx
 
@@ -202,6 +211,7 @@ async def bitrix24_telephony_webhook(
     timeline_webhook = bitrix_rest_url
     if not timeline_webhook and parsed.get("portal_domain") and parsed.get("auth_token"):
         timeline_webhook = f"https://{parsed['portal_domain']}/rest/{parsed.get('manager_id', '1')}/{parsed['auth_token']}/"
+        await asyncio.to_thread(validate_ssrf_url, timeline_webhook)
 
     # B9: скачивание — в фоне после немедленного 202 (см. create_job_by_url).
     background.add_task(

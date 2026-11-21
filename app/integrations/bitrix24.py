@@ -1,9 +1,11 @@
+import asyncio
 from typing import Any
 
 import httpx
 
 from app.core.logging import get_logger
-from app.core.security import validate_ssrf_url
+from app.core.security import build_ssrf_pinned_transport, resolve_and_validate_ssrf_url
+from app.core.urls import redact_url_for_log
 
 logger = get_logger("bitrix24_integration")
 
@@ -183,11 +185,15 @@ async def post_to_crm_timeline(
     if not webhook_url:
         return False
 
-    # SSRF protection
+    # SSRF protection (with DNS pinning to prevent TOCTOU rebinding)
     try:
-        validate_ssrf_url(webhook_url)
+        _, validated_ips = await asyncio.to_thread(resolve_and_validate_ssrf_url, webhook_url)
     except Exception as e:
-        logger.error("bitrix24_webhook_ssrf_rejected", url=webhook_url, error=str(e))
+        logger.error(
+            "bitrix24_webhook_ssrf_rejected",
+            url=redact_url_for_log(webhook_url),
+            error=type(e).__name__,
+        )
         return False
 
     url = webhook_url
@@ -205,7 +211,10 @@ async def post_to_crm_timeline(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+        transport = build_ssrf_pinned_transport(validated_ips[0])
+        async with httpx.AsyncClient(
+            timeout=15.0, follow_redirects=False, transport=transport
+        ) as client:
             resp = await client.post(url, json=payload)
             if resp.is_success:
                 logger.info(

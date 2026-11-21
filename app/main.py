@@ -17,6 +17,7 @@ from app.api import admin, analytics, calls, dashboard, health, integrations, jo
 from app.core.config import get_settings
 from app.core.errors import AppError, error_response
 from app.core.logging import get_logger, setup_logging
+from app.core.security import is_production_env
 from app.db.session import init_db
 from app.metrics.prometheus import (
     HTTP_REQUEST_DURATION_SECONDS,
@@ -35,11 +36,12 @@ async def lifespan(app: FastAPI):
     logger.info("service_startup_beginning", profile=settings.app_profile)
 
     # Security validations at startup
-    if settings.app_env == "production":
+    if is_production_env(settings.app_env):
         if (
             not settings.callback_signing_secret
             or len(settings.callback_signing_secret) < 32
             or "change_me" in settings.callback_signing_secret
+            or "change-me" in settings.callback_signing_secret
         ):
             msg = (
                 "CRITICAL: CALLBACK_SIGNING_SECRET is missing, too short, or default placeholder for production! "
@@ -47,12 +49,22 @@ async def lifespan(app: FastAPI):
             )
             logger.error(msg)
             raise RuntimeError(msg)
-        if "*" in settings.cors_allowed_origins:
-            logger.warning(
-                "CORS_ALLOWED_ORIGINS is set to '*' in production — restrict to specific domains"
-            )
+        if "*" in [o.strip() for o in settings.cors_allowed_origins.split(",")]:
+            msg = "CRITICAL: CORS_ALLOWED_ORIGINS cannot contain '*' in production!"
+            logger.error(msg)
+            raise RuntimeError(msg)
         if settings.dev_token:
-            logger.warning("DEV_TOKEN is set in production — consider removing it")
+            msg = "CRITICAL: DEV_TOKEN must not be set in production!"
+            logger.error(msg)
+            raise RuntimeError(msg)
+        if "secure_pass" in settings.database_url:
+            msg = "CRITICAL: Default database password 'secure_pass' is forbidden in production!"
+            logger.error(msg)
+            raise RuntimeError(msg)
+        if settings.s3_secret_key == "minio_secret_pass":
+            msg = "CRITICAL: Default S3 secret key is forbidden in production!"
+            logger.error(msg)
+            raise RuntimeError(msg)
         from app.workers.callback_dispatcher import enforce_production_callback_policy
 
         enforce_production_callback_policy(settings)
@@ -124,7 +136,7 @@ app = FastAPI(
     version=settings.build_version,
     description="Autonomous local speech recognition, diarization, and semantic analysis service",
     lifespan=lifespan,
-    docs_url="/docs" if settings.debug or settings.app_env != "production" else None,
+    docs_url="/docs" if settings.debug or not is_production_env(settings.app_env) else None,
     redoc_url=None,
 )
 
@@ -133,9 +145,9 @@ _origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.str
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-Id", "Range"],
 )
 
 

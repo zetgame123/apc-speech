@@ -1,7 +1,9 @@
+import asyncio
 import hashlib
 import hmac
 import ipaddress
 import os
+import re
 import socket
 import time
 from urllib.parse import urljoin, urlparse
@@ -16,10 +18,30 @@ from app.queue.redis_streams import get_queue
 
 security_bearer = HTTPBearer(auto_error=False)
 
+_NAMESPACE_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
+
+
+def is_production_env(app_env: str | None) -> bool:
+    """Case-insensitive check for production environment ('production' or 'prod')."""
+    return (app_env or "").strip().lower() in ("production", "prod")
+
+
+def validate_namespace(namespace: str) -> str:
+    """Validates tenant namespace to prevent path/key injection in S3 and Redis."""
+    if not namespace or ".." in namespace or not _NAMESPACE_RE.fullmatch(namespace):
+        raise AppError(
+            error="invalid_namespace",
+            message="Некорректный формат namespace (допустимы латинские буквы, цифры, '.', '_' и '-', до 64 символов)",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    return namespace
+
+
 # Blocked IP subnets for SSRF protection
 BLOCKED_IP_NETWORKS = [
     ipaddress.ip_network("127.0.0.0/8"),  # Loopback
     ipaddress.ip_network("10.0.0.0/8"),  # RFC 1918
+    ipaddress.ip_network("100.64.0.0/10"),  # RFC 6598 CGNAT / Shared Address Space
     ipaddress.ip_network("172.16.0.0/12"),  # RFC 1918
     ipaddress.ip_network("192.168.0.0/16"),  # RFC 1918
     ipaddress.ip_network("169.254.0.0/16"),  # Link-Local / Cloud Metadata
@@ -27,6 +49,7 @@ BLOCKED_IP_NETWORKS = [
     ipaddress.ip_network("::1/128"),  # IPv6 loopback
     ipaddress.ip_network("fc00::/7"),  # IPv6 unique local
     ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
+    ipaddress.ip_network("64:ff9b::/96"),  # RFC 6052 NAT64
 ]
 
 
@@ -52,26 +75,38 @@ class AuthContext:
 
     def verify_namespace(self, requested_namespace: str | None):
         """Enforces tenant isolation. If auth token is scoped to a specific namespace,
-        the client cannot access another namespace."""
-        if not self.namespace or not requested_namespace:
-            return
-        if self.namespace != requested_namespace:
-            raise AppError(
-                error="forbidden_namespace",
-                message=f"Токен привязан к namespace '{self.namespace}', доступ к '{requested_namespace}' запрещен",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+        the client cannot access another namespace or bypass isolation with an empty value."""
+        if requested_namespace is not None:
+            validate_namespace(requested_namespace)
+        if self.namespace:
+            if not requested_namespace or self.namespace != requested_namespace:
+                raise AppError(
+                    error="forbidden_namespace",
+                    message=(
+                        f"Токен привязан к namespace '{self.namespace}', "
+                        f"доступ к '{requested_namespace}' запрещен"
+                    ),
+                    status_code=status.HTTP_403_FORBIDDEN,
+                )
 
 
 def authenticate_token(token: str) -> AuthContext:
     settings = get_settings()
 
     # Dev token check (allowed ONLY in non-production environments)
-    if settings.app_env != "production" and settings.dev_token and token == settings.dev_token:
+    if (
+        not is_production_env(settings.app_env)
+        and settings.dev_token
+        and hmac.compare_digest(token, settings.dev_token)
+    ):
         return AuthContext(token=token, scopes={"admin", "write", "read"}, namespace=None)
 
     # Debug mode fallback only in non-production
-    if settings.app_env != "production" and settings.debug and token == "debug-token":
+    if (
+        not is_production_env(settings.app_env)
+        and settings.debug
+        and hmac.compare_digest(token, "debug-token")
+    ):
         return AuthContext(token=token, scopes={"admin", "write", "read"}, namespace=None)
 
     token_hash = hash_token(token)
@@ -128,8 +163,14 @@ async def verify_auth(
             )
     except AppError:
         raise
-    except Exception:
-        pass
+    except Exception as exc:
+        if is_production_env(get_settings().app_env):
+            raise AppError(
+                error="auth_service_unavailable",
+                message="Сервис проверки отозванных токенов временно недоступен",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                headers={"Retry-After": "5"},
+            ) from exc
 
     return auth_ctx
 
@@ -159,7 +200,12 @@ def list_revoked_tokens() -> list[str]:
     return list(_revoked_token_hashes)
 
 
-def validate_ssrf_url(url: str) -> str:
+def resolve_and_validate_ssrf_url(url: str) -> tuple[str, list[str]]:
+    """Validates URL scheme/host and resolves DNS, ensuring all resolved IPs are public.
+
+    Returns (url, validated_ips) for DNS-pinned HTTP requests (prevents DNS rebinding TOCTOU).
+    Never exposes resolved internal IP addresses in client-facing error details.
+    """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise AppError(
@@ -179,14 +225,14 @@ def validate_ssrf_url(url: str) -> str:
     # DNS resolution and IP verification
     try:
         addr_info = socket.getaddrinfo(hostname, None)
-    except socket.gaierror as e:
+    except socket.gaierror:
         raise AppError(
             error="dns_resolution_failed",
-            message=f"Не удалось разрешить доменное имя: {hostname}",
+            message="Не удалось разрешить доменное имя",
             status_code=status.HTTP_400_BAD_REQUEST,
-            details={"hostname": hostname, "error": str(e)},
         )
 
+    validated_ips: list[str] = []
     for item in addr_info:
         ip_str = item[4][0]
         try:
@@ -194,7 +240,7 @@ def validate_ssrf_url(url: str) -> str:
         except ValueError:
             raise AppError(
                 error="invalid_ip_address",
-                message=f"Недопустимый IP-адрес: {ip_str}",
+                message="Недопустимый IP-адрес в ответе DNS",
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -215,7 +261,6 @@ def validate_ssrf_url(url: str) -> str:
                 error="ssrf_protection_triggered",
                 message="Запрещено обращение к внутренним или приватным IP-адресам",
                 status_code=status.HTTP_400_BAD_REQUEST,
-                details={"blocked_ip": str(ip_obj)},
             )
 
         for blocked in BLOCKED_IP_NETWORKS:
@@ -225,12 +270,55 @@ def validate_ssrf_url(url: str) -> str:
                         error="ssrf_protection_triggered",
                         message="Запрещено обращение к внутренним или приватным IP-адресам",
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        details={"blocked_ip": str(ip_obj)},
                     )
             except TypeError:
                 pass
 
-    return url
+        validated_ips.append(str(ip_obj))
+
+    if not validated_ips:
+        raise AppError(
+            error="dns_resolution_failed",
+            message="Не удалось разрешить доменное имя",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return url, validated_ips
+
+
+def validate_ssrf_url(url: str) -> str:
+    validated_url, _ = resolve_and_validate_ssrf_url(url)
+    return validated_url
+
+
+def build_ssrf_pinned_transport(pinned_ip: str) -> httpx.AsyncHTTPTransport:
+    """Creates an httpx AsyncHTTPTransport pinned to a pre-validated IP address.
+
+    Prevents DNS rebinding (TOCTOU) while preserving the original Host header and TLS SNI.
+    """
+    transport = httpx.AsyncHTTPTransport()
+    pool = getattr(transport, "_pool", None)
+    backend = getattr(pool, "_network_backend", None)
+    if backend is not None and hasattr(backend, "connect_tcp"):
+        orig_connect_tcp = backend.connect_tcp
+
+        async def _pinned_connect_tcp(
+            host: str,
+            port: int,
+            timeout: float | None = None,
+            local_address: str | None = None,
+            socket_options=None,
+        ):
+            return await orig_connect_tcp(
+                pinned_ip,
+                port,
+                timeout=timeout,
+                local_address=local_address,
+                socket_options=socket_options,
+            )
+
+        backend.connect_tcp = _pinned_connect_tcp
+    return transport
 
 
 def sign_callback_payload(secret: str, raw_body: bytes) -> tuple[int, str]:
@@ -261,9 +349,12 @@ async def download_file_ssrf_safe(
 
     try:
         for hop in range(max_redirects + 1):
-            validate_ssrf_url(current_url)
+            _, validated_ips = await asyncio.to_thread(resolve_and_validate_ssrf_url, current_url)
+            transport = build_ssrf_pinned_transport(validated_ips[0])
 
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+            async with httpx.AsyncClient(
+                timeout=timeout, follow_redirects=False, transport=transport
+            ) as client:
                 async with client.stream("GET", current_url) as resp:
                     if resp.status_code in (301, 302, 303, 307, 308):
                         if hop >= max_redirects:

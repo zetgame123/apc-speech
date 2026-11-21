@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Response, Security, status
+from fastapi.security import HTTPAuthorizationCredentials
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.cpu import has_avx2
 from app.core.logging import get_logger
+from app.core.security import is_production_env, security_bearer, verify_auth
 from app.db.session import engine
 from app.metrics.prometheus import QUEUE_SIZE
 from app.queue.redis_streams import get_queue
@@ -33,6 +35,11 @@ def _warn_once_if_no_avx2() -> bool:
 async def health_check():
     cfg = get_settings()
     avx2 = _warn_once_if_no_avx2()
+    if is_production_env(cfg.app_env):
+        return {
+            "status": "ok",
+            "profile": cfg.app_profile,
+        }
     return {
         "status": "ok",
         "version": cfg.build_version,
@@ -99,7 +106,12 @@ async def readiness_check(response: Response):
 
 
 @router.get("/metrics")
-async def get_metrics():
+async def get_metrics(
+    credentials: HTTPAuthorizationCredentials | None = Security(security_bearer),
+):
+    if is_production_env(get_settings().app_env):
+        auth = await verify_auth(credentials)
+        auth.require_scope("admin")
     try:
         lengths = await get_queue().get_stream_lengths()
         for queue_name, depth in lengths.items():
