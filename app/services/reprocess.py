@@ -2,14 +2,16 @@
 without re-running ASR or diarization.
 """
 
+import asyncio
 from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analytics.embeddings import build_call_embedding_text, get_embedding_engine
 from app.core.errors import AppError
 from app.core.logging import get_logger
-from app.db.models import Analysis, Call, TranscriptSegment
+from app.db.models import Analysis, Call, Embedding, TranscriptSegment, utc_now
 from app.llm.factory import get_llm_adapter
 from app.llm.local_adapter import normalize_analysis_dict
 from app.llm.port import AnalysisContext, validate_analysis_schema
@@ -220,6 +222,101 @@ async def reanalyze_call(
     }
 
 
+async def reindex_call_embedding(
+    db: AsyncSession,
+    call_id: str,
+    namespace: str,
+) -> dict[str, Any]:
+    """Computes and upserts the semantic embedding vector for a call from masked data.
+
+    Degrades gracefully if embeddings are disabled or local ONNX weights are missing.
+    """
+    _, segments = await _load_call_and_segments(db, call_id, namespace)
+    analysis = (
+        await db.execute(
+            select(Analysis).where(Analysis.call_id == call_id, Analysis.namespace == namespace)
+        )
+    ).scalar_one_or_none()
+
+    engine = get_embedding_engine()
+    if not engine.is_available():
+        logger.info(
+            "call_embedding_skipped_unavailable",
+            call_id=call_id,
+            namespace=namespace,
+        )
+        return {
+            "call_id": call_id,
+            "namespace": namespace,
+            "embedding_updated": False,
+            "reason": "embedding_model_unavailable",
+        }
+
+    text = build_call_embedding_text(analysis, segments)
+    if not text:
+        return {
+            "call_id": call_id,
+            "namespace": namespace,
+            "embedding_updated": False,
+            "reason": "empty_text",
+        }
+
+    try:
+        vector = await asyncio.to_thread(engine.embed_passage, text)
+    except Exception as exc:
+        logger.warning(
+            "call_embedding_compute_failed",
+            call_id=call_id,
+            namespace=namespace,
+            error_type=type(exc).__name__,
+        )
+        return {
+            "call_id": call_id,
+            "namespace": namespace,
+            "embedding_updated": False,
+            "reason": "compute_failed",
+        }
+
+    existing = (
+        await db.execute(select(Embedding).where(Embedding.call_id == call_id))
+    ).scalar_one_or_none()
+    now = utc_now()
+    if existing:
+        existing.namespace = namespace
+        existing.vector_json = vector
+        existing.embedding = vector
+        existing.model_name = engine.model_name
+        existing.updated_at = now
+    else:
+        db.add(
+            Embedding(
+                call_id=call_id,
+                namespace=namespace,
+                vector_json=vector,
+                embedding=vector,
+                model_name=engine.model_name,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    await db.commit()
+
+    logger.info(
+        "call_embedding_reindexed",
+        call_id=call_id,
+        namespace=namespace,
+        model_name=engine.model_name,
+        dim=len(vector),
+    )
+    return {
+        "call_id": call_id,
+        "namespace": namespace,
+        "embedding_updated": True,
+        "model_name": engine.model_name,
+        "dim": len(vector),
+    }
+
+
 async def reprocess_namespace_calls(
     db: AsyncSession,
     namespace: str,
@@ -227,7 +324,7 @@ async def reprocess_namespace_calls(
     steps: list[str],
     limit: int = 500,
 ) -> dict[str, Any]:
-    """Batch-reprocesses calls in a namespace (e.g. after updating PII rules)."""
+    """Batch-reprocesses calls in a namespace (e.g. after updating PII rules or embeddings)."""
     stmt = (
         select(Call.id)
         .where(Call.namespace == namespace)
@@ -238,21 +335,33 @@ async def reprocess_namespace_calls(
 
     do_pii = "pii" in steps
     do_analysis = "analysis" in steps
+    do_embedding = "embedding" in steps
 
     processed_calls = 0
     total_updated_segments = 0
+    reindexed_embeddings = 0
     failed_calls: list[dict[str, str]] = []
 
     for cid in call_ids:
         try:
+            call_touched = False
             if do_analysis:
                 res = await reanalyze_call(db, cid, namespace, remask=do_pii)
+                total_updated_segments += int(res.get("updated_segments", 0))
+                call_touched = True
             elif do_pii:
                 res = await remask_call_segments(db, cid, namespace)
-            else:
-                continue
-            processed_calls += 1
-            total_updated_segments += int(res.get("updated_segments", 0))
+                total_updated_segments += int(res.get("updated_segments", 0))
+                call_touched = True
+
+            if do_embedding:
+                emb_res = await reindex_call_embedding(db, cid, namespace)
+                if emb_res.get("embedding_updated"):
+                    reindexed_embeddings += 1
+                call_touched = True
+
+            if call_touched:
+                processed_calls += 1
         except Exception as exc:
             logger.warning("namespace_reprocess_call_failed", call_id=cid, error=str(exc))
             failed_calls.append({"call_id": cid, "error": str(exc)})
@@ -263,5 +372,6 @@ async def reprocess_namespace_calls(
         "total_calls": len(call_ids),
         "processed_calls": processed_calls,
         "updated_segments": total_updated_segments,
+        "reindexed_embeddings": reindexed_embeddings,
         "failed_calls": failed_calls,
     }

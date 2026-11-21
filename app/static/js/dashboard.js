@@ -184,7 +184,7 @@
   }
   const btnReanalyzeCall = document.getElementById('btnReanalyzeCall');
   if (btnReanalyzeCall) {
-    btnReanalyzeCall.addEventListener('click', () => reprocessCurrentCall(['pii', 'analysis']));
+    btnReanalyzeCall.addEventListener('click', () => reprocessCurrentCall(['pii', 'analysis', 'embedding']));
   }
 
   initPlayer();
@@ -863,6 +863,7 @@
     }
     const filter = {
       q: val('fltQ'),
+      search_mode: val('fltSearchMode') || 'keyword',
       manager_id: val('fltManager'),
       inquiry_type: val('fltType'),
       date_from: fromIso,
@@ -882,9 +883,16 @@
     const answerBadge = c.is_answering_machine
       ? '<span class="badge bg-danger">Автоответчик</span>'
       : '<span class="badge bg-success">Живой разговор</span>';
+    const relScore = (c.relevance_score !== undefined && c.relevance_score !== null && !Number.isNaN(Number(c.relevance_score)))
+      ? `<span class="badge bg-primary ms-1" title="Релевантность поиска">${Math.round(Number(c.relevance_score) * 100)}%</span>`
+      : '';
+    const summaryText = c.summary ? String(c.summary).trim() : '';
+    const summaryPreview = summaryText
+      ? `<div class="small text-muted mt-1">${escapeHtml(summaryText.length > 140 ? summaryText.slice(0, 140) + '…' : summaryText)}</div>`
+      : '';
     tr.innerHTML = `
-      <td><code>${safeId.substring(0, 8)}...</code></td>
-      <td>${safeExternalId}</td>
+      <td><code>${safeId.substring(0, 8)}...</code>${relScore}</td>
+      <td>${safeExternalId}${summaryPreview}</td>
       <td><span class="badge bg-light text-dark border">${safeManagerId}</span></td>
       <td>${durStr}</td>
       <td>${answerBadge}</td>
@@ -926,7 +934,12 @@
     }
     btnMoreCalls.disabled = true;
     const params = new URLSearchParams({ namespace: getNamespace(), limit: filter.limit });
-    if (filter.q) params.set('q', filter.q);
+    if (filter.q) {
+      params.set('q', filter.q);
+      if (filter.search_mode && filter.search_mode !== 'keyword') {
+        params.set('search_mode', filter.search_mode);
+      }
+    }
     if (filter.manager_id) params.set('manager_id', filter.manager_id);
     if (filter.inquiry_type) params.set('inquiry_type', filter.inquiry_type);
     if (filter.date_from) params.set('date_from', filter.date_from);
@@ -937,6 +950,14 @@
       .then(data => {
         callsState.loading = false;
         btnMoreCalls.disabled = false;
+        if (data.degraded) {
+          setText(
+            callsFilterError,
+            filter.search_mode === 'hybrid'
+              ? 'Семантическая модель недоступна — показаны только текстовые совпадения.'
+              : 'Семантическая модель недоступна — переключите режим на «Текст» или загрузите веса эмбеддера.'
+          );
+        }
         if (!append) callsState.items = [];
         (data.items || []).forEach((c) => callsState.items.push(c));
         callsState.nextCursor = data.next_cursor || null;

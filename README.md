@@ -137,6 +137,7 @@ curl -s -X POST "$BASE/v1/voice/search?namespace=outdoor_msk&language=ru" \
 | `TONE_FUZZY_OOV_ONLY` | `false` | Нечёткая замена только для слов вне словаря (в паре с порогом выше) |
 | `TONE_DECODE` / `TONE_BEAM_WIDTH` / `TONE_HOTWORD_WEIGHT` | `greedy` / `10` / `3.0` | Декодер T-one (дефолт greedy) |
 | `DIARIZATION_MIN_SPEAKER_DISTANCE` | `0.18` | Порог разделения спикеров |
+| `EMBEDDING_ENABLED` / `EMBEDDING_MODEL` / `EMBEDDING_MODEL_DIR` / `EMBEDDING_THREADS` | `true` / `multilingual-e5-small-int8` / `models/embeddings/multilingual-e5-small-int8` / `1` | Локальный ONNX-эмбеддер (`384` dims, без PyTorch) для семантического и гибридного поиска (`pgvector`) |
 | `LOCAL_LLM_URL` / `LOCAL_LLM_MODEL` | `http://llm-runtime:8080/v1` / `t-lite-2.1` | Локальный LLM-рантайм (`local-full`: `t-lite-2.1`, `qwen2.5-7b-instruct` или `qwen3-4b`) |
 | `LLAMA_THREADS` / `LLM_HOST_PORT` | `4` / `8081` | Потоки llama.cpp (на 8+ физических ядрах можно `6`) и порт публикации `llm-runtime` на хосте |
 | `LOCAL_LLM_JSON_MODE` | `json_schema` | Режим constrained decoding (`json_object` — слабее, только для замеров) |

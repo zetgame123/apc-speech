@@ -31,6 +31,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "jsonschema>=4.20.0",
     "onnx-asr>=0.7.0",
+    "tokenizers>=0.20.0",
 ]
 
 [project.optional-dependencies]

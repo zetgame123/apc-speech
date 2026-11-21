@@ -128,6 +128,14 @@ class Settings(BaseSettings):
         default=0.18, alias="DIARIZATION_MIN_SPEAKER_DISTANCE"
     )
 
+    # Semantic Embeddings (Local ONNX, multilingual-e5-small INT8)
+    embedding_enabled: bool = Field(default=True, alias="EMBEDDING_ENABLED")
+    embedding_model: str = Field(default="multilingual-e5-small-int8", alias="EMBEDDING_MODEL")
+    embedding_model_dir: str = Field(
+        default="models/embeddings/multilingual-e5-small-int8", alias="EMBEDDING_MODEL_DIR"
+    )
+    embedding_threads: int = Field(default=1, alias="EMBEDDING_THREADS")
+
     # LLM
     local_llm_url: str = Field(default="http://localhost:8080/v1", alias="LOCAL_LLM_URL")
     local_llm_model: str = Field(default="t-lite-2.1", alias="LOCAL_LLM_MODEL")

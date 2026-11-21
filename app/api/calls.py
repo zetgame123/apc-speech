@@ -8,13 +8,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analytics.embeddings import cosine_similarity, get_embedding_engine
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.security import AuthContext, verify_auth
-from app.db.models import Analysis, AudioObject, Call, Job, TranscriptSegment
+from app.db.models import Analysis, AudioObject, Call, Embedding, Job, TranscriptSegment
 from app.db.session import get_db
 from app.pii.masker import get_pii_masker
-from app.services.reprocess import reanalyze_call, remask_call_segments
+from app.services.reprocess import reanalyze_call, reindex_call_embedding, remask_call_segments
 from app.storage.s3 import get_storage
 
 router = APIRouter(prefix="/v1/calls", tags=["calls"])
@@ -266,10 +267,101 @@ async def get_call_audio(
     return Response(content=data, media_type=media_type, headers={"Accept-Ranges": "bytes"})
 
 
+_RRF_K = 60
+
+
+def _apply_call_filters(
+    stmt,
+    *,
+    namespace: str,
+    manager_id: str | None,
+    inquiry_type: str | None,
+    category: str | None,
+    date_from: datetime | None,
+    date_to: datetime | None,
+):
+    stmt = stmt.where(Call.namespace == namespace)
+    if manager_id:
+        stmt = stmt.where(Call.manager_id == manager_id)
+    if date_from:
+        stmt = stmt.where(Call.created_at >= _naive(date_from))
+    if date_to:
+        stmt = stmt.where(Call.created_at <= _naive(date_to))
+    if inquiry_type:
+        calls_with_type = select(Analysis.call_id).where(
+            Analysis.namespace == namespace, Analysis.inquiry_type == inquiry_type
+        )
+        stmt = stmt.where(Call.id.in_(calls_with_type))
+    if category:
+        calls_with_cat = select(Analysis.call_id).where(
+            Analysis.namespace == namespace,
+            Analysis.entities["product_category"].as_string() == category,
+        )
+        stmt = stmt.where(Call.id.in_(calls_with_cat))
+    return stmt
+
+
+async def _search_semantic_candidates(
+    db: AsyncSession,
+    *,
+    namespace: str,
+    base_call_ids_stmt,
+    query_vec: list[float],
+    min_score: float,
+    top_k: int,
+) -> list[tuple[str, float]]:
+    bind = db.get_bind()
+    dialect_name = bind.dialect.name if bind is not None else ""
+
+    if dialect_name == "postgresql":
+        dist_expr = Embedding.embedding.cosine_distance(query_vec)
+        sim_expr = (1.0 - dist_expr).label("similarity")
+        sem_stmt = (
+            select(Embedding.call_id, sim_expr)
+            .where(
+                Embedding.namespace == namespace,
+                Embedding.embedding.is_not(None),
+                Embedding.call_id.in_(base_call_ids_stmt),
+                (1.0 - dist_expr) >= min_score,
+            )
+            .order_by(dist_expr.asc())
+            .limit(top_k)
+        )
+        rows = (await db.execute(sem_stmt)).all()
+        return [(str(r[0]), float(r[1])) for r in rows]
+
+    # SQLite fallback: compute cosine similarity in numpy over filtered namespace embeddings
+    emb_stmt = select(Embedding.call_id, Embedding.embedding, Embedding.vector_json).where(
+        Embedding.namespace == namespace,
+        Embedding.call_id.in_(base_call_ids_stmt),
+    )
+    rows = (await db.execute(emb_stmt)).all()
+    scored: list[tuple[str, float]] = []
+    for call_id, emb_vec, vec_json in rows:
+        vec = emb_vec if emb_vec is not None else vec_json
+        if not vec:
+            continue
+        sim = cosine_similarity(vec, query_vec)
+        if sim >= min_score:
+            scored.append((str(call_id), float(sim)))
+    scored.sort(key=lambda pair: pair[1], reverse=True)
+    return scored[:top_k]
+
+
 @router.get("")
 async def list_calls(
     namespace: str = Query(...),
-    q: str | None = Query(None, description="Полнотекстовый поиск"),
+    q: str | None = Query(None, description="Поисковый запрос (текст или смысл)"),
+    search_mode: Literal["keyword", "semantic", "hybrid"] = Query(
+        "keyword",
+        description="Режим поиска: keyword (ILIKE/pg_trgm), semantic (pgvector), hybrid (RRF)",
+    ),
+    min_score: float = Query(
+        0.78,
+        ge=0.0,
+        le=1.0,
+        description="Минимальный порог косинусного сходства для semantic/hybrid поиска",
+    ),
     manager_id: str | None = Query(None),
     inquiry_type: str | None = Query(None),
     category: str | None = Query(None, description="Фильтр по категории товара"),
@@ -283,14 +375,180 @@ async def list_calls(
     auth.require_scope("read")
     auth.verify_namespace(namespace)
 
-    query = select(Call).where(Call.namespace == namespace)
+    # Semantic / Hybrid search path when query string `q` is provided
+    if q and q.strip() and search_mode in ("semantic", "hybrid"):
+        q_clean = q.strip()
+        base_call_ids_stmt = _apply_call_filters(
+            select(Call.id),
+            namespace=namespace,
+            manager_id=manager_id,
+            inquiry_type=inquiry_type,
+            category=category,
+            date_from=date_from,
+            date_to=date_to,
+        )
 
-    if manager_id:
-        query = query.where(Call.manager_id == manager_id)
-    if date_from:
-        query = query.where(Call.created_at >= _naive(date_from))
-    if date_to:
-        query = query.where(Call.created_at <= _naive(date_to))
+        try:
+            offset = max(0, int(cursor)) if cursor else 0
+        except (TypeError, ValueError):
+            offset = 0
+        top_k = max(offset + limit + 1, 100)
+
+        engine = get_embedding_engine()
+        query_vec = await asyncio.to_thread(engine.embed_query_safe, q_clean)
+
+        degraded = False
+        ranked_scores: list[tuple[str, float]] = []
+
+        if search_mode == "semantic":
+            if query_vec is None:
+                return {
+                    "items": [],
+                    "next_cursor": None,
+                    "search_mode": "semantic",
+                    "degraded": True,
+                }
+            sem_hits = await _search_semantic_candidates(
+                db,
+                namespace=namespace,
+                base_call_ids_stmt=base_call_ids_stmt,
+                query_vec=query_vec,
+                min_score=min_score,
+                top_k=top_k,
+            )
+            ranked_scores = [(cid, round(max(0.0, min(1.0, sim)), 4)) for cid, sim in sem_hits]
+        else:
+            # Hybrid: Reciprocal Rank Fusion (RRF) of keyword + semantic candidates
+            kw_matching = (
+                select(TranscriptSegment.call_id)
+                .where(
+                    TranscriptSegment.namespace == namespace,
+                    TranscriptSegment.text_masked.ilike(f"%{q_clean}%"),
+                )
+                .distinct()
+            )
+            kw_stmt = (
+                _apply_call_filters(
+                    select(Call.id),
+                    namespace=namespace,
+                    manager_id=manager_id,
+                    inquiry_type=inquiry_type,
+                    category=category,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
+                .where(Call.id.in_(kw_matching))
+                .order_by(desc(Call.created_at), desc(Call.id))
+                .limit(top_k)
+            )
+            kw_ids = [str(cid) for cid in (await db.execute(kw_stmt)).scalars().all()]
+
+            sem_hits: list[tuple[str, float]] = []
+            if query_vec is None:
+                degraded = True
+            else:
+                sem_hits = await _search_semantic_candidates(
+                    db,
+                    namespace=namespace,
+                    base_call_ids_stmt=base_call_ids_stmt,
+                    query_vec=query_vec,
+                    min_score=min_score,
+                    top_k=top_k,
+                )
+
+            rrf_map: dict[str, float] = {}
+            sem_sim_map: dict[str, float] = {}
+            for rank, cid in enumerate(kw_ids, start=1):
+                rrf_map[cid] = rrf_map.get(cid, 0.0) + 1.0 / (_RRF_K + rank)
+            for rank, (cid, sim) in enumerate(sem_hits, start=1):
+                rrf_map[cid] = rrf_map.get(cid, 0.0) + 1.0 / (_RRF_K + rank)
+                sem_sim_map[cid] = sim
+
+            max_rrf = (1.0 if degraded else 2.0) / (_RRF_K + 1)
+            ordered_ids = sorted(
+                rrf_map.keys(),
+                key=lambda cid: (rrf_map[cid], sem_sim_map.get(cid, 0.0)),
+                reverse=True,
+            )
+            ranked_scores = [
+                (cid, round(min(1.0, rrf_map[cid] / max_rrf), 4)) for cid in ordered_ids
+            ]
+
+        page_entries = ranked_scores[offset : offset + limit]
+        has_next = len(ranked_scores) > offset + limit
+        page_ids = [cid for cid, _ in page_entries]
+        score_map = dict(page_entries)
+
+        if not page_ids:
+            resp: dict = {
+                "items": [],
+                "next_cursor": None,
+                "search_mode": search_mode,
+            }
+            if degraded:
+                resp["degraded"] = True
+            return resp
+
+        calls_rows = (
+            (
+                await db.execute(
+                    select(Call).where(Call.namespace == namespace, Call.id.in_(page_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        calls_by_id = {c.id: c for c in calls_rows}
+
+        summary_rows = (
+            await db.execute(
+                select(Analysis.call_id, Analysis.summary).where(
+                    Analysis.namespace == namespace,
+                    Analysis.call_id.in_(page_ids),
+                )
+            )
+        ).all()
+        summary_by_id = {str(cid): summ for cid, summ in summary_rows}
+
+        items = []
+        for cid in page_ids:
+            c = calls_by_id.get(cid)
+            if not c:
+                continue
+            created_str = (
+                c.created_at.replace(tzinfo=timezone.utc).isoformat() if c.created_at else None
+            )
+            items.append(
+                {
+                    "call_id": c.id,
+                    "external_id": c.external_id,
+                    "created_at": created_str,
+                    "manager_id": c.manager_id,
+                    "duration_sec": c.duration_sec,
+                    "is_answering_machine": c.is_answering_machine,
+                    "relevance_score": score_map.get(c.id),
+                    "summary": summary_by_id.get(c.id),
+                }
+            )
+
+        resp = {
+            "items": items,
+            "next_cursor": str(offset + limit) if has_next else None,
+            "search_mode": search_mode,
+        }
+        if degraded:
+            resp["degraded"] = True
+        return resp
+
+    query = _apply_call_filters(
+        select(Call),
+        namespace=namespace,
+        manager_id=manager_id,
+        inquiry_type=inquiry_type,
+        category=category,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
     # Fulltext search: find calls whose transcript segments contain the query string
     if q:
@@ -303,21 +561,6 @@ async def list_calls(
             .distinct()
         )
         query = query.where(Call.id.in_(matching_call_ids))
-
-    # Filter by inquiry type via Analysis table
-    if inquiry_type:
-        calls_with_type = select(Analysis.call_id).where(
-            Analysis.namespace == namespace, Analysis.inquiry_type == inquiry_type
-        )
-        query = query.where(Call.id.in_(calls_with_type))
-
-    # Filter by product category via Analysis.entities['product_category']
-    if category:
-        calls_with_cat = select(Analysis.call_id).where(
-            Analysis.namespace == namespace,
-            Analysis.entities["product_category"].as_string() == category,
-        )
-        query = query.where(Call.id.in_(calls_with_cat))
 
     if cursor:
         try:
@@ -374,10 +617,10 @@ async def list_calls(
 
 
 class ReprocessCallRequest(BaseModel):
-    steps: list[Literal["pii", "analysis"]] = Field(
+    steps: list[Literal["pii", "analysis", "embedding"]] = Field(
         default_factory=lambda: ["pii"],
         min_length=1,
-        description="Шаги пост-обработки без повторного ASR: pii, analysis",
+        description="Шаги пост-обработки без повторного ASR: pii, analysis, embedding",
     )
     async_mode: bool | None = Field(
         default=None,
@@ -400,6 +643,7 @@ async def reprocess_call_endpoint(
     steps = list(dict.fromkeys(body.steps))
     do_pii = "pii" in steps
     do_analysis = "analysis" in steps
+    do_embedding = "embedding" in steps
 
     call_stmt = select(Call).where(Call.id == call_id, Call.namespace == namespace)
     call = (await db.execute(call_stmt)).scalar_one_or_none()
@@ -444,10 +688,19 @@ async def reprocess_call_endpoint(
             },
         )
 
+    result: dict = {"call_id": call_id, "namespace": namespace}
     if do_analysis:
-        result = await reanalyze_call(db, call_id, namespace, remask=do_pii)
-    else:
-        result = await remask_call_segments(db, call_id, namespace)
+        result.update(await reanalyze_call(db, call_id, namespace, remask=do_pii))
+    elif do_pii:
+        result.update(await remask_call_segments(db, call_id, namespace))
+
+    if do_embedding:
+        emb_res = await reindex_call_embedding(db, call_id, namespace)
+        result["embedding_updated"] = emb_res.get("embedding_updated", False)
+        if "model_name" in emb_res:
+            result["embedding_model"] = emb_res["model_name"]
+        if "reason" in emb_res:
+            result["embedding_reason"] = emb_res["reason"]
 
     return {
         "status": "succeeded",

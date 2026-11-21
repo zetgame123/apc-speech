@@ -337,8 +337,15 @@
 
             <form id="callsFilterForm" class="row g-2 mb-3" aria-label="Фильтры списка звонков">
               <div class="col-md-3">
-                <label class="form-label small mb-1" for="fltQ">Поиск по тексту расшифровки</label>
-                <input id="fltQ" class="form-control form-control-sm" placeholder="слово или фраза" autocomplete="off">
+                <label class="form-label small mb-1" for="fltQ">Поиск по звонкам</label>
+                <div class="input-group input-group-sm">
+                  <input id="fltQ" class="form-control form-control-sm" placeholder="слово, фраза или смысл" autocomplete="off">
+                  <select id="fltSearchMode" class="form-select form-select-sm flex-grow-0 w-auto" aria-label="Режим поиска" title="Режим поиска: Текст (ILIKE), Смысл (pgvector), Гибрид (RRF)">
+                    <option value="keyword" selected>Текст</option>
+                    <option value="semantic">Смысл</option>
+                    <option value="hybrid">Гибрид</option>
+                  </select>
+                </div>
               </div>
               <div class="col-md-2">
                 <label class="form-label small mb-1" for="fltManager">Менеджер</label>

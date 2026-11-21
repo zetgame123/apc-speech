@@ -54,6 +54,16 @@ GIGAAM_FILES = [
     ("config.json", False, 50),
 ]
 
+EMBEDDING_DIR = os.path.join(MODELS_DIR, "embeddings", "multilingual-e5-small-int8")
+EMBEDDING_MODEL_URLS = [
+    "https://huggingface.co/Xenova/multilingual-e5-small/resolve/main/onnx/model_quantized.onnx",
+    "https://huggingface.co/intfloat/multilingual-e5-small/resolve/main/onnx/model_qint8_avx512_vnni.onnx",
+]
+EMBEDDING_TOKENIZER_URLS = [
+    "https://huggingface.co/intfloat/multilingual-e5-small/resolve/main/tokenizer.json",
+    "https://huggingface.co/Xenova/multilingual-e5-small/resolve/main/tokenizer.json",
+]
+
 
 def _reporthook(block_num, block_size, total_size):
     downloaded = block_num * block_size
@@ -313,6 +323,49 @@ def download_pyannote_segmentation():
     print(f"[OK] Downloaded pyannote-segmentation-3.0 to {PYANNOTE_SEG_PATH}")
 
 
+def download_embeddings():
+    """Скачивает intfloat/multilingual-e5-small INT8 ONNX (~118 МБ, MIT, 384 dims) и tokenizer.json."""
+    os.makedirs(EMBEDDING_DIR, exist_ok=True)
+    model_path = os.path.join(EMBEDDING_DIR, "model.onnx")
+    tok_path = os.path.join(EMBEDDING_DIR, "tokenizer.json")
+
+    if os.path.exists(model_path) and os.path.getsize(model_path) > 50_000_000:
+        print(
+            f"[OK] Embedding model already present at {model_path} ({os.path.getsize(model_path)} bytes)"
+        )
+    else:
+        print(f"Downloading multilingual-e5-small INT8 ONNX (~118 MB, MIT) to {model_path}...")
+        last_err = None
+        for url in EMBEDDING_MODEL_URLS:
+            try:
+                if download_file(url, model_path, expected_min_size=50_000_000, optional=False):
+                    last_err = None
+                    break
+            except Exception as e:
+                last_err = e
+                print(f"[WARN] Failed to download embedding model from {url}: {e}")
+        if last_err is not None:
+            raise RuntimeError(f"Failed to download embedding model: {last_err}") from last_err
+
+    if os.path.exists(tok_path) and os.path.getsize(tok_path) > 100_000:
+        print(f"[OK] Embedding tokenizer already present at {tok_path}")
+    else:
+        print(f"Downloading multilingual-e5-small tokenizer.json to {tok_path}...")
+        last_err = None
+        for url in EMBEDDING_TOKENIZER_URLS:
+            try:
+                if download_file(url, tok_path, expected_min_size=100_000, optional=False):
+                    last_err = None
+                    break
+            except Exception as e:
+                last_err = e
+                print(f"[WARN] Failed to download embedding tokenizer from {url}: {e}")
+        if last_err is not None:
+            raise RuntimeError(f"Failed to download embedding tokenizer: {last_err}") from last_err
+
+    print(f"[OK] multilingual-e5-small INT8 ready in {EMBEDDING_DIR}")
+
+
 def download_qwen():
     """Скачивает T-lite-it-2.1 Q4_K_M GGUF (~4.7 GiB, Apache 2.0, 8.2B Qwen3) для профиля local-full."""
     os.makedirs(MODELS_DIR, exist_ok=True)
@@ -346,6 +399,8 @@ def main():
         download_pyannote_segmentation()
         # Единый быстрый локальный ASR (GigaAM-v3 E2E CTC INT8, MIT, ~240 МБ)
         download_gigaam()
+        # Локальный ONNX-эмбеддер для семантического поиска (multilingual-e5-small INT8, ~118 МБ)
+        download_embeddings()
 
         if args.with_legacy or args.profile == "all":
             download_whisper("small")

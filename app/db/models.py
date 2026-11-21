@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime, timezone
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    JSON,
     Boolean,
     Column,
     DateTime,
@@ -51,6 +53,9 @@ class Call(Base):
     )
     analysis = relationship(
         "Analysis", back_populates="call", uselist=False, cascade="all, delete-orphan"
+    )
+    embedding_record = relationship(
+        "Embedding", back_populates="call", uselist=False, cascade="all, delete-orphan"
     )
     jobs = relationship("Job", back_populates="call")
 
@@ -178,6 +183,14 @@ class Embedding(Base):
     call_id = Column(String(36), ForeignKey("calls.id", ondelete="CASCADE"), primary_key=True)
     namespace = Column(String(100), nullable=False, index=True)
     vector_json = Column(
-        JSONB, nullable=False
-    )  # Stores vector array (can also map to pgvector column)
+        JSONB, nullable=True
+    )  # Stores vector array (fallback for SQLite tests and backward compatibility)
+    embedding = Column(
+        Vector(384).with_variant(JSON(), "sqlite"),
+        nullable=True,
+    )
+    model_name = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+    call = relationship("Call", back_populates="embedding_record")

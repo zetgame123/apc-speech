@@ -204,14 +204,17 @@ async def _dispatch_completion_hooks(
 
 
 async def process_reprocess_job(job_id: str, data: dict) -> None:
-    """Runs post-processing (PII re-masking and/or semantic analysis) on saved segments."""
-    from app.services.reprocess import reanalyze_call, remask_call_segments
+    """Runs post-processing (PII re-masking, semantic analysis, and/or embedding indexing)
+    on saved segments.
+    """
+    from app.services.reprocess import reanalyze_call, reindex_call_embedding, remask_call_segments
 
     call_id = data["call_id"]
     namespace = data["namespace"]
     steps = data.get("steps") or ["pii", "analysis"]
     do_pii = "pii" in steps
     do_analysis = "analysis" in steps
+    do_embedding = "embedding" in steps
 
     logger.info("starting_reprocess_job", job_id=job_id, call_id=call_id, steps=steps)
     await _update_job_progress(job_id, 20, "reprocess_running", status="running")
@@ -223,6 +226,10 @@ async def process_reprocess_job(job_id: str, data: dict) -> None:
         elif do_pii:
             await _update_job_progress(job_id, 50, "reprocess_pii")
             await remask_call_segments(db, call_id, namespace)
+
+        if do_embedding:
+            await _update_job_progress(job_id, 80, "reprocess_embedding")
+            await reindex_call_embedding(db, call_id, namespace)
 
     await _update_job_progress(job_id, 100, "completed", status="succeeded")
     logger.info("reprocess_job_completed", job_id=job_id, call_id=call_id, steps=steps)
@@ -516,6 +523,19 @@ async def process_job(job_id: str, data: dict):
                 .values(status="succeeded", progress=100, step="completed")
             )
             await db.commit()
+
+        # 8b. Compute & persist semantic embedding (graceful degradation if disabled/missing)
+        try:
+            from app.services.reprocess import reindex_call_embedding
+
+            async with AsyncSessionLocal() as db:
+                await reindex_call_embedding(db, call_id, namespace)
+        except Exception as emb_err:
+            logger.warning(
+                "call_embedding_autoindex_failed",
+                call_id=call_id,
+                error_type=type(emb_err).__name__,
+            )
 
         logger.info("job_completed_successfully", job_id=job_id, call_id=call_id)
         try:

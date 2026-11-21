@@ -46,6 +46,16 @@ def test_static_openapi_covers_runtime_routes_and_key_constraints():
     texts_schema = texts["application/json"]["schema"]["properties"]["texts"]
     assert texts_schema["maxItems"] == 500
 
+    calls_params = {item["name"]: item for item in spec["paths"]["/v1/calls"]["get"]["parameters"]}
+    assert "search_mode" in calls_params
+    assert set(calls_params["search_mode"]["schema"]["enum"]) == {"keyword", "semantic", "hybrid"}
+    assert "min_score" in calls_params
+
+    reproc_steps = spec["paths"]["/v1/calls/{call_id}/reprocess"]["post"]["requestBody"]["content"][
+        "application/json"
+    ]["schema"]["properties"]["steps"]["items"]["enum"]
+    assert "embedding" in reproc_steps
+
 
 @pytest.mark.asyncio
 async def test_text_analysis_endpoint():

@@ -212,7 +212,9 @@ services:
       resources:
         limits:
           cpus: '0.3'
-          memory: 512M
+          # 768M: запас под одновременную загрузку Natasha (PII reprocess) и
+          # multilingual-e5-small-int8 (семантический поиск); суммарный лимит small <= 3.6 GiB.
+          memory: 768M
 
   worker-long:
     build:

@@ -587,9 +587,24 @@ paths:
             type: string
         - in: query
           name: q
-          description: Полнотекстовый поиск по маскированному транскрипту
+          description: Поисковый запрос (полнотекстовый, семантический или гибридный)
           schema:
             type: string
+        - in: query
+          name: search_mode
+          description: Режим поиска по запросу q (keyword — ILIKE/pg_trgm, semantic — pgvector cosine, hybrid — RRF)
+          schema:
+            type: string
+            enum: [keyword, semantic, hybrid]
+            default: keyword
+        - in: query
+          name: min_score
+          description: Минимальный порог косинусного сходства для режимов semantic и hybrid
+          schema:
+            type: number
+            minimum: 0.0
+            maximum: 1.0
+            default: 0.78
         - in: query
           name: manager_id
           schema:
@@ -636,7 +651,10 @@ paths:
                                   manager_id: null
                                   duration_sec: 11.2
                                   is_answering_machine: false
+                                  relevance_score: 0.8421
+                                  summary: Клиент уточнил стоимость аренды билборда 3х6 в Москве.
                               next_cursor: '2026-10-11T10:00:00|5de775de-a026-4e6b-87d1-eb6f98948c4f'
+                              search_mode: hybrid
               schema:
                 $ref: '#/components/schemas/CallListResponse'
 
@@ -1208,6 +1226,7 @@ paths:
               steps:
                 - pii
                 - analysis
+                - embedding
             schema:
               type: object
               properties:
@@ -1216,7 +1235,7 @@ paths:
                   minItems: 1
                   items:
                     type: string
-                    enum: [pii, analysis]
+                    enum: [pii, analysis, embedding]
                 async_mode:
                   type: boolean
                   nullable: true
@@ -1271,6 +1290,7 @@ paths:
               namespace: demo_outdoor_msk
               steps:
                 - pii
+                - embedding
               limit: 500
             schema:
               type: object
@@ -1283,7 +1303,7 @@ paths:
                   minItems: 1
                   items:
                     type: string
-                    enum: [pii, analysis]
+                    enum: [pii, analysis, embedding]
                 limit:
                   type: integer
                   minimum: 1
@@ -1590,13 +1610,24 @@ components:
               inquiry_type:
                 type: string
               duration_sec:
-                type: integer
+                type: number
               summary:
-                type: string
+                type:
+                  - string
+                  - "null"
+              relevance_score:
+                type:
+                  - number
+                  - "null"
         next_cursor:
           type:
             - string
             - "null"
+        search_mode:
+          type: string
+          enum: [keyword, semantic, hybrid]
+        degraded:
+          type: boolean
 
     AnalyticsSummaryResponse:
       type: object

@@ -216,7 +216,7 @@ async def delete_data(
 
 class ReprocessNamespaceRequest(BaseModel):
     namespace: str
-    steps: list[Literal["pii", "analysis"]] = Field(
+    steps: list[Literal["pii", "analysis", "embedding"]] = Field(
         default_factory=lambda: ["pii"],
         min_length=1,
     )
