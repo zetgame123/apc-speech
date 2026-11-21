@@ -298,6 +298,144 @@ def _load_domain_term_allowlist() -> set[str]:
     return allowlist
 
 
+_SHORT_REAL_NAMES = frozenset({"ян", "ия", "ли", "бо", "эд", "эл"})
+
+_CONVERSATIONAL_NON_NAMES = frozenset(
+    {
+        "ага",
+        "ай",
+        "алло",
+        "ало",
+        "ау",
+        "блин",
+        "вот",
+        "да",
+        "давай",
+        "давайте",
+        "доброе",
+        "добрая",
+        "добрый",
+        "еще",
+        "ещё",
+        "здравствуйте",
+        "значит",
+        "извините",
+        "как",
+        "короче",
+        "ладно",
+        "мгм",
+        "нет",
+        "ну",
+        "нуо",
+        "ой",
+        "ок",
+        "окей",
+        "пожалуйста",
+        "понял",
+        "понятно",
+        "пошу",
+        "привет",
+        "простите",
+        "прошу",
+        "секундочку",
+        "секунду",
+        "скажите",
+        "слушаю",
+        "смотрите",
+        "спасибо",
+        "так",
+        "там",
+        "тогда",
+        "тут",
+        "угу",
+        "уже",
+        "хм",
+        "хорошо",
+        "это",
+        "этого",
+        "этом",
+    }
+)
+
+# Russian numerals (cardinal, inflected) and currency/price/quantity words that
+# Natasha's NewsNERTagger occasionally tags as PER when ASR capitalizes them
+# mid-sentence (e.g. "вместо Пяти, то случайно пятьдесят" -> "[ИМЯ_8]").
+_NUMERAL_OR_PRICE_RE = re.compile(
+    r"^(?:"
+    r"нол[ьяюе]|нул[ьяюе]|нул[её]м|"
+    r"один|одн(?:а|о|и|ого|ой|ому|им|у|их|ими)|"
+    r"дв(?:а|е|ух|ум|умя)|обоих|обеих|"
+    r"тр(?:и|[её]х|[её]м|емя)|"
+    r"четыр(?:е|[её]х|[её]м|ьмя)|"
+    r"пят(?:ь|и|ью)|"
+    r"шест(?:ь|и|ью)|"
+    r"сем(?:ь|и|ью)|"
+    r"восем(?:ь|ью)|восьм(?:и|ью)|"
+    r"девят(?:ь|и|ью)|"
+    r"десят(?:ь|и|ью)|"
+    r"(?:один|две|три|четыр|пят|шест|сем|восем|девят)надцат(?:ь|и|ью)|"
+    r"(?:два|три)дцат(?:ь|и|ью)|"
+    r"сорока?|"
+    r"(?:пят|шест|сем|восем)ьдесят|"
+    r"(?:пят|шест|сем|восьм)идесяти|"
+    r"девяност[оа]|"
+    r"ст[оа]|"
+    r"двести|двухсот|двумстам|двумястами|"
+    r"триста|тр[её]хсот|четыреста|четыр[её]хсот|"
+    r"(?:пят|шест|сем|восем|девят)ьсот|"
+    r"(?:пят|шест|сем|восьм|девят)исот|"
+    r"тысяч(?:а|и|у|е|ей|ам|ами|ах)?|тыщ(?:а|и|у)?|"
+    r"миллион(?:а|у|ом|е|ов|ам|ами|ах)?|миллиард(?:а|у|ом|е|ов)?|"
+    r"полтор[аы]|полутора|сотн(?:я|и|ю|ей|ен)|"
+    r"рубл(?:ь|я|ю|[её]м|е|ей|ям|ями|ях)|"
+    r"копе(?:йка|йки|ек|йку)|"
+    r"доллар(?:а|ов|у|ом|ами)?|евро|"
+    r"цен(?:а|ы|у|е|ой|ам)|стоимост(?:ь|и|ью)|"
+    r"сумм(?:а|ы|у|е|ой)|бюджет(?:а|у|ом|е)?|"
+    r"скидк(?:а|и|у|е|ой|ок)|процент(?:а|ов|у|ом)?|"
+    r"штук(?:а|и|у|е|ой)?"
+    r")$"
+)
+
+# Hesitation fillers / interjections with hyphens or elongated single sound
+# (e.g. "А-а", "А-а-а", "Э-э", "Э-ээ", "Ээ", "Ай-ой-яй", "У-у", "М-м", "Мм").
+_HESITATION_RE = re.compile(r"^[аэоуиыеёяюймх]+(?:-[аэоуиыеёяюймх]+)+$|^([аэоуиыеёяюмх])\1+$")
+
+_REFLEXIVE_VERB_SUFFIXES = (
+    "ться",
+    "тся",
+    "юсь",
+    "ешься",
+    "ется",
+    "емся",
+    "етесь",
+    "ются",
+    "лся",
+    "лась",
+    "лись",
+)
+
+
+def _is_non_person_word(word: str) -> bool:
+    """Returns True if a single lowercased token is clearly NOT a person name."""
+    cleaned = word.strip(".,!?;:\"'()[]{}«»—– ")
+    if not cleaned:
+        return True
+    if any(ch.isdigit() or ch in "₽$€£¥%" for ch in cleaned):
+        return True
+    if len(cleaned) <= 2 and cleaned not in _SHORT_REAL_NAMES:
+        return True
+    if cleaned in _CONVERSATIONAL_NON_NAMES:
+        return True
+    if _NUMERAL_OR_PRICE_RE.match(cleaned):
+        return True
+    if _HESITATION_RE.match(cleaned) and cleaned not in _SHORT_REAL_NAMES:
+        return True
+    if len(cleaned) >= 5 and cleaned.endswith(_REFLEXIVE_VERB_SUFFIXES):
+        return True
+    return False
+
+
 def _is_domain_term(span_text: str) -> bool:
     """
     Returns True if every word of span_text matches a known domain term/toponym
@@ -311,6 +449,23 @@ def _is_domain_term(span_text: str) -> bool:
     if not words:
         return False
     return all(w in allowlist for w in words)
+
+
+def _is_ignored_per_span(span_text: str) -> bool:
+    """
+    Returns True if a Natasha PER span is a known false positive:
+    - domain term / toponym from vocabulary_hints.yaml
+    - digits, currency symbols, Russian numerals or price words (e.g. "Пяти")
+    - conversational fillers / interjections (e.g. "А-а", "Э-э", "Угу", "Ну")
+    - short 1-2 char non-name tokens (e.g. "Пи", "Мё")
+    - reflexive verbs (e.g. "Представлюсь", "Восстановиться")
+    """
+    if _is_domain_term(span_text):
+        return True
+    words = span_text.strip().lower().split()
+    if not words:
+        return True
+    return all(_is_non_person_word(w) for w in words)
 
 
 def mask_person_names(text: str, counter_state: dict[str, Any] | None = None) -> str:
@@ -332,7 +487,7 @@ def mask_person_names(text: str, counter_state: dict[str, Any] | None = None) ->
     person_spans = [
         span
         for span in doc.spans
-        if span.type == "PER" and not _is_domain_term(text[span.start : span.stop])
+        if span.type == "PER" and not _is_ignored_per_span(text[span.start : span.stop])
     ]
     if not person_spans:
         return text
@@ -370,7 +525,7 @@ def has_unmasked_person_name(text: str) -> bool:
     doc.tag_ner(ner_tagger)
 
     return any(
-        span.type == "PER" and not _is_domain_term(text[span.start : span.stop])
+        span.type == "PER" and not _is_ignored_per_span(text[span.start : span.stop])
         for span in doc.spans
     )
 

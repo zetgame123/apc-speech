@@ -109,3 +109,39 @@ def test_mask_person_names_does_not_mask_domain_terms():
 
     # Domain terms must not trigger assert_no_leaked_pii() either
     assert masker.assert_no_leaked_pii(text) is True
+
+
+def test_mask_person_names_does_not_mask_prices_numerals_or_fillers():
+    """
+    Regression test: GigaAM-v3 E2E CTC occasionally capitalizes spoken numerals,
+    fillers, or verbs mid-sentence (e.g. "вместо Пяти, то случайно пятьдесят",
+    "А-а", "Э-э", "Угу", "Представлюсь"). Natasha NewsNERTagger tags them as PER,
+    which previously censored prices and conversational words as [ИМЯ_N].
+    """
+    safe_sentences = [
+        "То есть я тогда открыл вместо Пяти, то случайно пятьдесят.",
+        "Цена составит Сто пятьдесят тысяч рублей, скидка Пятнадцать процентов.",
+        "От Двухсот до Пятисот тысяч рублей за месяц.",
+        "Бюджет 200 000 ₽, оплата двумя частями.",
+        "А-а, понял, спасибо. Э-э, давайте посмотрим. Угу. Ну, хорошо.",
+        "Ай-ой-яй, извините. Пи. Нужно Мё Восстановиться после этого.",
+    ]
+    for sentence in safe_sentences:
+        masker = PiiMasker()
+        masked = masker.mask_text(sentence)
+        assert masked == sentence, f"Unexpectedly masked: {sentence!r} -> {masked!r}"
+        assert masker.assert_no_leaked_pii(sentence) is True
+
+
+def test_mask_person_names_preserves_real_names_next_to_fillers_and_verbs():
+    masker = PiiMasker()
+    text = "Ольга, Представлюсь. Меня зовут Александр, а коллегу зовут Эмма и Ян."
+    masked = masker.mask_text(text)
+
+    assert "Представлюсь" in masked
+    assert "Ольга" not in masked
+    assert "Александр" not in masked
+    assert "Эмма" not in masked
+    assert "Ян" not in masked
+    assert masked.count("[ИМЯ_") == 4
+    assert masker.assert_no_leaked_pii(masked) is True
