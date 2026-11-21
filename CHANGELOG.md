@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Семантический и гибридный поиск по звонкам (`pgvector` + `multilingual-e5-small-int8`, ADR-027)**:
+  - Локальный ONNX-эмбеддер `app/analytics/embeddings.py` (`intfloat/multilingual-e5-small` INT8, 384 dims, MIT, без PyTorch/transformers, ~135 МБ на диске, автозагрузка в `scripts/download_models.py`, текст индекса строится строго из маскированных данных по ADR-004).
+  - Миграция Alembic `003_pgvector_embeddings.py` (`CREATE EXTENSION IF NOT EXISTS vector`, `embedding vector(384)`, `model_name`, `updated_at`, HNSW-индекс `vector_cosine_ops` + SQLite fallback для тестов).
+  - Автоиндексация звонков в `worker-long` и шаг `"embedding"` в `POST /v1/calls/{call_id}/reprocess` и `POST /v1/admin/reprocess-namespace`.
+  - Режимы `search_mode=keyword|semantic|hybrid` (RRF) и `min_score` (дефолт `0.78`) в `GET /v1/calls` с возвратом `relevance_score` и `summary`, плюс переключатель **Текст / Смысл / Гибрид** и бейджи релевантности в дашборде.
+  - Замер на реальных звонках `real_calls_llm_v2`: Top-1 на 6 смысловых запросах вырос с **0/6 (0%)** (`keyword`) до **6/6 (100%)** (`semantic` 59.5 мс, `hybrid` 76.0 мс); весь `small`-стек укладывается в **1.90 GiB RAM** (бюджет `<= 4 GiB`).
+- **Перепрогон пост-обработки без повторного ASR (`reprocess`) и улучшения плеера**:
+  - Сервис `app/services/reprocess.py` и ручки `POST /v1/calls/{call_id}/reprocess` (`200` синхронно / `202` через `worker-long`) и `POST /v1/admin/reprocess-namespace` (`scope: admin`) для перемаскирования PII, пересчёта анализа и переиндексации эмбеддингов.
+  - На реальных звонках `real_calls_llm_v2` пакетный перепрогон `["pii", "embedding"]` занял **6.8 с** (вместо многоминутного повторного ASR), обновил **18 реплик** и сократил ложные маски `[ИМЯ_*]` на **63%** (`19 → 7`).
+  - В плеере дашборда (`app/static/js/player.js`) добавлена регулировка скорости (`1x / 1.25x / 1.5x / 2x`), горячие клавиши (`Space`, `←`, `→` ±5 с) и кнопки **«Перемаскировать PII»** / **«Пересчитать анализ»**.
 - **Этап D (контракт и пагинация)**: примеры запросов/ответов для всех ручек
   `openapi.yaml` + контрактный тест на их наличие; курсорная пагинация
   (`cursor`/`next_cursor`, кап 100) в `GET /v1/voice/history` и

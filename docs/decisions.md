@@ -428,3 +428,20 @@
   - `MonoDiarizer` (warm): **7.8–9.0×** ускорение (`5.2 с → 0.58 с` на 11 с; `23.5 с → 3.0 с` на 70 с).
   - `T-lite-it-2.1` на CPU (6 потоков, Docker VM): **35.0 с/диалог**, **7.12 GiB RAM** (в E2E 5-мин звонка всё равно в **4.0× быстрее** старого стека за счёт ускорения ASR/диаризации).
   - RAM всего стека `small` под нагрузкой: **1.62 GiB**, ни один контейнер не превышает 60% лимита.
+
+## ADR-027: Локальный семантический и гибридный поиск (`multilingual-e5-small` INT8 ONNX + `pgvector` HNSW) и перепрогон пост-обработки (`reprocess`) (2026-11-21)
+
+* **Статус**: Принято
+* **Контекст**:
+  1. Полнотекстовый поиск `GET /v1/calls?q=...` на `ILIKE`/`pg_trgm` требовал точного совпадения подстроки в одной реплике и не находил звонки по синонимам и перефразировкам (0/6 на тестовом наборе смысловых запросов по реальным звонкам).
+  2. После обновления правил `PiiMasker` или LLM-промптов старые звонки в БД нельзя было переобработать без повторного прогона ASR и диаризации.
+  3. Требовалось добавить семантический/гибридный поиск строго локально (без внешних API и без `torch`/`transformers`), с соблюдением ADR-004 (никаких сырых ПДн в индексе) и в рамках бюджета памяти `small` (`<= 4 GiB`).
+* **Решение**:
+  1. **Эмбеддер — `intfloat/multilingual-e5-small` (INT8 ONNX, 384 dims, MIT, ~135 МБ на диске с `tokenizer.json`)**: инференс через `onnxruntime` + `tokenizers` (`app/analytics/embeddings.py`, lazy singleton, `intra_op_num_threads=1`, `enable_cpu_mem_arena=False`, `enable_mem_pattern=False`), с graceful degradation при отсутствии весов. Текст для индекса (`build_call_embedding_text`) собирается исключительно из маскированных полей (`summary`, `inquiry_type`, `entities`, `agreements`, `text_masked`) с дополнительным проходом `PiiMasker` (ADR-004).
+  2. **Хранение и поиск — `pgvector` + HNSW (`alembic/versions/003_pgvector_embeddings.py`)**: колонка `embedding vector(384)` с индексом `HNSW (vector_cosine_ops)` в PostgreSQL и безопасным JSON/numpy fallback для SQLite-тестов. В `GET /v1/calls` добавлены `search_mode=keyword|semantic|hybrid` (Reciprocal Rank Fusion с `k=60`) и `min_score` (откалиброванный дефолт `0.78`), со строгой изоляцией по `namespace` и сохранением всех фильтров.
+  3. **Перепрогон пост-обработки без ASR (`app/services/reprocess.py`)**: ручки `POST /v1/calls/{call_id}/reprocess` (`write`) и `POST /v1/admin/reprocess-namespace` (`admin`) с шагами `pii`, `analysis`, `embedding`, плюс автоматическая индексация в `worker-long` после сохранения анализа.
+  4. **Лимит памяти `api`**: увеличен с `512M` до `768M` в `docker-compose.yml` для комфортной одновременной работы `PiiMasker` (Natasha) и `multilingual-e5-small-int8`; суммарный лимит `small` составляет `3.58 GiB <= 4 GiB`.
+* **Последствия** (подтверждено замерами в Docker на `real_calls_llm_v2`, ~15 мин реальных звонков):
+  - Точность поиска Top-1 на 6 смысловых запросах: `keyword` **0/6 (29.8 мс)** → `semantic` **6/6 (59.5 мс)**, `hybrid` **6/6 (76.0 мс)**.
+  - Пакетный перепрогон `["pii", "embedding"]` на 3 звонках: **6.8 с** (прогретый API), **241–282 мс** на переиндексацию одного звонка; ложные маски `[ИМЯ_*]` сократились с **19 до 7 (-63%)** (обновлено 18 реплик).
+  - Суммарное потребление RAM всего `small`-стека (8 контейнеров): **1.90 GiB** (`api`: `712 MiB / 768 MiB`), с двукратным запасом к лимиту 4 GiB.

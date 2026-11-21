@@ -53,7 +53,7 @@ APP_PROFILE=small docker compose up -d --build
 APP_PROFILE=local-full docker compose --profile local-full up -d --build
 ```
 
-Модели качаются сами одноразовыми джобами `model-downloader` (~245 МБ: GigaAM-v3 INT8 + CAM++) и `model-downloader-llm` (~4,7 ГБ: T-lite-it-2.1 Q4_K_M, только `local-full`); повторные запуски ничего не перекачивают. После правок `.env` контейнеры надо пересоздать (`up -d --force-recreate ...`), простой `restart` переменные не подхватит. Не используйте `down -v` на рабочем стеке — удалит volumes с БД, очередями и аудио.
+Модели качаются сами одноразовыми джобами `model-downloader` (~380 МБ: GigaAM-v3 INT8 + CAM++ + `pyannote-segmentation-3.0` + `multilingual-e5-small` INT8) и `model-downloader-llm` (~4,7 ГБ: T-lite-it-2.1 Q4_K_M, только `local-full`); повторные запуски ничего не перекачивают. После правок `.env` контейнеры надо пересоздать (`up -d --force-recreate ...`), простой `restart` переменные не подхватит. Не используйте `down -v` на рабочем стеке — удалит volumes с БД, очередями и аудио.
 
 ### Проверка и первый запрос
 
@@ -165,7 +165,9 @@ curl -s -X POST "$BASE/v1/voice/search?namespace=outdoor_msk&language=ru" \
 | `GET /v1/calls/{call_id}/transcript` | `read` (`masked=false` — `admin`) | `json`/`text`/`srt`/`vtt`, `masked=true` по умолчанию |
 | `GET /v1/calls/{call_id}/analysis` | `read` | Разбор по JSON-схеме (версии схемы и промпта в ответе) |
 | `GET /v1/calls/{call_id}/audio` | `read` | Потоковая отдача аудио (HTTP `Range`/`206`) или `presigned=true` |
-| `GET /v1/calls` | `read` | Поиск (`q`, `category`, `manager_id`, `inquiry_type`, период) + курсорная пагинация (`cursor`/`next_cursor`, кап 100) |
+| `GET /v1/calls` | `read` | Поиск (`q`, `search_mode=keyword\|semantic\|hybrid`, `min_score`, `category`, `manager_id`, `inquiry_type`, период) + пагинация (`cursor`/`next_cursor`, кап 100); в `semantic`/`hybrid` возвращает `relevance_score` и `summary` |
+| `POST /v1/calls/{call_id}/reprocess` | `write` | Повторная пост-обработка звонка без повторного ASR (`steps: ["pii", "analysis", "embedding"]`, `200` синхронно / `202` через `worker-long` для LLM) |
+| `POST /v1/admin/reprocess-namespace` | `admin` | Пакетный перепрогон `pii` / `analysis` / `embedding` по звонкам неймспейса |
 | `POST /v1/voice/search` | `write` | Синхронный голосовой поиск; аудио в памяти/временном TTL-ключе Redis, не сохраняется |
 | `GET /v1/voice/history` | `read` | История запросов namespace (маскированный текст) |
 | `DELETE /v1/voice/history` | `write` | Очистка истории (`{"status":"cleared",...}`) |
@@ -215,11 +217,11 @@ Callback: при `callback_url` результат уходит `POST` с заг
 Две страницы без сборки, отдаёт сам `api` из `app/static/` (общие модули `js/api.js`,
 `js/escape.js`, `js/format.js`):
 
-- `/dashboard` (также `/`, `/ui`) — звонки: журнал с фильтрами (текст, менеджер,
-  тип обращения, период) и курсорной пагинацией; карточка звонка — собственный
+- `/dashboard` (также `/`, `/ui`) — звонки: журнал с фильтрами (поиск в режимах **Текст / Смысл / Гибрид** с бейджем релевантности и превью саммари, менеджер, тип обращения, период) и пагинацией; карточка звонка — собственный
   WebAudio-плеер (аудио грузится через `fetch` с `Authorization` и декодируется
-  `decodeAudioData`, waveform на canvas, клик — перемотка), пословная подсветка
+  `decodeAudioData`, waveform на canvas, клик — перемотка, скорость `1x / 1.25x / 1.5x / 2x`, горячие клавиши `Space` / `←` / `→`), пословная подсветка
   и подсветка текущей реплики, клик по реплике перематывает плеер, говорящие и роли;
+  кнопки «Перемаскировать PII» и «Пересчитать анализ» без повторного ASR;
   длинные записи (дольше 10 мин или больше 32 МБ) воспроизводятся через
   MEDIA-элемент с blob-URL без декодирования в память — на бэкенде
   `GET /v1/calls/{id}/audio` уже поддерживает потоковую отдачу и HTTP `Range` (`206`),
@@ -287,7 +289,7 @@ DASHBOARD_TOKEN=<токен с read+write+admin> make live-check
 ## Безопасность и данные
 
 - PII: телефоны, e-mail, карты, паспорта и ФИО маскируются изолированным на запрос `PiiMasker` до сохранения транскрипта, до истории голосового поиска и до отправки во внешний провайдер (`app/llm/factory.py`, выключен по умолчанию, перед отправкой — `assert_no_leaked_pii`); в логи и метрики расшифровки и ПДн не пишутся (guard в `make check` и CI).
-- Ретеншн и БД: аудио в MinIO — `RETENTION_AUDIO_DAYS` (14), тексты в Postgres — `RETENTION_TEXT_DAYS` (365); чистит `cleanup-retention`; срочное удаление — `DELETE /v1/data/delete`; схема и индексы (включая `pg_trgm` GIN для поиска по стенограммам, миграция `002`) управляются через Alembic.
+- Ретеншн и БД: аудио в MinIO — `RETENTION_AUDIO_DAYS` (14), тексты в Postgres — `RETENTION_TEXT_DAYS` (365); чистит `cleanup-retention`; срочное удаление — `DELETE /v1/data/delete`; схема и индексы (включая `pg_trgm` GIN в миграции `002` и `pgvector` `vector(384)` + HNSW в миграции `003`, куда попадают строго маскированные данные по ADR-004) управляются через Alembic.
 - Изоляция и защита: всё режется по `namespace`; скоуп-токены чужого namespace получают `403`; отзыв токенов в Redis проверяется во всех ручках (включая интеграционные вебхуки); rate limiter атомарен (Lua-скрипт в Redis).
 - SSRF: загрузка по ссылке и доставка callback блокируют приватные/loopback/link-local/metadata-адреса, лимиты редиректов и размера, таймауты; входные файлы считаются враждебными (ffprobe-валидация, лимиты, ffmpeg только массивом аргументов).
 - Сети compose: `worker-long`/`worker-fast`/`llm-runtime` — в isolated `backend` без egress (проверено тестом); скачивание по URL делает `api`, исходящие callback'и и отправку в таймлайн Битрикс24 — `worker-callback`.
@@ -319,6 +321,7 @@ DASHBOARD_TOKEN=<токен с read+write+admin> make live-check
 | faster-whisper / CTranslate2 / onnxruntime, whisper-подлодка (Apache 2.0), Qwen2.5-7B (Apache 2.0), llama.cpp (MIT), Redis 7.2 (BSD-3-Clause), PostgreSQL/pgvector (PostgreSQL Licence) | См. `docs/decisions.md` ADR-012 | Библиотеки / веса / образы | Полный разбор — в ADR-012 и ADR-023 |
 | Bootstrap 5.3.2 (`app/static/vendor/bootstrap-5.3.2/`) | MIT | CSS+JS дашборда, вендор без CDN | Обновление вручную фиксированной версией (ADR-024) |
 | Bootstrap Icons 1.11.3 (`app/static/vendor/bootstrap-icons-1.11.3/`) | MIT | Иконки и шрифты дашборда, вендор без CDN | Обновление вручную фиксированной версией (ADR-024) |
+| `intfloat/multilingual-e5-small` (INT8 ONNX) + `tokenizers` | MIT / Apache 2.0 | Локальные эмбеддинги (`384` dims) для семантического и гибридного поиска через `onnxruntime` (без PyTorch) | Допущено в закрытый продукт (ADR-027) |
 
 WaveSurfer.js 7.12.12 (BSD-3-Clause) удалён из вендора 2026-10-15 (см. ADR-025:
 плеер заменён собственным WebAudio `js/player.js`).
