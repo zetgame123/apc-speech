@@ -98,6 +98,7 @@ var Player = (function () {
   let srcGen = 0;
   let startCtx = 0;
   let offsetSec = 0;
+  let playbackRate = 1.0;
   let playing = false;
   let tickTimer = 0;
   let lastDrawMs = 0;
@@ -316,6 +317,7 @@ var Player = (function () {
     mediaUrl = URL.createObjectURL(blob);
     mediaEl = new Audio();
     mediaEl.preload = 'auto';
+    mediaEl.playbackRate = playbackRate;
     const dur = await new Promise((resolve, reject) => {
       const to = setTimeout(() => reject(new Error('media-timeout')), 30000);
       mediaEl.onloadedmetadata = () => {
@@ -418,8 +420,41 @@ var Player = (function () {
     }
     if (!buf) return 0;
     if (!playing || !actx) return Math.min(offsetSec, buf.duration);
-    const t = offsetSec + (actx.currentTime - startCtx);
+    const t = offsetSec + (actx.currentTime - startCtx) * playbackRate;
     return Math.min(Math.max(0, t), buf.duration);
+  };
+
+  api.getPlaybackRate = function () {
+    return playbackRate;
+  };
+
+  api.setPlaybackRate = function (rate) {
+    const parsed = Number(rate);
+    const next = Number.isFinite(parsed) ? Math.min(3.0, Math.max(0.5, parsed)) : 1.0;
+    if (backend === 'media') {
+      playbackRate = next;
+      if (mediaEl) {
+        try {
+          mediaEl.playbackRate = next;
+        } catch (e) {
+          /* игнорируем неподдерживаемую скорость */
+        }
+      }
+      return playbackRate;
+    }
+    if (playing && actx && buf) {
+      offsetSec = api.getCurrentTime();
+      startCtx = actx.currentTime;
+    }
+    playbackRate = next;
+    if (src && src.playbackRate) {
+      try {
+        src.playbackRate.value = next;
+      } catch (e) {
+        /* игнорируем */
+      }
+    }
+    return playbackRate;
   };
 
   api.isPlaying = function () {
@@ -495,6 +530,7 @@ var Player = (function () {
     stopSource();
     src = ctx.createBufferSource();
     src.buffer = buf;
+    if (src.playbackRate) src.playbackRate.value = playbackRate;
     src.connect(ctx.destination);
     const gen = srcGen;
     src.onended = () => {
@@ -571,6 +607,7 @@ var Player = (function () {
       startCtx = ensureCtx().currentTime;
       src = ensureCtx().createBufferSource();
       src.buffer = buf;
+      if (src.playbackRate) src.playbackRate.value = playbackRate;
       src.connect(ensureCtx().destination);
       const gen = srcGen;
       src.onended = () => {

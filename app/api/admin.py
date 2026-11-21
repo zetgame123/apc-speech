@@ -1,9 +1,10 @@
 import asyncio
 import json
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,7 @@ from app.core.security import (
 )
 from app.db.models import AudioObject, Call, Job
 from app.db.session import get_db
+from app.services.reprocess import reprocess_namespace_calls
 from app.storage.s3 import get_storage
 
 router = APIRouter(tags=["admin"])
@@ -207,3 +209,27 @@ async def delete_data(
         "deleted_transcripts": len(target_call_ids),
         "deleted_voice_queries": deleted_voice_queries,
     }
+
+
+# --- Batch post-processing reprocess ---
+
+
+class ReprocessNamespaceRequest(BaseModel):
+    namespace: str
+    steps: list[Literal["pii", "analysis"]] = Field(
+        default_factory=lambda: ["pii"],
+        min_length=1,
+    )
+    limit: int = Field(default=500, ge=1, le=2000)
+
+
+@router.post("/v1/admin/reprocess-namespace")
+async def reprocess_namespace_endpoint(
+    body: ReprocessNamespaceRequest,
+    auth: AuthContext = Depends(verify_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    auth.require_scope("admin")
+    auth.verify_namespace(body.namespace)
+    steps = list(dict.fromkeys(body.steps))
+    return await reprocess_namespace_calls(db, body.namespace, steps=steps, limit=body.limit)

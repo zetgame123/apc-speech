@@ -1182,6 +1182,133 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /v1/calls/{call_id}/reprocess:
+    post:
+      summary: Повторная пост-обработка звонка (PII / анализ) без повторного ASR
+      description: Перемаскирует ПД по исходной стенограмме и/или пересчитывает семантический анализ звонка (требуется scope write).
+      operationId: reprocessCall
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: call_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: namespace
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              steps:
+                - pii
+                - analysis
+            schema:
+              type: object
+              properties:
+                steps:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    enum: [pii, analysis]
+                async_mode:
+                  type: boolean
+                  nullable: true
+      responses:
+        '200':
+          description: Пост-обработка выполнена синхронно
+          content:
+            application/json:
+              example:
+                status: succeeded
+                steps:
+                  - pii
+                call_id: 015f7b7c-1234-4567-89ab-cdef01234567
+                namespace: demo_outdoor_msk
+                total_segments: 42
+                updated_segments: 3
+              schema:
+                type: object
+        '202':
+          description: Задача пост-обработки поставлена в очередь worker-long
+          content:
+            application/json:
+              example:
+                status: queued
+                job_id: 8b21a5f4-1234-4567-89ab-cdef01234567
+                call_id: 015f7b7c-1234-4567-89ab-cdef01234567
+                namespace: demo_outdoor_msk
+                steps:
+                  - pii
+                  - analysis
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Звонок не найден
+
+  /v1/admin/reprocess-namespace:
+    post:
+      summary: Пакетный перепрогон пост-обработки по неймспейсу
+      description: Перемаскирует ПД и/или пересчитывает анализ для всех звонков в неймспейсе (требуется scope admin).
+      operationId: reprocessNamespace
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              namespace: demo_outdoor_msk
+              steps:
+                - pii
+              limit: 500
+            schema:
+              type: object
+              required: [namespace]
+              properties:
+                namespace:
+                  type: string
+                steps:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    enum: [pii, analysis]
+                limit:
+                  type: integer
+                  minimum: 1
+                  maximum: 2000
+                  default: 500
+      responses:
+        '200':
+          description: Итоги пакетного перепрогона
+          content:
+            application/json:
+              example:
+                namespace: demo_outdoor_msk
+                steps:
+                  - pii
+                total_calls: 12
+                processed_calls: 12
+                updated_segments: 7
+                failed_calls: []
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
 components:
   securitySchemes:
     BearerAuth:

@@ -203,7 +203,36 @@ async def _dispatch_completion_hooks(
             logger.error("bitrix24_timeline_enqueue_error", error=str(b24_err))
 
 
+async def process_reprocess_job(job_id: str, data: dict) -> None:
+    """Runs post-processing (PII re-masking and/or semantic analysis) on saved segments."""
+    from app.services.reprocess import reanalyze_call, remask_call_segments
+
+    call_id = data["call_id"]
+    namespace = data["namespace"]
+    steps = data.get("steps") or ["pii", "analysis"]
+    do_pii = "pii" in steps
+    do_analysis = "analysis" in steps
+
+    logger.info("starting_reprocess_job", job_id=job_id, call_id=call_id, steps=steps)
+    await _update_job_progress(job_id, 20, "reprocess_running", status="running")
+
+    async with AsyncSessionLocal() as db:
+        if do_analysis:
+            await _update_job_progress(job_id, 50, "reprocess_analysis")
+            await reanalyze_call(db, call_id, namespace, remask=do_pii)
+        elif do_pii:
+            await _update_job_progress(job_id, 50, "reprocess_pii")
+            await remask_call_segments(db, call_id, namespace)
+
+    await _update_job_progress(job_id, 100, "completed", status="succeeded")
+    logger.info("reprocess_job_completed", job_id=job_id, call_id=call_id, steps=steps)
+
+
 async def process_job(job_id: str, data: dict):
+    if data.get("task_type") == "reprocess":
+        await process_reprocess_job(job_id, data)
+        return
+
     call_id = data["call_id"]
     namespace = data["namespace"]
     callback_url = data.get("callback_url")

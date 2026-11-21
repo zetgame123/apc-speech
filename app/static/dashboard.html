@@ -110,13 +110,24 @@
             <button id="btnRewind5" class="btn btn-outline-secondary btn-sm" disabled title="Назад на 5 секунд">
               <i class="bi bi-arrow-counterclockwise"></i> -5с
             </button>
-            <button id="btnForward5" class="btn btn-outline-secondary btn-sm" disabled title="Вперед на 5 секунд">
+            <button id="btnForward5" class="btn btn-outline-secondary btn-sm" disabled title="Вперед на 5 секунд (→)">
               <i class="bi bi-arrow-clockwise"></i> +5с
+            </button>
+            <button id="btnPlaybackRate" class="btn btn-outline-secondary btn-sm fw-medium" disabled title="Скорость воспроизведения (Space — пауза, ←/→ — ±5с)">
+              1x
             </button>
             <span id="audioTimer" class="small text-muted ms-2 fw-medium">00:00 / 00:00</span>
           </div>
 
-          <div class="d-flex gap-2">
+          <div class="d-flex flex-wrap gap-2">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Повторная пост-обработка без перезапуска ASR">
+              <button id="btnRemaskPii" class="btn btn-outline-secondary" type="button" disabled title="Перемаскировать ПД по исходной стенограмме (без повторного ASR)">
+                <i class="bi bi-shield-check me-1"></i>Перемаскировать PII
+              </button>
+              <button id="btnReanalyzeCall" class="btn btn-outline-primary" type="button" disabled title="Пересчитать PII и аналитику звонка без повторного ASR">
+                <i class="bi bi-arrow-repeat me-1"></i>Пересчитать анализ
+              </button>
+            </div>
             <div class="btn-group btn-group-sm dropdown export-dropdown">
               <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-display="static" id="btnExportMenu" disabled>
                 <i class="bi bi-download me-1"></i> Экспорт

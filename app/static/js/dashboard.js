@@ -66,6 +66,8 @@
       document.getElementById('btnPlayPause').disabled = false;
       document.getElementById('btnRewind5').disabled = false;
       document.getElementById('btnForward5').disabled = false;
+      const rateBtn = document.getElementById('btnPlaybackRate');
+      if (rateBtn) rateBtn.disabled = false;
       document.getElementById('btnExportMenu').disabled = false;
       document.getElementById('btnQuickTxt').disabled = false;
       document.getElementById('btnQuickSrt').disabled = false;
@@ -94,6 +96,96 @@
   document.getElementById('btnForward5').addEventListener('click', () => {
     Player.setTime(Math.min(Player.getDuration(), Player.getCurrentTime() + 5));
   });
+
+  const PLAYBACK_RATES = [1, 1.25, 1.5, 2];
+  const btnPlaybackRate = document.getElementById('btnPlaybackRate');
+  if (btnPlaybackRate) {
+    btnPlaybackRate.addEventListener('click', () => {
+      const cur = typeof Player.getPlaybackRate === 'function' ? Player.getPlaybackRate() : 1;
+      const idx = PLAYBACK_RATES.indexOf(cur);
+      const next = PLAYBACK_RATES[(idx + 1) % PLAYBACK_RATES.length];
+      if (typeof Player.setPlaybackRate === 'function') Player.setPlaybackRate(next);
+      btnPlaybackRate.textContent = `${next}x`;
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    const tag = e.target && e.target.tagName ? e.target.tagName.toUpperCase() : '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable)) {
+      return;
+    }
+    if (typeof Player.getDuration !== 'function' || Player.getDuration() <= 0) return;
+    if (e.code === 'Space') {
+      e.preventDefault();
+      Player.toggle();
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      Player.setTime(Math.max(0, Player.getCurrentTime() - 5));
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      Player.setTime(Math.min(Player.getDuration(), Player.getCurrentTime() + 5));
+    }
+  });
+
+  function setReprocessButtonsDisabled(disabled) {
+    const btnPii = document.getElementById('btnRemaskPii');
+    const btnAna = document.getElementById('btnReanalyzeCall');
+    if (btnPii) btnPii.disabled = disabled;
+    if (btnAna) btnAna.disabled = disabled;
+  }
+
+  async function reprocessCurrentCall(steps) {
+    if (!currentCallId) return;
+    const ns = getNamespace();
+    const isAnalysis = steps.includes('analysis');
+    setReprocessButtonsDisabled(true);
+    statusCallText.innerText = isAnalysis
+      ? 'Пересчёт PII и анализа звонка...'
+      : 'Перемаскирование PII по исходной стенограмме...';
+
+    try {
+      const headers = Object.assign({ 'Content-Type': 'application/json' }, getHeaders());
+      const res = await fetch(
+        `/v1/calls/${encodeURIComponent(currentCallId)}/reprocess?namespace=${encodeURIComponent(ns)}`,
+        {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify({ steps: steps }),
+        }
+      );
+      checkAuthResponse(res);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+
+      if (res.status === 202 && data.job_id) {
+        statusCallText.innerText = `Пересчёт анализа в очереди (Job ID: ${String(data.job_id).substring(0, 8)}...)...`;
+        pollCallJob(data.job_id);
+        return;
+      }
+
+      loadCallResults(currentCallId);
+      if (isAnalysis) {
+        statusCallText.innerText = `Анализ пересчитан успешно (обновлено реплик: ${data.updated_segments ?? 0}).`;
+      } else {
+        statusCallText.innerText = `PII перемаскирован (обновлено реплик: ${data.updated_segments ?? 0}).`;
+      }
+    } catch (err) {
+      if (!(err && err.auth)) {
+        statusCallText.innerText = 'Ошибка перепрогона: ' + (err.message || err);
+      }
+    } finally {
+      setReprocessButtonsDisabled(!currentCallId);
+    }
+  }
+
+  const btnRemaskPii = document.getElementById('btnRemaskPii');
+  if (btnRemaskPii) {
+    btnRemaskPii.addEventListener('click', () => reprocessCurrentCall(['pii']));
+  }
+  const btnReanalyzeCall = document.getElementById('btnReanalyzeCall');
+  if (btnReanalyzeCall) {
+    btnReanalyzeCall.addEventListener('click', () => reprocessCurrentCall(['pii', 'analysis']));
+  }
 
   initPlayer();
 
@@ -272,6 +364,7 @@
       document.getElementById('btnQuickSrt').disabled = false;
       document.getElementById('btnQuickJson').disabled = false;
       document.getElementById('btnExportMenu').disabled = false;
+      setReprocessButtonsDisabled(false);
       renderChat(transcript.segments);
       if (analysis && analysis.__pending) renderAnalysisPending();
       else renderAnalysis(analysis);

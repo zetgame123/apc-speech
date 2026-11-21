@@ -1,16 +1,20 @@
 import asyncio
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.security import AuthContext, verify_auth
-from app.db.models import Analysis, AudioObject, Call, TranscriptSegment
+from app.db.models import Analysis, AudioObject, Call, Job, TranscriptSegment
 from app.db.session import get_db
 from app.pii.masker import get_pii_masker
+from app.services.reprocess import reanalyze_call, remask_call_segments
 from app.storage.s3 import get_storage
 
 router = APIRouter(prefix="/v1/calls", tags=["calls"])
@@ -366,4 +370,87 @@ async def list_calls(
     return {
         "items": items,
         "next_cursor": next_cursor,
+    }
+
+
+class ReprocessCallRequest(BaseModel):
+    steps: list[Literal["pii", "analysis"]] = Field(
+        default_factory=lambda: ["pii"],
+        min_length=1,
+        description="Шаги пост-обработки без повторного ASR: pii, analysis",
+    )
+    async_mode: bool | None = Field(
+        default=None,
+        description="Принудительно поставить задачу в очередь (true) или выполнить синхронно (false)",
+    )
+
+
+@router.post("/{call_id}/reprocess")
+async def reprocess_call_endpoint(
+    call_id: str,
+    body: ReprocessCallRequest,
+    namespace: str = Query(...),
+    auth: AuthContext = Depends(verify_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    auth.require_scope("write")
+    auth.verify_namespace(namespace)
+
+    # Deduplicate steps while preserving order
+    steps = list(dict.fromkeys(body.steps))
+    do_pii = "pii" in steps
+    do_analysis = "analysis" in steps
+
+    call_stmt = select(Call).where(Call.id == call_id, Call.namespace == namespace)
+    call = (await db.execute(call_stmt)).scalar_one_or_none()
+    if not call:
+        raise AppError("call_not_found", f"Звонок {call_id} не найден", 404)
+
+    settings = get_settings()
+    is_slow_analysis = do_analysis and (
+        settings.app_profile == "local-full" or settings.llm_external_provider_enabled
+    )
+    run_async = body.async_mode if body.async_mode is not None else is_slow_analysis
+
+    if run_async:
+        from app.queue.redis_streams import get_queue
+
+        job = Job(
+            namespace=namespace,
+            call_id=call_id,
+            status="queued",
+            progress=0,
+            step="reprocess_queued",
+        )
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+
+        payload = {
+            "task_type": "reprocess",
+            "call_id": call_id,
+            "namespace": namespace,
+            "steps": steps,
+        }
+        await get_queue().enqueue_long_job(job.id, payload)
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "queued",
+                "job_id": job.id,
+                "call_id": call_id,
+                "namespace": namespace,
+                "steps": steps,
+            },
+        )
+
+    if do_analysis:
+        result = await reanalyze_call(db, call_id, namespace, remask=do_pii)
+    else:
+        result = await remask_call_segments(db, call_id, namespace)
+
+    return {
+        "status": "succeeded",
+        "steps": steps,
+        **result,
     }
