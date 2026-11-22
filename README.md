@@ -173,7 +173,7 @@ curl -s -X POST "$BASE/v1/voice/search?namespace=outdoor_msk&language=ru" \
 | `DELETE /v1/voice/history` | `write` | Очистка истории (`{"status":"cleared",...}`) |
 | `GET /v1/voice/sample-audio` | — | Синтетический wav для проверки тракта |
 | `GET /v1/analytics/summary` | `read` | Сводка (SQL-агрегация + потоковое чтение): темы, топ сущностей, чек-лист, тренды по неделям |
-| `POST /v1/texts/analyze` | `write` | Кластеризация пачки маскированных текстов (TF-IDF + HDBSCAN/KMeans) |
+| `POST /v1/texts/analyze` | `write` | Семантическая кластеризация пачки маскированных текстов (`multilingual-e5-small-int8` + AgglomerativeClustering, fallback на TF-IDF + HDBSCAN) |
 | `GET /v1/analytics/export_csv` (`/v1/analytics/export.csv`) | `read` | Потоковый экспорт CSV (`StreamingResponse`) |
 | `DELETE /v1/data/delete` | `admin` | Удаление одной ручкой: `call_id` / `participant_id` / период |
 | `POST /v1/integrations/bitrix24/webhook` | `write` | Вебхук телефонии Битрикс24 (с проверкой отзыва токена в Redis) |
@@ -288,7 +288,7 @@ DASHBOARD_TOKEN=<токен с read+write+admin> make live-check
 
 ## Безопасность и данные
 
-- PII: телефоны, e-mail, карты, паспорта и ФИО маскируются изолированным на запрос `PiiMasker` до сохранения транскрипта, до истории голосового поиска и до отправки во внешний провайдер (`app/llm/factory.py`, выключен по умолчанию, перед отправкой — `assert_no_leaked_pii`); в логи и метрики расшифровки и ПДн не пишутся (guard в `make check` и CI).
+- PII: телефоны, e-mail, карты, паспорта и ФИО маскируются изолированным на запрос `PiiMasker` до сохранения транскрипта, до истории голосового поиска и до отправки во внешний провайдер (`app/llm/factory.py`, выключен по умолчанию, перед отправкой — `assert_no_leaked_pii`); пословные таймкоды `words` в `GET /v1/calls/{id}/transcript?masked=true` выравниваются по полному `text_masked` (контекстные имена и многословные ПДн не утекают в UI); в логи и метрики расшифровки и ПДн не пишутся (guard в `make check` и CI).
 - Ретеншн и БД: аудио в MinIO — `RETENTION_AUDIO_DAYS` (14), тексты в Postgres — `RETENTION_TEXT_DAYS` (365); чистит `cleanup-retention`; срочное удаление — `DELETE /v1/data/delete`; схема и индексы (включая `pg_trgm` GIN в миграции `002` и `pgvector` `vector(384)` + HNSW в миграции `003`, куда попадают строго маскированные данные по ADR-004) управляются через Alembic.
 - Изоляция и защита: всё режется по `namespace`; скоуп-токены чужого namespace получают `403`; отзыв токенов в Redis проверяется во всех ручках (включая интеграционные вебхуки); rate limiter атомарен (Lua-скрипт в Redis).
 - SSRF: загрузка по ссылке и доставка callback блокируют приватные/loopback/link-local/metadata-адреса, лимиты редиректов и размера, таймауты; входные файлы считаются враждебными (ffprobe-валидация, лимиты, ffmpeg только массивом аргументов).

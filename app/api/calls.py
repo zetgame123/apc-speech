@@ -1,4 +1,5 @@
 import asyncio
+import difflib
 import re
 from datetime import datetime, timezone
 from typing import Literal
@@ -35,22 +36,50 @@ def _naive(dt: datetime | None) -> datetime | None:
     return dt
 
 
-def _sanitize_words(words: list[dict] | None) -> list[dict] | None:
+def _sanitize_words(
+    words: list[dict] | None,
+    text_masked: str | None = None,
+) -> list[dict] | None:
+    """Aligns word-level timestamps with full-sentence masked text so context-dependent
+    and multi-word PII (e.g. 'Меня зовут <Имя>', full names, spoken phones) never leaks."""
     if not words:
         return words
-    masker = get_pii_masker()
-    sanitized = []
-    for w in words:
-        w_copy = dict(w)
-        raw_word = str(w_copy.get("word", ""))
-        masked_word = masker.mask_text(raw_word)
-        if masked_word != raw_word:
-            w_copy["word"] = masked_word
-        else:
-            digits = "".join(c for c in raw_word if c.isdigit())
-            if len(digits) >= 3:
-                w_copy["word"] = "[***]"
-        sanitized.append(w_copy)
+
+    raw_tokens = [str(w.get("word", "")).strip() for w in words]
+    if text_masked is None:
+        masker = get_pii_masker()
+        target_text = masker.mask_text(" ".join(raw_tokens))
+    else:
+        target_text = text_masked
+
+    masked_tokens = target_text.split()
+    matcher = difflib.SequenceMatcher(None, raw_tokens, masked_tokens, autojunk=False)
+
+    sanitized: list[dict] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for idx in range(i1, i2):
+                sanitized.append(dict(words[idx]))
+        elif tag == "replace":
+            if (i2 - i1) == (j2 - j1):
+                for raw_idx, mask_idx in zip(range(i1, i2), range(j1, j2)):
+                    w_copy = dict(words[raw_idx])
+                    w_copy["word"] = masked_tokens[mask_idx]
+                    sanitized.append(w_copy)
+            else:
+                merged = dict(words[i1])
+                merged["word"] = " ".join(masked_tokens[j1:j2])
+                if "end" in words[i2 - 1]:
+                    merged["end"] = words[i2 - 1]["end"]
+                sanitized.append(merged)
+        elif tag == "delete":
+            # Raw tokens removed during masking (e.g. merged into a placeholder) — never leak.
+            continue
+        elif tag == "insert":
+            inserted = " ".join(masked_tokens[j1:j2])
+            if sanitized:
+                sanitized[-1]["word"] = f"{sanitized[-1]['word']} {inserted}".strip()
+
     return sanitized
 
 
@@ -145,7 +174,7 @@ async def get_transcript(
                 "speaker_role": s.speaker_role,
                 "text": s.text_masked if masked else s.text_original,
                 "confidence": s.confidence,
-                "words": _sanitize_words(s.words_json) if masked else s.words_json,
+                "words": _sanitize_words(s.words_json, s.text_masked) if masked else s.words_json,
             }
             for s in segments
         ],

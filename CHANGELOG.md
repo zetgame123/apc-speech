@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Маскирование PII в пословных таймкодах (`GET /v1/calls/{id}/transcript?masked=true`)**: `_sanitize_words()` в `app/api/calls.py` переведён с изолированного пословного прогона `PiiMasker` на выравнивание `words` по полному `text_masked` (`difflib.SequenceMatcher`) с объединением многословных PII-спанов — закрыта утечка контекстных имён (`«Меня зовут <Имя>»`), полных ФИО и продиктованных словами телефонов в пословной подсветке дашборда.
+- **Синхронизация шапки дашборда (`app/static/js/api.js`)**: `syncAuthInputs()` теперь всегда синхронизирует поля `namespace` и `Bearer`-токена с `sessionStorage` (убрана проблема залипания `demo_outdoor_msk`), а смена токена/неймспейса в шапке (в том числе по `Enter`) сразу обновляет данные текущей страницы.
+
 ### Added
+- **Семантическая кластеризация голосового поиска (`POST /v1/texts/analyze`)**: `TopicClusteringEngine` (`app/analytics/clustering.py`) переведён на локальные эмбеддинги `multilingual-e5-small-int8` + `AgglomerativeClustering` (cosine distance `0.16`, fallback на `TF-IDF + HDBSCAN` при отключённом эмбеддере); кластеры в ответе сортируются по убыванию размера (шумовой кластер последним).
 - **Семантический и гибридный поиск по звонкам (`pgvector` + `multilingual-e5-small-int8`, ADR-027)**:
   - Локальный ONNX-эмбеддер `app/analytics/embeddings.py` (`intfloat/multilingual-e5-small` INT8, 384 dims, MIT, без PyTorch/transformers, ~135 МБ на диске, автозагрузка в `scripts/download_models.py`, текст индекса строится строго из маскированных данных по ADR-004).
   - Миграция Alembic `003_pgvector_embeddings.py` (`CREATE EXTENSION IF NOT EXISTS vector`, `embedding vector(384)`, `model_name`, `updated_at`, HNSW-индекс `vector_cosine_ops` + SQLite fallback для тестов).

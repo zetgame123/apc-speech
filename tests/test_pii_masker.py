@@ -145,3 +145,48 @@ def test_mask_person_names_preserves_real_names_next_to_fillers_and_verbs():
     assert "Ян" not in masked
     assert masked.count("[ИМЯ_") == 4
     assert masker.assert_no_leaked_pii(masked) is True
+
+
+def test_sanitize_words_masks_context_dependent_name_with_text_masked():
+    from app.api.calls import _sanitize_words
+
+    words = [
+        {"start": 1.2, "end": 1.8, "word": "Добрый", "confidence": 0.95},
+        {"start": 1.84, "end": 2.2, "word": "день.", "confidence": 0.9},
+        {"start": 2.2, "end": 2.44, "word": "Меня", "confidence": 0.94},
+        {"start": 2.48, "end": 2.8, "word": "зовут", "confidence": 0.94},
+        {"start": 2.8, "end": 3.24, "word": "Дарья.", "confidence": 0.99},
+    ]
+    text_masked = "Добрый день. Меня зовут [ИМЯ_2]."
+
+    sanitized = _sanitize_words(words, text_masked)
+    assert sanitized is not None
+    assert len(sanitized) == 5
+    assert sanitized[4]["word"] == "[ИМЯ_2]."
+    assert sanitized[4]["start"] == 2.8
+    assert sanitized[4]["end"] == 3.24
+    assert all("Дарья" not in w["word"] for w in sanitized)
+
+
+def test_sanitize_words_merges_multiword_pii_and_works_without_text_masked():
+    from app.api.calls import _sanitize_words
+
+    words = [
+        {"start": 0.0, "end": 0.4, "word": "Меня", "confidence": 0.95},
+        {"start": 0.4, "end": 0.8, "word": "зовут", "confidence": 0.95},
+        {"start": 0.8, "end": 1.2, "word": "Иван", "confidence": 0.99},
+        {"start": 1.2, "end": 1.7, "word": "Петров,", "confidence": 0.98},
+        {"start": 1.8, "end": 2.2, "word": "привет.", "confidence": 0.97},
+    ]
+
+    # Without explicit text_masked: full-sentence masking still catches the multi-word name
+    sanitized = _sanitize_words(words)
+    assert sanitized is not None
+    joined = " ".join(w["word"] for w in sanitized)
+    assert "Иван" not in joined
+    assert "Петров" not in joined
+    assert "[ИМЯ_" in joined
+    # Merged span covers both name tokens
+    name_token = next(w for w in sanitized if "[ИМЯ_" in w["word"])
+    assert name_token["start"] == 0.8
+    assert name_token["end"] == 1.7
