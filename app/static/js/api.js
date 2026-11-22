@@ -7,7 +7,43 @@
   const namespaceInput = document.getElementById('namespaceInput');
   const TOKEN_KEY = 'apc.dashboard.token';
   const NS_KEY = 'apc.dashboard.namespace';
+  const THEME_KEY = 'apc.dashboard.theme';
   const DEFAULT_NAMESPACE = 'demo_outdoor_msk';
+
+  function getSavedTheme() {
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'dark' || saved === 'light') return saved;
+    } catch (e) {
+      /* ignore */
+    }
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return 'dark';
+    }
+    return 'light';
+  }
+
+  function applyTheme(theme) {
+    const resolved = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', resolved);
+    document.documentElement.setAttribute('data-bs-theme', resolved);
+    const icon = document.getElementById('themeToggleIcon');
+    const btn = document.getElementById('btnThemeToggle');
+    if (icon) {
+      icon.className = resolved === 'dark' ? 'bi bi-sun-fill' : 'bi bi-moon-stars';
+    }
+    if (btn) {
+      btn.title = resolved === 'dark' ? 'Переключить на светлую тему' : 'Переключить на тёмную тему';
+      btn.setAttribute('aria-pressed', String(resolved === 'dark'));
+    }
+    try {
+      localStorage.setItem(THEME_KEY, resolved);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  applyTheme(getSavedTheme());
 
   function getToken() {
     try {
@@ -200,6 +236,15 @@
   }
 
   function initAuth() {
+    applyTheme(getSavedTheme());
+    const themeBtn = document.getElementById('btnThemeToggle');
+    if (themeBtn && !themeBtn.__apcBound) {
+      themeBtn.__apcBound = true;
+      themeBtn.addEventListener('click', () => {
+        const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        applyTheme(cur === 'dark' ? 'light' : 'dark');
+      });
+    }
     syncAuthInputs();
     if (tokenInput) {
       tokenInput.addEventListener('change', () => {
