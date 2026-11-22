@@ -24,8 +24,15 @@
     }
   }
   function syncAuthInputs() {
-    if (tokenInput && !tokenInput.value) tokenInput.value = getToken();
-    if (namespaceInput && !namespaceInput.value) namespaceInput.value = readNamespace();
+    if (tokenInput) tokenInput.value = getToken();
+    if (namespaceInput) namespaceInput.value = readNamespace();
+  }
+  function refreshCurrentPageData() {
+    if (!getToken()) return;
+    hideApiBanner();
+    if (typeof refreshCallsList === 'function') refreshCallsList();
+    if (typeof fetchVoiceHistory === 'function') fetchVoiceHistory();
+    if (typeof fetchSummary === 'function') fetchSummary();
   }
   function saveAuthInputs() {
     try {
@@ -121,8 +128,14 @@
   }
 
   function showAuthGate() {
-    if (document.getElementById('authGate')) {
-      document.getElementById('authGate').style.display = 'flex';
+    const existing = document.getElementById('authGate');
+    if (existing) {
+      const existingNs = document.getElementById('authGateNs');
+      const existingTok = document.getElementById('authGateToken');
+      if (existingNs) existingNs.value = readNamespace();
+      if (existingTok) existingTok.value = getToken();
+      existing.style.display = 'flex';
+      if (existingTok) existingTok.focus();
       return;
     }
     const overlay = document.createElement('div');
@@ -166,11 +179,7 @@
       if (tokenInput) tokenInput.value = tokenField.value.trim();
       if (namespaceInput) namespaceInput.value = nsInput.value.trim();
       overlay.style.display = 'none';
-      hideApiBanner();
-      if (getToken()) {
-        if (typeof refreshCallsList === 'function') refreshCallsList();
-        if (typeof fetchVoiceHistory === 'function') fetchVoiceHistory();
-      }
+      refreshCurrentPageData();
     });
     card.appendChild(title);
     card.appendChild(hint);
@@ -196,6 +205,15 @@
       tokenInput.addEventListener('change', () => {
         saveAuthInputs();
         if (!getToken()) showAuthGate();
+        else refreshCurrentPageData();
+      });
+      tokenInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') tokenInput.blur();
+      });
+    }
+    if (namespaceInput) {
+      namespaceInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') namespaceInput.blur();
       });
     }
     if (!getToken()) showAuthGate();

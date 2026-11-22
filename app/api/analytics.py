@@ -212,7 +212,11 @@ async def analyze_texts(
 
     clusters_output = []
     cid = 1
-    for label, queries in grouped.items():
+    sorted_groups = sorted(
+        grouped.items(),
+        key=lambda item: (item[0] == -1, -len(item[1])),
+    )
+    for label, queries in sorted_groups:
         name = cluster_names.get(label, f"Кластер {cid}")
         clusters_output.append(
             {

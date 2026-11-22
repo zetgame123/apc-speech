@@ -381,7 +381,7 @@
     }
     btnRunClustering.disabled = true;
     btnRunClustering.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Нейросетевая кластеризация...';
-    clusteringContainer.innerHTML = '<div class="text-center text-muted py-4">Кластеризация запросов алгоритмом HDBSCAN / TF-IDF...</div>';
+    clusteringContainer.innerHTML = '<div class="text-center text-muted py-4">Семантическая кластеризация запросов (multilingual-e5-small)...</div>';
 
     try {
       const resp = await fetch('/v1/texts/analyze', {
