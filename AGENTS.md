@@ -8,9 +8,9 @@
 
 Основные компоненты:
 - `app/api/` — HTTP API (FastAPI, все рабочие маршруты под `/v1/`), статика дашборда (`/dashboard`, `/voice`), служебные ручки (`/health`, `/ready`, `/metrics`).
-- `app/asr/` — локальное распознавание речи (`faster-whisper` / `T-one` ONNX), VAD, препроцессинг `ffmpeg`/`ffprobe`, нормализация текста (`RussianTextNormalizer`).
-- `app/diarization/` — разделение спикеров в стерео и моно (CAM++ d-vectors + классификация ролей `manager`/`client`).
-- `app/llm/` — порт семантического разбора (`port.py`), локальный адаптер (`local_adapter.py`: rule-based в профиле `small`, `llama.cpp` Qwen 2.5 7B в `local-full`), внешний адаптер (`external_adapter.py`, выключен по умолчанию), фабрика (`factory.py`).
+- `app/asr/` — локальное распознавание речи (`GigaAM-v3` E2E CTC INT8 ONNX по умолчанию; опционально `T-one` / `faster-whisper`), VAD, препроцессинг `ffmpeg`/`ffprobe`, нормализация текста (`RussianTextNormalizer`).
+- `app/diarization/` — разделение спикеров в стерео и моно (`pyannote-segmentation-3.0` ONNX + CAM++ d-vectors + классификация ролей `manager`/`client`).
+- `app/llm/` — порт семантического разбора (`port.py`), локальный адаптер (`local_adapter.py`: rule-based в профиле `small`, `llama.cpp` `T-lite-it-2.1` 8.2B в `local-full`), внешний адаптер (`external_adapter.py`, выключен по умолчанию), фабрика (`factory.py`).
 - `app/pii/` — маскирование персональных данных (`PiiMasker`: телефоны, e-mail, карты, паспорта, ФИО).
 - `app/workers/` — асинхронные воркеры Redis Streams (`long_audio_processor`, `fast_voice_search`, `callback_dispatcher`).
 - `app/db/`, `alembic/` — PostgreSQL (SQLAlchemy Async + миграции Alembic).
